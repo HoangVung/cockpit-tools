@@ -48,14 +48,6 @@ export type CodexLocalAccessAccountIneligibleReason =
   | "pending_oauth"
   | "web_session_quota_only";
 
-function isDeepSeekApiServiceAccount(account: CodexAccount): boolean {
-  const providerId = (account.api_provider_id || "").trim().toLowerCase();
-  if (providerId === "deepseek") {
-    return true;
-  }
-  const baseUrl = (account.api_base_url || "").trim().toLowerCase();
-  return baseUrl.includes("api.deepseek.com");
-}
 
 export function isCodexChatCompletionsApiKeyAccount(account: CodexAccount): boolean {
   if (!isCodexApiKeyAccount(account)) {
