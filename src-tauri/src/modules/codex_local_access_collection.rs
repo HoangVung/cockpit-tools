@@ -1208,12 +1208,6 @@ fn local_access_ineligible_reason(
     if account.is_web_session_auth() {
         return Some("web_session_quota_only");
     }
-    if is_chat_completions_api_key_account(account) {
-        return Some("chat_completions_api_key");
-    }
-    if is_official_deepseek_account(account) {
-        return Some("deepseek_unsupported");
-    }
     if restrict_free_accounts
         && !account.is_agent_identity_auth()
         && is_free_plan_type(account.plan_type.as_deref())

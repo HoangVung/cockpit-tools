@@ -2995,7 +2995,7 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
     }
 
     #[test]
-    fn deepseek_responses_api_key_accounts_are_not_eligible_for_local_access_pool() {
+    fn deepseek_responses_api_key_accounts_are_eligible_for_local_access_pool() {
         let mut account = CodexAccount::new_api_key(
             "deepseek-1".to_string(),
             "deepseek@example.com".to_string(),
@@ -3008,30 +3008,21 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         );
         account.api_wire_api = Some("responses".to_string());
 
-        assert!(!is_local_access_eligible_account(&account, false));
-        assert_eq!(
-            local_access_ineligible_reason(&account, false),
-            Some("deepseek_unsupported")
-        );
+        assert!(is_local_access_eligible_account(&account, false));
+        assert_eq!(local_access_ineligible_reason(&account, false), None);
         let (_, synced_ids, added_ids, skipped) = append_eligible_local_access_account_ids(
             &[],
             vec![account.id.clone()],
             &[account.clone()],
             false,
         );
-        assert!(synced_ids.is_empty());
-        assert!(added_ids.is_empty());
-        assert_eq!(
-            skipped
-                .iter()
-                .map(|item| (item.account_id.as_str(), item.reason.as_str()))
-                .collect::<Vec<_>>(),
-            vec![("deepseek-1", "deepseek_unsupported")]
-        );
+        assert_eq!(synced_ids, vec![account.id.clone()]);
+        assert_eq!(added_ids, vec![account.id]);
+        assert!(skipped.is_empty());
     }
 
     #[test]
-    fn chat_completions_api_key_accounts_are_not_eligible_for_local_access_pool() {
+    fn chat_completions_api_key_accounts_are_eligible_for_local_access_pool() {
         let mut account = CodexAccount::new_api_key(
             "api-1".to_string(),
             "api-key@example.com".to_string(),
@@ -3044,7 +3035,8 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         );
         account.api_wire_api = Some("chat_completions".to_string());
 
-        assert!(!is_local_access_eligible_account(&account, false));
+        assert!(is_local_access_eligible_account(&account, false));
+        assert_eq!(local_access_ineligible_reason(&account, false), None);
     }
 
     #[test]
@@ -3061,7 +3053,7 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
         );
         account.api_wire_api = Some("chat_completions".to_string());
 
-        assert!(!is_local_access_eligible_account(&account, false));
+        assert!(is_local_access_eligible_account(&account, false));
         assert!(is_provider_gateway_eligible_account(&account));
     }
 

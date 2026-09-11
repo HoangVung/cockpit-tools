@@ -97,12 +97,6 @@ export function getCodexLocalAccessAccountIneligibleReason(
   if (isCodexWebSessionAccount(account)) {
     return "web_session_quota_only";
   }
-  if (isCodexChatCompletionsApiKeyAccount(account)) {
-    return "chat_completions_api_key";
-  }
-  if (isDeepSeekApiServiceAccount(account)) {
-    return "deepseek_unsupported";
-  }
   if (
     restrictFreeAccounts &&
     !isCodexAgentIdentityAccount(account) &&

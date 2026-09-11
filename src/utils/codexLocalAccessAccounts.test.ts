@@ -122,7 +122,7 @@ test("Agent Identity imports are forced into API service without enabling global
   );
 });
 
-test("DeepSeek Responses accounts cannot join API service", () => {
+test("DeepSeek Responses accounts can join API service", () => {
   const deepseek = account({
     id: "deepseek",
     auth_mode: "apikey",
@@ -132,13 +132,33 @@ test("DeepSeek Responses accounts cannot join API service", () => {
   });
   assert.equal(
     getCodexLocalAccessAccountIneligibleReason(deepseek, false),
-    "deepseek_unsupported",
+    null,
   );
-  assert.equal(isCodexLocalAccessEligibleAccount(deepseek, false), false);
-  assert.equal(canAddCodexAccountToLocalAccess(deepseek, new Set(), false), false);
+  assert.equal(isCodexLocalAccessEligibleAccount(deepseek, false), true);
+  assert.equal(canAddCodexAccountToLocalAccess(deepseek, new Set(), false), true);
   assert.deepEqual(
     resolveImportedCodexAccountIdsForLocalAccess([deepseek], true, false),
-    [],
+    ["deepseek"],
+  );
+});
+
+test("Chat Completions API Key accounts can join API service", () => {
+  const chatApiKey = account({
+    id: "ainipy",
+    auth_mode: "apikey",
+    api_provider_id: "ainipy",
+    api_base_url: "https://api.ainipy.com/v1",
+    api_wire_api: "chat_completions",
+  });
+  assert.equal(
+    getCodexLocalAccessAccountIneligibleReason(chatApiKey, false),
+    null,
+  );
+  assert.equal(isCodexLocalAccessEligibleAccount(chatApiKey, false), true);
+  assert.equal(canAddCodexAccountToLocalAccess(chatApiKey, new Set(), false), true);
+  assert.deepEqual(
+    resolveImportedCodexAccountIdsForLocalAccess([chatApiKey], true, false),
+    ["ainipy"],
   );
 });
 
