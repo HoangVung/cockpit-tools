@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Kết quả kiểm thử",
+    "openBrowser": "Mở trong trình duyệt",
     "error": {
       "stateUnavailable": "Không có trạng thái tác vụ. Hãy thử lại.",
       "accountsRequired": "Chọn ít nhất một tài khoản.",
@@ -77,7 +79,8 @@
     "clearAll": "Dọn dẹp tất cả",
     "confirmClearAll": "Dọn dẹp tất cả bài kiểm thử Pelican?",
     "clearAllHelp": "Toàn bộ lịch sử kiểm thử và tệp đã tạo sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
-    "search": "Tìm tài khoản"
+    "search": "Tìm tài khoản",
+    "viewError": "Xem lỗi"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL cổng API",
       "modelId": "ID mô hình",
       "modelIdPlaceholder": "Chọn ID mô hình",
-      "imageGenerationModel": { "label": "Mô hình hình ảnh", "custom": "Tùy chỉnh", "save": "Lưu mô hình", "placeholder": "Nhập ID mô hình tùy chỉnh", "description": "Dùng cho /v1/images/generations và /v1/images/edits; mặc định là gpt-image-2.5.", "required": "Nhập tên mô hình hình ảnh", "tooLong": "Tên mô hình hình ảnh quá dài", "saveSuccess": "Đã cập nhật mô hình hình ảnh" },
+      "imageGenerationModel": {
+        "label": "Mô hình hình ảnh",
+        "custom": "Tùy chỉnh",
+        "save": "Lưu mô hình",
+        "placeholder": "Nhập ID mô hình tùy chỉnh",
+        "description": "Dùng cho /v1/images/generations và /v1/images/edits; mặc định là gpt-image-2.5.",
+        "required": "Nhập tên mô hình hình ảnh",
+        "tooLong": "Tên mô hình hình ảnh quá dài",
+        "saveSuccess": "Đã cập nhật mô hình hình ảnh"
+      },
       "modelIdViewOnly": "Chỉ xem",
       "quotaPool": {
         "title": "Nhóm hạn mức",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Đã yêu cầu khôi phục {{count}} tài khoản",
         "dialog": {
           "title": "Lỗi tài khoản",
-      "description": "Mỗi tài khoản được hiển thị cùng model, lý do không khả dụng và thao tác khôi phục nếu có.",
+          "description": "Mỗi tài khoản được hiển thị cùng model, lý do không khả dụng và thao tác khôi phục nếu có.",
           "noIssues": "Tài khoản không có lỗi",
           "unscopedApiKey": "API Key hiện tại",
           "poolUnavailable": "Không có tài khoản khả dụng trong nhóm",

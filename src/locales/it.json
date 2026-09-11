@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Risultati del test",
+    "openBrowser": "Apri nel browser",
     "error": {
       "stateUnavailable": "Stato dell’attività non disponibile. Riprova.",
       "accountsRequired": "Seleziona almeno un account.",
@@ -77,7 +79,8 @@
     "clearAll": "Pulisci tutto",
     "confirmClearAll": "Pulire tutti i test Pelican?",
     "clearAllHelp": "Tutta la cronologia dei test e i file generati verranno eliminati definitivamente. L’operazione non può essere annullata.",
-    "search": "Cerca account"
+    "search": "Cerca account",
+    "viewError": "Visualizza errore"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL porta API",
       "modelId": "ID modello",
       "modelIdPlaceholder": "Seleziona ID modello",
-      "imageGenerationModel": { "label": "Modello immagini", "custom": "Personalizzato", "save": "Salva modello", "placeholder": "Inserisci l’ID del modello personalizzato", "description": "Usato per /v1/images/generations e /v1/images/edits; il valore predefinito è gpt-image-2.5.", "required": "Inserisci il nome del modello immagini", "tooLong": "Il nome del modello immagini è troppo lungo", "saveSuccess": "Modello immagini aggiornato" },
+      "imageGenerationModel": {
+        "label": "Modello immagini",
+        "custom": "Personalizzato",
+        "save": "Salva modello",
+        "placeholder": "Inserisci l’ID del modello personalizzato",
+        "description": "Usato per /v1/images/generations e /v1/images/edits; il valore predefinito è gpt-image-2.5.",
+        "required": "Inserisci il nome del modello immagini",
+        "tooLong": "Il nome del modello immagini è troppo lungo",
+        "saveSuccess": "Modello immagini aggiornato"
+      },
       "modelIdViewOnly": "Solo vista",
       "quotaPool": {
         "title": "Pool quota",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Ripristino richiesto per {{count}} account",
         "dialog": {
           "title": "Problemi account",
-      "description": "Ogni account mostra il modello, il motivo dell’indisponibilità e l’azione di ripristino disponibile.",
+          "description": "Ogni account mostra il modello, il motivo dell’indisponibilità e l’azione di ripristino disponibile.",
           "noIssues": "Nessun problema negli account",
           "unscopedApiKey": "API Key corrente",
           "poolUnavailable": "Nessun account disponibile nel pool",

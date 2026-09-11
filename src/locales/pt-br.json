@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Resultados do teste",
+    "openBrowser": "Abrir no navegador",
     "error": {
       "stateUnavailable": "Estado da tarefa indisponível. Tente novamente.",
       "accountsRequired": "Selecione pelo menos uma conta.",
@@ -77,7 +79,8 @@
     "clearAll": "Limpar tudo",
     "confirmClearAll": "Limpar todos os testes do Pelican?",
     "clearAllHelp": "Todo o histórico de testes e os arquivos gerados serão excluídos permanentemente. Não é possível desfazer.",
-    "search": "Buscar contas"
+    "search": "Buscar contas",
+    "viewError": "Ver erro"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL da porta API",
       "modelId": "ID do modelo",
       "modelIdPlaceholder": "Selecione o ID do modelo",
-      "imageGenerationModel": { "label": "Modelo de imagem", "custom": "Personalizado", "save": "Salvar modelo", "placeholder": "Digite o ID de um modelo personalizado", "description": "Usado para /v1/images/generations e /v1/images/edits; o padrão é gpt-image-2.5.", "required": "Digite o nome de um modelo de imagem", "tooLong": "O nome do modelo de imagem é muito longo", "saveSuccess": "Modelo de imagem atualizado" },
+      "imageGenerationModel": {
+        "label": "Modelo de imagem",
+        "custom": "Personalizado",
+        "save": "Salvar modelo",
+        "placeholder": "Digite o ID de um modelo personalizado",
+        "description": "Usado para /v1/images/generations e /v1/images/edits; o padrão é gpt-image-2.5.",
+        "required": "Digite o nome de um modelo de imagem",
+        "tooLong": "O nome do modelo de imagem é muito longo",
+        "saveSuccess": "Modelo de imagem atualizado"
+      },
       "modelIdViewOnly": "Só visualizar",
       "quotaPool": {
         "title": "Pool de cota",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Recuperação solicitada para {{count}} conta(s)",
         "dialog": {
           "title": "Problemas de contas",
-      "description": "Cada conta é exibida com o modelo, o motivo da indisponibilidade e a ação de recuperação disponível.",
+          "description": "Cada conta é exibida com o modelo, o motivo da indisponibilidade e a ação de recuperação disponível.",
           "noIssues": "Nenhum problema de contas",
           "unscopedApiKey": "API Key atual",
           "poolUnavailable": "Nenhuma conta disponível no pool",

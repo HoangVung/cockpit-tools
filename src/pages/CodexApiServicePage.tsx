@@ -484,7 +484,7 @@ function parseModelAliasText(value: string): CodexLocalAccessModelAlias[] {
 }
 
 const DEEPSEEK_OFFICIAL_API_MODEL_MAPPINGS: CodexApiModelMapping[] = [
-  { client_model: "gpt-5.6-sol", upstream_model: "deepseek-v4-flash" },
+  { client_model: "gpt-5.6-sol", upstream_model: "deepseek-flash" },
   { client_model: "gpt-5.6-terra", upstream_model: "deepseek-v4-pro" },
   { client_model: "deepseek-v4-flash", upstream_model: "deepseek-v4-flash" },
   { client_model: "deepseek-v4-pro", upstream_model: "deepseek-v4-pro" },

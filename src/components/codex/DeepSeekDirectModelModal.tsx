@@ -8,10 +8,10 @@ import {
   DEEPSEEK_ACCESS_MODE_CDP,
   DEEPSEEK_ACCESS_MODE_DIRECT,
   DEEPSEEK_ACCESS_MODE_GATEWAY,
-  DEEPSEEK_DIRECT_MODELS,
   isDeepSeekAccount,
   isDeepSeekResponsesAccount,
   resolveDeepSeekAccessMode,
+  resolveDeepSeekModelOptions,
   resolveDeepSeekStartupModel,
   type DeepSeekAccessMode,
   type DeepSeekStartChoice,
@@ -240,7 +240,7 @@ export function DeepSeekDirectModelModal({
           <div className="form-group">
             <label>{t("codex.deepSeek.start.model", "启动模型")}</label>
             <div className="api-provider-chip-list">
-              {DEEPSEEK_DIRECT_MODELS.map((model) => (
+              {resolveDeepSeekModelOptions(account).map((model) => (
                 <button
                   key={model.id}
                   type="button"

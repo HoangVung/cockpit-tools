@@ -170,6 +170,20 @@ function parseVisionModelText(value: string): Record<string, { supportsVision: b
   return capabilities;
 }
 
+/** 表单里的逐模型识图开关状态（含显式关闭）。 */
+function visionModelStatesFromCapabilities(
+  capabilities?: Record<string, { supportsVision?: boolean }>,
+): Record<string, boolean> {
+  const states: Record<string, boolean> = {};
+  if (!capabilities) return states;
+  for (const [model, capability] of Object.entries(capabilities)) {
+    const key = model.trim().toLowerCase();
+    if (!key) continue;
+    states[key] = capability.supportsVision === true;
+  }
+  return states;
+}
+
 function visionModelTextFromCapabilities(
   capabilities?: Record<string, { supportsVision?: boolean }>,
 ): string {
@@ -359,6 +373,9 @@ interface ProviderFormState {
   modelContextWindowsDraft: Record<string, string>;
   supportsVision: boolean;
   visionModelText: string;
+  visionModelStates: Record<string, boolean>;
+  /** 打开表单时的识图开关快照：只保存用户真正改动过的模型，避免覆盖供应商级默认。 */
+  visionModelStatesBaseline: Record<string, boolean>;
   visionRoutingModel: string;
   website: string;
   apiKeyUrl: string;
@@ -386,6 +403,8 @@ const EMPTY_FORM: ProviderFormState = {
   modelContextWindowsDraft: {},
   supportsVision: false,
   visionModelText: "",
+  visionModelStates: {},
+  visionModelStatesBaseline: {},
   visionRoutingModel: "",
   website: "",
   apiKeyUrl: "",
@@ -1600,6 +1619,10 @@ export function useCodexModelProviderManagerController({
       ),
       supportsVision: provider.supportsVision === true,
       visionModelText: visionModelTextFromCapabilities(provider.modelCapabilities),
+      visionModelStates: visionModelStatesFromCapabilities(provider.modelCapabilities),
+      visionModelStatesBaseline: visionModelStatesFromCapabilities(
+        provider.modelCapabilities,
+      ),
       visionRoutingModel: provider.visionRoutingModel ?? "",
       website: provider.website ?? "",
       apiKeyUrl: provider.apiKeyUrl ?? "",
@@ -1660,6 +1683,18 @@ export function useCodexModelProviderManagerController({
         ),
         supportsVision: false,
         visionModelText: (preset.visionModelCatalog ?? []).join("\n"),
+        visionModelStates: Object.fromEntries(
+          (preset.visionModelCatalog ?? []).map((model) => [
+            model.trim().toLowerCase(),
+            true,
+          ]),
+        ),
+        visionModelStatesBaseline: Object.fromEntries(
+          (preset.visionModelCatalog ?? []).map((model) => [
+            model.trim().toLowerCase(),
+            true,
+          ]),
+        ),
         visionRoutingModel: "",
         website: preset.website ?? "",
         apiKeyUrl: preset.apiKeyUrl ?? "",
@@ -2164,6 +2199,15 @@ export function useCodexModelProviderManagerController({
       return;
     }
     const modelCapabilities = parseVisionModelText(form.visionModelText);
+    // 逐模型开关：显式写入 true/false，关闭官方默认支持的模型时也能生效。
+    for (const [model, supportsVision] of Object.entries(form.visionModelStates)) {
+      const key = model.trim().toLowerCase();
+      if (!key) continue;
+      // 未操作过的关闭状态不写，交给供应商级默认值决定；已保存过的显式值原样保留。
+      const baseline = form.visionModelStatesBaseline[key];
+      if (baseline === undefined && !supportsVision) continue;
+      modelCapabilities[key] = { supportsVision };
+    }
     const visionRoutingModel = form.visionRoutingModel.trim();
     const isCreate = !form.providerId;
     const existingKeyCount = currentEditingProvider?.apiKeys.length ?? 0;

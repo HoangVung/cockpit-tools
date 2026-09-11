@@ -25,19 +25,15 @@
         assert!(account.api_sync_model_catalog_to_codex);
         assert!(!account.api_supports_websockets);
         assert!(!account.api_supports_vision);
-        assert_eq!(
-            account
-                .api_model_vision_support
-                .get("deepseek-v4-flash-vision-exp"),
-            Some(&true)
-        );
+        // 识图默认值跟随账号模型列表：列表里没有的模型不再被强制写入。
+        assert!(account
+            .api_model_vision_support
+            .get("deepseek-v4-flash-vision-exp")
+            .is_none());
+        // 模型列表以用户数据为准：非空列表不再被官方默认三条覆盖。
         assert_eq!(
             account.api_model_catalog,
-            vec![
-                "deepseek-v4-flash",
-                "deepseek-v4-pro",
-                "deepseek-v4-flash-vision-exp"
-            ]
+            vec!["deepseek-v4-pro".to_string()]
         );
         assert_eq!(
             account.api_model_mappings,
@@ -167,7 +163,18 @@
 
     #[test]
     fn deepseek_direct_provider_catalog_uses_display_whitelist_and_upstream_names() {
-        let json = super::build_deepseek_direct_provider_catalog_json(&[]).expect("build catalog");
+        let account = CodexAccount::new_api_key(
+            "deepseek-catalog".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            Vec::new(),
+        );
+        let json = super::build_deepseek_direct_provider_catalog_json(&account)
+            .expect("build catalog");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse catalog");
         let models = value
             .get("models")
@@ -176,15 +183,15 @@
         assert!(models.len() >= 2);
         assert_eq!(
             models[0].get("slug").and_then(|item| item.as_str()),
-            Some("deepseek-v4-flash")
+            Some("deepseek-flash")
         );
         assert_eq!(
             models[0].get("display_name").and_then(|item| item.as_str()),
-            Some("DeepSeek-V4-Flash")
+            Some("DeepSeek-V4.1-Flash")
         );
         assert_eq!(
             models[0].get("description").and_then(|item| item.as_str()),
-            Some("deepseek-v4-flash")
+            Some("deepseek-flash")
         );
         assert_eq!(
             models[0].get("visibility").and_then(|item| item.as_str()),
@@ -208,7 +215,7 @@
             .iter()
             .find(|model| {
                 model.get("slug").and_then(|item| item.as_str())
-                    == Some("deepseek-v4-flash-vision-exp")
+                    == Some("deepseek-flash")
             })
             .expect("vision model");
         assert_eq!(
@@ -219,7 +226,18 @@
 
     #[test]
     fn deepseek_official_catalog_json_prefers_flash_and_keeps_tool_metadata() {
-        let json = super::build_deepseek_official_model_catalog_json(&[]).expect("build catalog");
+        let account = CodexAccount::new_api_key(
+            "deepseek-catalog".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            Vec::new(),
+        );
+        let json =
+            super::build_deepseek_official_model_catalog_json(&account).expect("build catalog");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse catalog");
         let models = value
             .get("models")
@@ -228,7 +246,7 @@
         assert!(models.len() >= 2);
         assert_eq!(
             models[0].get("slug").and_then(|item| item.as_str()),
-            Some("deepseek-v4-flash")
+            Some("deepseek-flash")
         );
         assert_eq!(
             models[0]
@@ -247,6 +265,81 @@
         assert_eq!(
             models[1].get("slug").and_then(|item| item.as_str()),
             Some("deepseek-v4-pro")
+        );
+    }
+
+    #[test]
+    fn deepseek_catalog_keeps_custom_models_and_honors_vision_override() {
+        let mut account = CodexAccount::new_api_key(
+            "deepseek-custom-catalog".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            vec![
+                "deepseek-v4-flash".to_string(),
+                "deepseek-flash".to_string(),
+                "deepseek-v4-pro".to_string(),
+                "my-custom-model".to_string(),
+            ],
+        );
+        // 用户手动关掉官方 Flash 的识图，并给自定义模型打开识图。
+        account
+            .api_model_vision_support
+            .insert("deepseek-v4-flash".to_string(), false);
+        account
+            .api_model_vision_support
+            .insert("my-custom-model".to_string(), true);
+
+        let json =
+            super::build_deepseek_official_model_catalog_json(&account).expect("build catalog");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse catalog");
+        let models = value
+            .get("models")
+            .and_then(|item| item.as_array())
+            .expect("models array");
+
+        let find = |slug: &str| {
+            models
+                .iter()
+                .find(|model| model.get("slug").and_then(|item| item.as_str()) == Some(slug))
+                .expect("model present")
+        };
+        assert_eq!(
+            find("deepseek-v4-flash").get("input_modalities"),
+            Some(&serde_json::json!(["text"]))
+        );
+        // 官方新名沿用 Flash 模板：识图默认开启，工具元数据齐全。
+        assert_eq!(
+            find("deepseek-flash").get("input_modalities"),
+            Some(&serde_json::json!(["text", "image"]))
+        );
+        assert_eq!(
+            find("deepseek-flash").get("display_name").and_then(|item| item.as_str()),
+            Some("DeepSeek-V4.1-Flash")
+        );
+        assert_eq!(
+            find("deepseek-flash")
+                .get("apply_patch_tool_type")
+                .and_then(|item| item.as_str()),
+            Some("freeform")
+        );
+        assert_eq!(
+            find("my-custom-model").get("input_modalities"),
+            Some(&serde_json::json!(["text", "image"]))
+        );
+        assert_eq!(
+            find("deepseek-v4-pro").get("input_modalities"),
+            Some(&serde_json::json!(["text"]))
+        );
+        assert_eq!(
+            find("deepseek-flash")
+                .get("supported_reasoning_levels")
+                .and_then(|item| item.as_array())
+                .map(|levels| levels.len()),
+            Some(3)
         );
     }
 

@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Wyniki testu",
+    "openBrowser": "Otwórz w przeglądarce",
     "error": {
       "stateUnavailable": "Stan zadania jest niedostępny. Spróbuj ponownie.",
       "accountsRequired": "Wybierz co najmniej jedno konto.",
@@ -77,7 +79,8 @@
     "clearAll": "Wyczyść wszystko",
     "confirmClearAll": "Wyczyścić wszystkie testy Pelican?",
     "clearAllHelp": "Cała historia testów i wygenerowane pliki zostaną trwale usunięte. Tej operacji nie można cofnąć.",
-    "search": "Szukaj kont"
+    "search": "Szukaj kont",
+    "viewError": "Pokaż błąd"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL portu API",
       "modelId": "ID modelu",
       "modelIdPlaceholder": "Wybierz ID modelu",
-      "imageGenerationModel": { "label": "Model obrazu", "custom": "Niestandardowy", "save": "Zapisz model", "placeholder": "Wpisz niestandardowe ID modelu", "description": "Używany dla /v1/images/generations i /v1/images/edits; domyślnie gpt-image-2.5.", "required": "Wpisz nazwę modelu obrazu", "tooLong": "Nazwa modelu obrazu jest za długa", "saveSuccess": "Zaktualizowano model obrazu" },
+      "imageGenerationModel": {
+        "label": "Model obrazu",
+        "custom": "Niestandardowy",
+        "save": "Zapisz model",
+        "placeholder": "Wpisz niestandardowe ID modelu",
+        "description": "Używany dla /v1/images/generations i /v1/images/edits; domyślnie gpt-image-2.5.",
+        "required": "Wpisz nazwę modelu obrazu",
+        "tooLong": "Nazwa modelu obrazu jest za długa",
+        "saveSuccess": "Zaktualizowano model obrazu"
+      },
       "modelIdViewOnly": "Tylko podgląd",
       "quotaPool": {
         "title": "Pula limitów",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Zażądano przywrócenia {{count}} kont(a)",
         "dialog": {
           "title": "Problemy kont",
-      "description": "Każde konto jest pokazane z modelem, powodem niedostępności i dostępną opcją przywrócenia.",
+          "description": "Każde konto jest pokazane z modelem, powodem niedostępności i dostępną opcją przywrócenia.",
           "noIssues": "Brak problemów z kontami",
           "unscopedApiKey": "Bieżący API Key",
           "poolUnavailable": "Brak dostępnego konta w puli",

@@ -622,6 +622,7 @@ pub fn run() {
             commands::codex_pelican::codex_pelican_artifact,
             commands::codex_pelican::codex_pelican_delete,
             modules::codex_pelican_preview::codex_pelican_preview,
+            modules::codex_pelican_preview::codex_pelican_browser,
             // Account Commands
             commands::account::list_accounts,
             commands::account::add_account,

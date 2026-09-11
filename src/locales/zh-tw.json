@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "測試結果",
+    "openBrowser": "瀏覽器開啟",
     "error": {
       "stateUnavailable": "工作狀態無法取得，請重試",
       "accountsRequired": "請至少選取一個帳號",
@@ -77,7 +79,8 @@
     "clearAll": "清理全部",
     "confirmClearAll": "清理全部鵜鶘測智記錄？",
     "clearAllHelp": "將永久刪除所有測試記錄與產生的檔案，且無法復原。",
-    "search": "搜尋帳號"
+    "search": "搜尋帳號",
+    "viewError": "查看錯誤"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "API 連接埠 URL",
       "modelId": "模型 ID",
       "modelIdPlaceholder": "選擇模型 ID",
-      "imageGenerationModel": { "label": "生圖模型", "custom": "自訂", "save": "儲存模型", "placeholder": "輸入自訂模型 ID", "description": "用於 /v1/images/generations 與 /v1/images/edits 轉發；預設使用 gpt-image-2.5。", "required": "請輸入生圖模型名稱", "tooLong": "生圖模型名稱不能超過 200 個字元", "saveSuccess": "生圖模型已更新" },
+      "imageGenerationModel": {
+        "label": "生圖模型",
+        "custom": "自訂",
+        "save": "儲存模型",
+        "placeholder": "輸入自訂模型 ID",
+        "description": "用於 /v1/images/generations 與 /v1/images/edits 轉發；預設使用 gpt-image-2.5。",
+        "required": "請輸入生圖模型名稱",
+        "tooLong": "生圖模型名稱不能超過 200 個字元",
+        "saveSuccess": "生圖模型已更新"
+      },
       "modelIdViewOnly": "僅查看，無切換",
       "quotaPool": {
         "title": "額度池",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "已提交 {{count}} 個帳號的恢復操作",
         "dialog": {
           "title": "帳號異常",
-      "description": "以下狀態按帳號顯示，包含對應模型、無法使用原因及可執行的復原操作。",
+          "description": "以下狀態按帳號顯示，包含對應模型、無法使用原因及可執行的復原操作。",
           "noIssues": "目前沒有異常帳號",
           "unscopedApiKey": "目前 API Key",
           "poolUnavailable": "帳號池無可用帳號",

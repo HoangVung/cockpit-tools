@@ -449,9 +449,8 @@ fn provider_gateway_models_for_account(account: &CodexAccount) -> Vec<String> {
         .to_ascii_lowercase();
     if provider_id == "deepseek" || base_url.contains("api.deepseek.com") {
         return normalize_provider_gateway_models(vec![
-            "deepseek-v4-flash",
+            "deepseek-flash",
             "deepseek-v4-pro",
-            "deepseek-v4-flash-vision-exp",
         ]);
     }
     if provider_id == "moonshot" || base_url.contains("api.moonshot.cn") {
@@ -514,6 +513,8 @@ fn is_provider_model_shell_slug(model: &str) -> bool {
 }
 
 const DEEPSEEK_OFFICIAL_SHELL_SLOTS: &[(&str, &str)] = &[
+    ("deepseek-flash", "gpt-5.5"),
+    // 旧模型名保留同一套壳位，已存在的账号不需要迁移。
     ("deepseek-v4-flash", "gpt-5.5"),
     ("deepseek-v4-pro", "gpt-5.4"),
     ("deepseek-v4-flash-vision-exp", "gpt-5.4-mini"),
@@ -535,18 +536,27 @@ fn allocate_official_deepseek_shell_slots(
         return None;
     }
     Some(
-        DEEPSEEK_OFFICIAL_SHELL_SLOTS
-            .iter()
-            .filter(|(upstream, _)| {
-                upstream_models
-                    .iter()
-                    .any(|model| model.eq_ignore_ascii_case(upstream))
-            })
-            .map(|(upstream, shell)| ProviderGatewayModelSlot {
-                client_model: (*shell).to_string(),
-                upstream_model: (*upstream).to_string(),
-            })
-            .collect(),
+        {
+            let mut used_shells = HashSet::new();
+            DEEPSEEK_OFFICIAL_SHELL_SLOTS
+                .iter()
+                .filter(|(upstream, _)| {
+                    upstream_models
+                        .iter()
+                        .any(|model| model.eq_ignore_ascii_case(upstream))
+                })
+                .filter_map(|(upstream, shell)| {
+                    // 新名与旧名指向同一个上游模型时只占一个壳位。
+                    if !used_shells.insert(shell.to_ascii_lowercase()) {
+                        return None;
+                    }
+                    Some(ProviderGatewayModelSlot {
+                        client_model: (*shell).to_string(),
+                        upstream_model: (*upstream).to_string(),
+                    })
+                })
+                .collect()
+        },
     )
 }
 
@@ -1118,6 +1128,24 @@ fn provider_gateway_for_account(
             }
         })
         .collect::<std::collections::HashMap<_, _>>();
+    // DeepSeek 官方模型的识图默认值不在用户映射里也要生效（例如官方 Flash 默认支持识图），
+    // 否则网关会把图片当成不支持而直接省略。
+    if is_official_deepseek_account(account) {
+        for model in &upstream_models {
+            let key = model.trim().to_lowercase();
+            if key.is_empty() || model_capabilities.contains_key(&key) {
+                continue;
+            }
+            if codex_account::deepseek_model_effective_vision(account, model) {
+                model_capabilities.insert(
+                    key,
+                    CodexLocalAccessProviderGatewayModelCapability {
+                        supports_vision: true,
+                    },
+                );
+            }
+        }
+    }
     // Provider catalogs expose shell aliases to Codex while requests are
     // rewritten to the upstream model. Keep the capability on both names so
     // the /models response and request guard agree for mapped DeepSeek models.
@@ -2064,13 +2092,17 @@ fn write_local_access_profile_model_override(
     crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
 }
 
-fn official_catalog_json_for_provider_gateway(account: &CodexAccount) -> Option<&'static str> {
+fn official_catalog_json_for_provider_gateway(
+    account: &CodexAccount,
+) -> Result<Option<String>, String> {
     if is_official_deepseek_account(account)
         && provider_gateway_wire_api_for_account(account) == "responses"
     {
-        Some(codex_account::deepseek_official_models_json())
+        Ok(Some(codex_account::deepseek_official_catalog_json_for_account(
+            account,
+        )?))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -2339,7 +2371,7 @@ pub async fn activate_provider_gateway_for_dir(
         write_provider_gateway_model_catalog_with_templates(
             profile_dir,
             &model_slots,
-            official_catalog_json_for_provider_gateway(&account),
+            official_catalog_json_for_provider_gateway(&account)?.as_deref(),
             Some(&account),
         )?;
     }
@@ -2811,7 +2843,7 @@ pub async fn ensure_provider_gateway_for_dir(
         write_provider_gateway_model_catalog_with_templates(
             profile_dir,
             &model_slots,
-            official_catalog_json_for_provider_gateway(&account),
+            official_catalog_json_for_provider_gateway(&account)?.as_deref(),
             Some(&account),
         )?;
     }

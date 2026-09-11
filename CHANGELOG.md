@@ -7,7 +7,20 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
-## [Unreleased]
+## [1.3.49] - 2026-09-12
+
+### Changed
+
+- **Let DeepSeek model lists be user-defined with per-model image support**: the default models are now the official `deepseek-flash` (DeepSeek V4.1 Flash) and `deepseek-v4-pro` (legacy names keep working), and the model list comes from account data, so upstream models can be added or removed freely and image input can be toggled per model (official Flash defaults to on, custom models default to off). The model list, image support, and thinking levels flow into both the local gateway listing and the CDP-injected model list.
+- **Focus the DeepSeek provider dialog on the selected protocol**: under Responses only the model catalog and the per-model image switch remain, while the provider-level image toggle, the image model list, and the image routing model are hidden. The context column now uses the same presets as Codex (follow official / 516K / 1M / custom).
+- **Compare Pelican results side by side**: tests open a compact dedicated result dialog with one email column and canvas per account. Progress, failures and retries stay inside each cell; failed cells expose compact error, retry, and raw-reply actions, while successful cells open the HTML preview directly. Browser opening remains available from the detail dialog.
+- **Open Pelican results in the browser**: a one-off local address (random port, random path, expiring after 15 minutes, at most two at a time) serves the result page. The page injects a CSP plus a sandbox lockdown script that disables networking, WebRTC, and dialog APIs, and the listeners close when test data is cleared.
+- **Preserve OpenCode Go conversation sessions**: provider gateway requests now forward an existing `x-opencode-session` or derive it from the client's session identity, with an opaque fallback when no identity is available.
+
+### Fixed
+
+- **Preserve the selected DeepSeek thinking level**: switching accounts or starting an instance no longer resets the reasoning effort to `high`, so the `low` / `high` / `max` level chosen in Codex is preserved.
+- **Narrow the scope of CDP injection changes**: model list detection now requires real model descriptors, so queue, thread, and other generic arrays are left untouched, and the default model is written back only when the user explicitly switches models, which reduces backend writes during a running turn. The injected script also no longer throws at the end of every run because of a removed constant, restoring model-switch state reporting over CDP.
 
 ## [1.3.48] - 2026-09-11
 

@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "テスト結果",
+    "openBrowser": "ブラウザーで開く",
     "error": {
       "stateUnavailable": "タスクの状態を取得できません。再試行してください。",
       "accountsRequired": "アカウントを1つ以上選択してください。",
@@ -77,7 +79,8 @@
     "clearAll": "すべて削除",
     "confirmClearAll": "Pelican のテストをすべて削除しますか？",
     "clearAllHelp": "すべてのテスト履歴と生成ファイルを完全に削除します。この操作は元に戻せません。",
-    "search": "アカウント検索"
+    "search": "アカウント検索",
+    "viewError": "エラーを見る"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "APIポートURL",
       "modelId": "モデル ID",
       "modelIdPlaceholder": "モデル ID を選択",
-      "imageGenerationModel": { "label": "画像モデル", "custom": "カスタム", "save": "モデルを保存", "placeholder": "カスタムモデル ID を入力", "description": "/v1/images/generations と /v1/images/edits に使用します。デフォルトは gpt-image-2.5 です。", "required": "画像モデル名を入力してください", "tooLong": "画像モデル名が長すぎます", "saveSuccess": "画像モデルを更新しました" },
+      "imageGenerationModel": {
+        "label": "画像モデル",
+        "custom": "カスタム",
+        "save": "モデルを保存",
+        "placeholder": "カスタムモデル ID を入力",
+        "description": "/v1/images/generations と /v1/images/edits に使用します。デフォルトは gpt-image-2.5 です。",
+        "required": "画像モデル名を入力してください",
+        "tooLong": "画像モデル名が長すぎます",
+        "saveSuccess": "画像モデルを更新しました"
+      },
       "modelIdViewOnly": "表示のみ",
       "quotaPool": {
         "title": "クォータプール",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "{{count}} 件のアカウントの復旧を要求しました",
         "dialog": {
           "title": "アカウントの異常",
-      "description": "各アカウントをモデル、利用不可の理由、実行可能な復旧操作とともに表示します。",
+          "description": "各アカウントをモデル、利用不可の理由、実行可能な復旧操作とともに表示します。",
           "noIssues": "アカウントに異常はありません",
           "unscopedApiKey": "現在の API Key",
           "poolUnavailable": "プールに利用可能なアカウントがありません",

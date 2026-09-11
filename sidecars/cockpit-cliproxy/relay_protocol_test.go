@@ -221,6 +221,27 @@ func TestRelayServerProviderGatewayRoutesResponsesToChatCompletions(t *testing.T
 	}
 }
 
+func TestApplyOpenCodeSessionHeaderPreservesAndDerivesSession(t *testing.T) {
+	src := http.Header{"Session_id": []string{"codex-conversation-1"}}
+	dst := make(http.Header)
+	applyOpenCodeSessionHeader(dst, src, []byte(`{"model":"x"}`))
+	if got := dst.Get("x-opencode-session"); got != "codex:codex-conversation-1" {
+		t.Fatalf("derived session = %q", got)
+	}
+	preserved := http.Header{"X-Opencode-Session": []string{"client-session"}}
+	dst = make(http.Header)
+	applyOpenCodeSessionHeader(dst, preserved, nil)
+	if got := dst.Get("x-opencode-session"); got != "client-session" {
+		t.Fatalf("preserved session = %q", got)
+	}
+}
+
+func TestIsOpenCodeGoGateway(t *testing.T) {
+	if !isOpenCodeGoGateway("https://opencode.ai/zen/go/v1") || isOpenCodeGoGateway("https://api.deepseek.com/v1") {
+		t.Fatal("unexpected OpenCode Go gateway detection")
+	}
+}
+
 func TestRelayServerProviderGatewayPreservesVersionedBaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var upstreamPath string

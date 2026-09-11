@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Hasil pengujian",
+    "openBrowser": "Buka di peramban",
     "error": {
       "stateUnavailable": "Status tugas tidak tersedia. Coba lagi.",
       "accountsRequired": "Pilih setidaknya satu akun.",
@@ -77,7 +79,8 @@
     "clearAll": "Bersihkan semua",
     "confirmClearAll": "Bersihkan semua pengujian Pelican?",
     "clearAllHelp": "Semua riwayat pengujian dan file yang dihasilkan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
-    "search": "Cari akun"
+    "search": "Cari akun",
+    "viewError": "Lihat kesalahan"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2561,7 +2564,16 @@
       "apiPortUrl": "URL Port API",
       "modelId": "ID Model",
       "modelIdPlaceholder": "Pilih ID model",
-      "imageGenerationModel": { "label": "Model gambar", "custom": "Kustom", "save": "Simpan model", "placeholder": "Masukkan ID model kustom", "description": "Digunakan untuk /v1/images/generations dan /v1/images/edits; defaultnya gpt-image-2.5.", "required": "Masukkan nama model gambar", "tooLong": "Nama model gambar terlalu panjang", "saveSuccess": "Model gambar diperbarui" },
+      "imageGenerationModel": {
+        "label": "Model gambar",
+        "custom": "Kustom",
+        "save": "Simpan model",
+        "placeholder": "Masukkan ID model kustom",
+        "description": "Digunakan untuk /v1/images/generations dan /v1/images/edits; defaultnya gpt-image-2.5.",
+        "required": "Masukkan nama model gambar",
+        "tooLong": "Nama model gambar terlalu panjang",
+        "saveSuccess": "Model gambar diperbarui"
+      },
       "modelIdViewOnly": "Hanya lihat",
       "quotaPool": {
         "title": "Kumpulan kuota",
@@ -2685,7 +2697,7 @@
         "recoverSuccess": "Pemulihan diminta untuk {{count}} akun",
         "dialog": {
           "title": "Masalah Akun",
-      "description": "Setiap akun ditampilkan bersama model, alasan tidak tersedia, dan tindakan pemulihan yang tersedia.",
+          "description": "Setiap akun ditampilkan bersama model, alasan tidak tersedia, dan tindakan pemulihan yang tersedia.",
           "noIssues": "Tidak ada masalah akun",
           "unscopedApiKey": "API Key saat ini",
           "poolUnavailable": "Tidak ada akun pool yang tersedia",

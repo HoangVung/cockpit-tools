@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "نتائج الاختبار",
+    "openBrowser": "فتح في المتصفح",
     "error": {
       "stateUnavailable": "حالة المهمة غير متاحة. حاول مجددًا.",
       "accountsRequired": "اختر حسابًا واحدًا على الأقل.",
@@ -77,7 +79,8 @@
     "clearAll": "تنظيف الكل",
     "confirmClearAll": "تنظيف جميع اختبارات Pelican؟",
     "clearAllHelp": "سيتم حذف سجل الاختبارات والملفات المُنشأة نهائيًا ولا يمكن التراجع عن ذلك.",
-    "search": "البحث عن حسابات"
+    "search": "البحث عن حسابات",
+    "viewError": "عرض الخطأ"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2558,7 +2561,16 @@
       "apiPortUrl": "عنوان منفذ API",
       "modelId": "معرّف النموذج",
       "modelIdPlaceholder": "اختر معرّف النموذج",
-      "imageGenerationModel": { "label": "نموذج الصور", "custom": "مخصص", "save": "حفظ النموذج", "placeholder": "أدخل معرّف نموذج مخصص", "description": "يُستخدم مع /v1/images/generations و/v1/images/edits؛ الافتراضي هو gpt-image-2.5.", "required": "أدخل اسم نموذج الصور", "tooLong": "اسم نموذج الصور طويل جدًا", "saveSuccess": "تم تحديث نموذج الصور" },
+      "imageGenerationModel": {
+        "label": "نموذج الصور",
+        "custom": "مخصص",
+        "save": "حفظ النموذج",
+        "placeholder": "أدخل معرّف نموذج مخصص",
+        "description": "يُستخدم مع /v1/images/generations و/v1/images/edits؛ الافتراضي هو gpt-image-2.5.",
+        "required": "أدخل اسم نموذج الصور",
+        "tooLong": "اسم نموذج الصور طويل جدًا",
+        "saveSuccess": "تم تحديث نموذج الصور"
+      },
       "modelIdViewOnly": "عرض فقط",
       "quotaPool": {
         "title": "مجمع الحصة",
@@ -2682,7 +2694,7 @@
         "recoverSuccess": "طُلبت الاستعادة لـ {{count}} حساب",
         "dialog": {
           "title": "مشكلات الحسابات",
-      "description": "تُعرض الحالة لكل حساب مع النموذج وسبب عدم التوفر وإجراء الاستعادة المتاح.",
+          "description": "تُعرض الحالة لكل حساب مع النموذج وسبب عدم التوفر وإجراء الاستعادة المتاح.",
           "noIssues": "لا توجد مشاكل في الحسابات",
           "unscopedApiKey": "مفتاح API الحالي",
           "poolUnavailable": "لا يوجد حساب متاح في المجموعة",

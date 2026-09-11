@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Výsledky testu",
+    "openBrowser": "Otevřít v prohlížeči",
     "error": {
       "stateUnavailable": "Stav úlohy není dostupný. Zkuste to znovu.",
       "accountsRequired": "Vyberte alespoň jeden účet.",
@@ -77,7 +79,8 @@
     "clearAll": "Vymazat vše",
     "confirmClearAll": "Vymazat všechny testy Pelican?",
     "clearAllHelp": "Veškerá historie testů a vygenerované soubory budou trvale smazány. Tuto akci nelze vrátit.",
-    "search": "Hledat účty"
+    "search": "Hledat účty",
+    "viewError": "Zobrazit chybu"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL portu API",
       "modelId": "ID modelu",
       "modelIdPlaceholder": "Vyberte ID modelu",
-      "imageGenerationModel": { "label": "Obrazový model", "custom": "Vlastní", "save": "Uložit model", "placeholder": "Zadejte vlastní ID modelu", "description": "Používá se pro /v1/images/generations a /v1/images/edits; výchozí je gpt-image-2.5.", "required": "Zadejte název obrazového modelu", "tooLong": "Název obrazového modelu je příliš dlouhý", "saveSuccess": "Obrazový model byl aktualizován" },
+      "imageGenerationModel": {
+        "label": "Obrazový model",
+        "custom": "Vlastní",
+        "save": "Uložit model",
+        "placeholder": "Zadejte vlastní ID modelu",
+        "description": "Používá se pro /v1/images/generations a /v1/images/edits; výchozí je gpt-image-2.5.",
+        "required": "Zadejte název obrazového modelu",
+        "tooLong": "Název obrazového modelu je příliš dlouhý",
+        "saveSuccess": "Obrazový model byl aktualizován"
+      },
       "modelIdViewOnly": "Pouze zobrazení",
       "quotaPool": {
         "title": "Fond kvóty",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Obnova vyžádána pro {{count}} účtů",
         "dialog": {
           "title": "Problémy účtů",
-      "description": "Každý účet je zobrazen s modelem, důvodem nedostupnosti a dostupnou akcí obnovení.",
+          "description": "Každý účet je zobrazen s modelem, důvodem nedostupnosti a dostupnou akcí obnovení.",
           "noIssues": "Účty jsou bez problémů",
           "unscopedApiKey": "Aktuální API Key",
           "poolUnavailable": "Ve fondu není dostupný účet",

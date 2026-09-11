@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Testergebnisse",
+    "openBrowser": "Im Browser öffnen",
     "error": {
       "stateUnavailable": "Aufgabenstatus nicht verfügbar. Bitte erneut versuchen.",
       "accountsRequired": "Mindestens ein Konto auswählen.",
@@ -77,7 +79,8 @@
     "clearAll": "Alle löschen",
     "confirmClearAll": "Alle Pelican-Tests löschen?",
     "clearAllHelp": "Der gesamte Testverlauf und erzeugte Dateien werden dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
-    "search": "Konten suchen"
+    "search": "Konten suchen",
+    "viewError": "Fehler anzeigen"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "API-Port-URL",
       "modelId": "Modell-ID",
       "modelIdPlaceholder": "Modell-ID wählen",
-      "imageGenerationModel": { "label": "Bildmodell", "custom": "Benutzerdefiniert", "save": "Modell speichern", "placeholder": "Benutzerdefinierte Modell-ID eingeben", "description": "Für /v1/images/generations und /v1/images/edits; Standard ist gpt-image-2.5.", "required": "Gib einen Namen für das Bildmodell ein", "tooLong": "Der Name des Bildmodells ist zu lang", "saveSuccess": "Bildmodell aktualisiert" },
+      "imageGenerationModel": {
+        "label": "Bildmodell",
+        "custom": "Benutzerdefiniert",
+        "save": "Modell speichern",
+        "placeholder": "Benutzerdefinierte Modell-ID eingeben",
+        "description": "Für /v1/images/generations und /v1/images/edits; Standard ist gpt-image-2.5.",
+        "required": "Gib einen Namen für das Bildmodell ein",
+        "tooLong": "Der Name des Bildmodells ist zu lang",
+        "saveSuccess": "Bildmodell aktualisiert"
+      },
       "modelIdViewOnly": "Nur Ansicht",
       "quotaPool": {
         "title": "Kontingentpool",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Wiederherstellung für {{count}} Konto/Konten angefordert",
         "dialog": {
           "title": "Kontoprobleme",
-      "description": "Jedes Konto wird mit Modell, Grund der Nichtverfügbarkeit und möglicher Wiederherstellung angezeigt.",
+          "description": "Jedes Konto wird mit Modell, Grund der Nichtverfügbarkeit und möglicher Wiederherstellung angezeigt.",
           "noIssues": "Keine Kontoprobleme",
           "unscopedApiKey": "Aktueller API Key",
           "poolUnavailable": "Kein verfügbares Pool-Konto",

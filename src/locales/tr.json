@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Test sonuçları",
+    "openBrowser": "Tarayıcıda aç",
     "error": {
       "stateUnavailable": "Görev durumu kullanılamıyor. Yeniden deneyin.",
       "accountsRequired": "En az bir hesap seçin.",
@@ -77,7 +79,8 @@
     "clearAll": "Tümünü temizle",
     "confirmClearAll": "Tüm Pelican testleri temizlensin mi?",
     "clearAllHelp": "Tüm test geçmişi ve oluşturulan dosyalar kalıcı olarak silinecek. Bu işlem geri alınamaz.",
-    "search": "Hesap ara"
+    "search": "Hesap ara",
+    "viewError": "Hatayı görüntüle"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "API Port URL​",
       "modelId": "Model ID​",
       "modelIdPlaceholder": "Model ID seçin",
-      "imageGenerationModel": { "label": "Görsel modeli", "custom": "Özel", "save": "Modeli kaydet", "placeholder": "Özel model kimliği girin", "description": "/v1/images/generations ve /v1/images/edits için kullanılır; varsayılan gpt-image-2.5.", "required": "Bir görsel modeli adı girin", "tooLong": "Görsel modeli adı çok uzun", "saveSuccess": "Görsel modeli güncellendi" },
+      "imageGenerationModel": {
+        "label": "Görsel modeli",
+        "custom": "Özel",
+        "save": "Modeli kaydet",
+        "placeholder": "Özel model kimliği girin",
+        "description": "/v1/images/generations ve /v1/images/edits için kullanılır; varsayılan gpt-image-2.5.",
+        "required": "Bir görsel modeli adı girin",
+        "tooLong": "Görsel modeli adı çok uzun",
+        "saveSuccess": "Görsel modeli güncellendi"
+      },
       "modelIdViewOnly": "Yalnızca görüntüle",
       "quotaPool": {
         "title": "Kota havuzu",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "{{count}} hesap için kurtarma istendi",
         "dialog": {
           "title": "Hesap Sorunları",
-      "description": "Her hesap model, kullanılamama nedeni ve varsa kurtarma işlemiyle birlikte gösterilir.",
+          "description": "Her hesap model, kullanılamama nedeni ve varsa kurtarma işlemiyle birlikte gösterilir.",
           "noIssues": "Hesaplarda sorun yok",
           "unscopedApiKey": "Geçerli API Key",
           "poolUnavailable": "Havuzda kullanılabilir hesap yok",

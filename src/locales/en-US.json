@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Test results",
+    "openBrowser": "Open in browser",
     "error": {
       "stateUnavailable": "Task state unavailable. Try again.",
       "accountsRequired": "Select at least one account.",
@@ -77,7 +79,8 @@
     "clearAll": "Clear all",
     "confirmClearAll": "Clear all Pelican tests?",
     "clearAllHelp": "All test history and generated files will be permanently deleted. This cannot be undone.",
-    "search": "Search accounts"
+    "search": "Search accounts",
+    "viewError": "View error"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2398,8 +2401,8 @@
       "modelConfigDialogDescription": "Configure visible models, reasoning levels, context windows, and compact limits for each model.",
       "applyModelConfig": "Apply settings",
       "defaultModel": "Default model",
-      "repairCompleted": "Session visibility repair completed"
-      ,"forceRefreshTitle": "Force-refresh Token",
+      "repairCompleted": "Session visibility repair completed",
+      "forceRefreshTitle": "Force-refresh Token",
       "forceRefreshReady": "OAuth tokens can be refreshed manually",
       "forceRefreshDescription": "Use refresh_token to obtain new access_token and id_token values. This may rotate the current refresh token.",
       "forceRefreshUnavailable": "Unavailable for this account type",
@@ -2675,7 +2678,16 @@
       "modelId": "Model ID",
       "modelIdViewOnly": "View only, no switching",
       "modelIdPlaceholder": "Select model ID",
-      "imageGenerationModel": { "label": "Image model", "custom": "Custom", "save": "Save model", "placeholder": "Enter custom model ID", "description": "Used for /v1/images/generations and /v1/images/edits; default is gpt-image-2.5.", "required": "Enter an image model name", "tooLong": "Image model name is too long", "saveSuccess": "Image model updated" },
+      "imageGenerationModel": {
+        "label": "Image model",
+        "custom": "Custom",
+        "save": "Save model",
+        "placeholder": "Enter custom model ID",
+        "description": "Used for /v1/images/generations and /v1/images/edits; default is gpt-image-2.5.",
+        "required": "Enter an image model name",
+        "tooLong": "Image model name is too long",
+        "saveSuccess": "Image model updated"
+      },
       "statusRunning": "Running",
       "statusStopped": "Stopped",
       "statusDisabled": "Disabled",

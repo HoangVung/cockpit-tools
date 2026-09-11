@@ -1,5 +1,7 @@
 {
   "pelican": {
+    "results": "Résultats du test",
+    "openBrowser": "Ouvrir dans le navigateur",
     "error": {
       "stateUnavailable": "État de la tâche indisponible. Réessayez.",
       "accountsRequired": "Sélectionnez au moins un compte.",
@@ -77,7 +79,8 @@
     "clearAll": "Tout nettoyer",
     "confirmClearAll": "Nettoyer tous les tests Pelican ?",
     "clearAllHelp": "Tout l’historique des tests et les fichiers générés seront définitivement supprimés. Cette action est irréversible.",
-    "search": "Rechercher un compte"
+    "search": "Rechercher un compte",
+    "viewError": "Voir l’erreur"
   },
   "common": {
     "quotaRefreshScheduler": {
@@ -2511,7 +2514,16 @@
       "apiPortUrl": "URL du port API",
       "modelId": "ID du modèle",
       "modelIdPlaceholder": "Sélectionner l'ID du modèle",
-      "imageGenerationModel": { "label": "Modèle d’image", "custom": "Personnalisé", "save": "Enregistrer le modèle", "placeholder": "Saisir un ID de modèle personnalisé", "description": "Utilisé pour /v1/images/generations et /v1/images/edits ; la valeur par défaut est gpt-image-2.5.", "required": "Saisissez un nom de modèle d’image", "tooLong": "Le nom du modèle d’image est trop long", "saveSuccess": "Modèle d’image mis à jour" },
+      "imageGenerationModel": {
+        "label": "Modèle d’image",
+        "custom": "Personnalisé",
+        "save": "Enregistrer le modèle",
+        "placeholder": "Saisir un ID de modèle personnalisé",
+        "description": "Utilisé pour /v1/images/generations et /v1/images/edits ; la valeur par défaut est gpt-image-2.5.",
+        "required": "Saisissez un nom de modèle d’image",
+        "tooLong": "Le nom du modèle d’image est trop long",
+        "saveSuccess": "Modèle d’image mis à jour"
+      },
       "modelIdViewOnly": "Lecture seule",
       "quotaPool": {
         "title": "Pool de quotas",
@@ -2635,7 +2647,7 @@
         "recoverSuccess": "Rétablissement demandé pour {{count}} compte(s)",
         "dialog": {
           "title": "Problèmes de comptes",
-      "description": "Chaque compte affiche son modèle, la raison de son indisponibilité et l’action de récupération disponible.",
+          "description": "Chaque compte affiche son modèle, la raison de son indisponibilité et l’action de récupération disponible.",
           "noIssues": "Aucun problème de comptes",
           "unscopedApiKey": "API Key actuelle",
           "poolUnavailable": "Aucun compte disponible dans le pool",
