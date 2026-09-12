@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SingleSelectDropdown } from "../SingleSelectDropdown";
 
@@ -5,6 +6,8 @@ interface CodexModelContextWindowTableProps {
   models: string[];
   drafts: Record<string, string>;
   onChange: (model: string, value: string) => void;
+  /** 逐模型上下文预设；不传或 false 则不渲染该列（统一走启动预览的实例级上下文管理）。 */
+  showContextWindow?: boolean;
   /** 逐模型识图开关；不传则不渲染该列。 */
   visionStates?: Record<string, boolean>;
   onVisionChange?: (model: string, value: boolean) => void;
@@ -29,12 +32,16 @@ export function CodexModelContextWindowTable({
   models,
   drafts,
   onChange,
+  showContextWindow = true,
   visionStates,
   onVisionChange,
   disabled = false,
 }: CodexModelContextWindowTableProps) {
   const { t } = useTranslation();
+  // 「自定义」是显式选择：空值时无法从值本身推断，需要单独记一份，否则会立刻回落到「跟随官方」。
+  const [customModels, setCustomModels] = useState<Record<string, boolean>>({});
   if (models.length === 0) return null;
+  const showContext = showContextWindow;
   const showVision = typeof onVisionChange === "function";
   const visionLabel = t("codex.modelProviders.vision.allModels", "图片输入");
   const presetOptions = [
@@ -51,62 +58,84 @@ export function CodexModelContextWindowTable({
     <div
       className={`api-model-context-window-panel ${
         showVision ? "with-vision" : ""
-      }`}
+      } ${showContext ? "" : "no-context"}`}
     >
       <div className="api-model-context-window-head">
         <span>{t("codex.api.modelCatalog.modelColumn", "模型")}</span>
-        <span>
-          {t("codex.api.modelCatalog.contextWindow", "上下文")}
-          <em className="api-model-context-window-optional">
-            {t("codex.api.modelCatalog.contextWindowOptional", "可选")}
-          </em>
-        </span>
+        {showContext ? (
+          <span>
+            {t("codex.api.modelCatalog.contextWindow", "上下文")}
+            <em className="api-model-context-window-optional">
+              {t("codex.api.modelCatalog.contextWindowOptional", "可选")}
+            </em>
+          </span>
+        ) : null}
         {showVision ? <span>{visionLabel}</span> : null}
       </div>
       <div className="api-model-context-window-rows">
         {models.map((model) => {
           const value = drafts[model] ?? "";
-          const preset = resolveContextPreset(value);
+          const preset = customModels[model] ? "custom" : resolveContextPreset(value);
           return (
             <div key={model} className="api-model-context-window-row">
               <span title={model}>{model}</span>
-              <div className="api-model-context-window-preset">
-                <SingleSelectDropdown
-                  value={preset}
-                  options={presetOptions}
-                  onChange={(next) => {
-                    if (next === "official") return onChange(model, "");
-                    if (next === "preset_516k") {
-                      return onChange(model, CONTEXT_PRESETS.preset_516k);
-                    }
-                    if (next === "preset_1m") {
-                      return onChange(model, CONTEXT_PRESETS.preset_1m);
-                    }
-                    return onChange(model, value.trim());
-                  }}
-                  className="api-model-context-window-select"
-                  disabled={disabled}
-                  ariaLabel={`${model} ${t(
-                    "codex.api.modelCatalog.contextWindow",
-                    "上下文",
-                  )}`}
-                  menuPlacement="up"
-                />
-                {preset === "custom" ? (
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="form-input"
-                    value={value}
-                    onChange={(event) => onChange(model, event.target.value)}
+              {showContext ? (
+                <div className="api-model-context-window-preset">
+                  <SingleSelectDropdown
+                    value={preset}
+                    options={presetOptions}
+                    onChange={(next) => {
+                      if (next === "official") {
+                        setCustomModels((current) => ({
+                          ...current,
+                          [model]: false,
+                        }));
+                        return onChange(model, "");
+                      }
+                      if (next === "preset_516k") {
+                        setCustomModels((current) => ({
+                          ...current,
+                          [model]: false,
+                        }));
+                        return onChange(model, CONTEXT_PRESETS.preset_516k);
+                      }
+                      if (next === "preset_1m") {
+                        setCustomModels((current) => ({
+                          ...current,
+                          [model]: false,
+                        }));
+                        return onChange(model, CONTEXT_PRESETS.preset_1m);
+                      }
+                      setCustomModels((current) => ({
+                        ...current,
+                        [model]: true,
+                      }));
+                      return onChange(model, value.trim());
+                    }}
+                    className="api-model-context-window-select"
                     disabled={disabled}
-                    aria-label={`${model} ${t(
+                    ariaLabel={`${model} ${t(
                       "codex.api.modelCatalog.contextWindow",
                       "上下文",
                     )}`}
+                    menuPlacement="up"
                   />
-                ) : null}
-              </div>
+                  {preset === "custom" ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="form-input"
+                      value={value}
+                      onChange={(event) => onChange(model, event.target.value)}
+                      disabled={disabled}
+                      aria-label={`${model} ${t(
+                        "codex.api.modelCatalog.contextWindow",
+                        "上下文",
+                      )}`}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
               {showVision ? (
                 <label className="api-model-vision-toggle">
                   <input

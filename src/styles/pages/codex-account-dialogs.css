@@ -1,6 +1,8 @@
 /* Codex 样式分片：添加/导入/编辑弹框、表格和暗色适配。按原顺序由 codex.css 聚合。 */
 /* 通用 modal-content 样式 */
-.modal-content {
+/* 基类用 :where() 降到零优先级：组件自己的弹框类永远能覆盖这里的默认值，
+   不再依赖打包后的 CSS 加载顺序。 */
+:where(.modal-content) {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -1339,6 +1341,12 @@
 .api-model-context-window-panel.with-vision .api-model-context-window-head,
 .api-model-context-window-panel.with-vision .api-model-context-window-row {
   grid-template-columns: minmax(0, 1fr) minmax(108px, 140px) 46px;
+}
+
+/* 只保留逐模型识图列时（上下文统一走启动预览的实例级管理）。 */
+.api-model-context-window-panel.no-context .api-model-context-window-head,
+.api-model-context-window-panel.no-context .api-model-context-window-row {
+  grid-template-columns: minmax(0, 1fr) 46px;
 }
 
 .api-model-vision-toggle {

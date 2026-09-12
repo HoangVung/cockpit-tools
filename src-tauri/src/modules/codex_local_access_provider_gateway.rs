@@ -925,6 +925,10 @@ fn apply_provider_gateway_model_slots(
             alias: slot.client_model,
             fork: false,
         }));
+    // 这些别名只用于把对话请求改写到 API Key 供应商（客户端模型名 ↔ 上游模型名），
+    // 不能写进 sidecar 的 oauth-model-alias：否则经 ChatGPT 账号执行的请求（例如生图转发
+    // 用的 gpt-5.5 基础模型）会被改写成供应商模型名，被 ChatGPT 后端拒绝。
+    collection.suppress_oauth_model_alias = true;
 }
 
 fn provider_gateway_wire_api_for_account(account: &CodexAccount) -> String {
@@ -1209,6 +1213,36 @@ fn provider_gateway_bound_oauth_account_id_for_account(account: &CodexAccount) -
     normalize_optional_account_ref(account.bound_oauth_account_id.as_deref())
 }
 
+/// 生图转发账号池：只接受仍然存在的 OAuth 账号（带 refresh_token，sidecar 自行续期）。
+pub(crate) fn image_generation_accounts_for_account(
+    account: &CodexAccount,
+) -> Vec<CodexAccount> {
+    if !account.is_api_key_auth() {
+        return Vec::new();
+    }
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+    for raw_id in &account.api_image_generation_account_ids {
+        let Some(account_id) = normalize_optional_account_ref(Some(raw_id.as_str())) else {
+            continue;
+        };
+        if account_id == account.id || !seen.insert(account_id.clone()) {
+            continue;
+        }
+        let Some(candidate) = codex_account::load_account(&account_id) else {
+            continue;
+        };
+        if candidate.is_api_key_auth()
+            || candidate.is_agent_identity_auth()
+            || !codex_account::account_has_refresh_token(&candidate)
+        {
+            continue;
+        }
+        resolved.push(candidate);
+    }
+    resolved
+}
+
 fn normalize_mixed_model_namespace(namespace: &str) -> Result<String, String> {
     let namespace = namespace.trim().to_ascii_lowercase();
     if namespace == "__provider_gateway__" {
@@ -1436,6 +1470,25 @@ fn build_provider_gateway_collection_for_profile(
     collection.api_keys.clear();
     collection.bound_oauth_account_id =
         provider_gateway_bound_oauth_account_id_for_account(account);
+    // 生图转发：对话账号自身不承接生图，生图请求只落到这里选定的 OAuth 账号。
+    let image_accounts = image_generation_accounts_for_account(account);
+    collection.image_generation_account_ids = image_accounts
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    collection.image_generation_account_policies.clear();
+    if !collection.image_generation_account_ids.is_empty() {
+        collection.image_generation_account_policies.insert(
+            account.id.clone(),
+            CodexLocalAccessImageGenerationPolicy::Disabled,
+        );
+        for image_account in &image_accounts {
+            collection.image_generation_account_policies.insert(
+                image_account.id.clone(),
+                CodexLocalAccessImageGenerationPolicy::Enabled,
+            );
+        }
+    }
 
     if !is_provider_gateway_eligible_account(account) {
         return Err("该供应商账号不符合本地网关使用条件".to_string());
@@ -2859,12 +2912,23 @@ pub async fn ensure_provider_gateway_for_dir(
     let default_service_tier =
         crate::modules::codex_speed::get_app_speed_config_for_dir(profile_dir)
             .map(|config| codex_app_speed_service_tier(&config.speed))?;
+    // 生图转发账号需要把凭据写进实例 sidecar，否则网关手里只有 API Key 上游。
+    let image_accounts = image_generation_accounts_for_account(&account);
+    let mut account_overrides: HashMap<String, CodexAccount> = HashMap::new();
+    account_overrides.insert(account.id.clone(), account.clone());
+    for image_account in &image_accounts {
+        account_overrides.insert(image_account.id.clone(), image_account.clone());
+    }
+    let runtime_oauth_account_ids = image_accounts
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
     let launch_config = prepare_sidecar_launch_config_in_dir(
         &collection,
         sidecar_dir,
         HashMap::new(),
         default_service_tier,
-        HashMap::new(),
+        account_overrides,
     )
     .await?;
     if probe_sidecar_ready_once(&collection, Duration::from_millis(250))
@@ -2894,7 +2958,7 @@ pub async fn ensure_provider_gateway_for_dir(
             sidecar_child: Some(child),
             sidecar_dir: Some(runtime_sidecar_dir),
             collection: Some(collection),
-            oauth_account_ids: Vec::new(),
+            oauth_account_ids: runtime_oauth_account_ids,
         },
     );
     Ok(())

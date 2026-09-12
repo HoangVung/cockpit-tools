@@ -7,6 +7,26 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.50] - 2026-09-13
+
+### Added
+
+- **DeepSeek can bind GPT accounts for image generation**: enable it in the launch preview and pick GPT accounts, and image requests from the built-in Codex image tool run on those accounts while the conversation stays on DeepSeek.
+- **Model providers gain the Codex launch preview**: starting a model provider now opens the same launch preview as the account overview (account, provider, models and usage, context management, and more) and binds the instance on confirm. DeepSeek picks its start mode there (gateway list / CDP injection / official direct).
+- **Context management moves into the launch preview**: the Add account, Edit API Key, and model provider edit dialogs no longer expose per-model context; it is configured per instance in the launch preview.
+- **DeepSeek auto-compaction fallback**: switching to DeepSeek writes a local fallback compaction config and switching away restores the previous values, leaving other accounts untouched.
+- **Sponsor route changes are applied automatically**: when a sponsor's base URL changes, saved providers and accounts are rewritten to the new address (APIKEY.FUN now serves apikey.fan).
+- **Per-account concurrency for the Codex API service**: limit how many sessions one account can run at once; full accounts fail over to idle ones and a timed-out wait returns a readable reason.
+
+### Changed
+
+- **More stable dialog sizing**: dialog sizes no longer depend on the CSS bundle order, and tall dialogs scroll inside the body so the title and action buttons stay reachable.
+- **Pelican testing matches the local API service**: requests use the same client fingerprint as the local API service, reducing the chance of upstream risk-control flags.
+
+### Fixed
+
+- **Fixed image requests being rewritten to the provider model in the instance gateway**: image requests executed by ChatGPT accounts are no longer renamed to the provider model and rejected upstream.
+
 ## [1.3.49] - 2026-09-12
 
 ### Changed

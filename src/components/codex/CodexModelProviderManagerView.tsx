@@ -44,7 +44,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
     closeBatchTestModal,
     closeModal,
     currentEditingProvider,
-    deepSeekStart,
+    providerLaunchDialog,
     displayInstances,
     draggedProviderCustomSortId,
     editingApiKey,
@@ -1892,6 +1892,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
                     <CodexModelContextWindowTable
                       models={parseModelCatalogText(form.modelCatalogText)}
                       drafts={form.modelContextWindowsDraft}
+                      showContextWindow={false}
                       onChange={(model, value) =>
                         mutateForm({
                           modelContextWindowsDraft: {
@@ -3082,7 +3083,7 @@ export function CodexModelProviderManagerView(props: CodexModelProviderManagerVi
           />
         );
       })()}
-      {deepSeekStart.modal}
+      {providerLaunchDialog}
     </div>
   );
 }

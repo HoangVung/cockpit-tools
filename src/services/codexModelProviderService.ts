@@ -16,6 +16,7 @@ import {
 import {
   APIKEY_FUN_DEFAULT_MODEL_CATALOG,
   isApiKeyFunProviderBaseUrl,
+  normalizeApiKeyFunProviderBaseUrl,
 } from '../utils/apikeyFunLinks';
 import {
   queryModelProviderUsage,
@@ -193,11 +194,20 @@ function normalizeIntegrationType(value: unknown): 'sub2api' | 'new_api' | undef
   return value === 'sub2api' || value === 'new_api' ? value : undefined;
 }
 
-function migrateApiKeyFunProviderWireApi(
+function migrateApiKeyFunProvider(
   providers: CodexModelProvider[],
 ): { providers: CodexModelProvider[]; changed: boolean } {
   let changed = false;
   const next = providers.map((provider) => {
+    const baseUrl = normalizeApiKeyFunProviderBaseUrl(provider.baseUrl);
+    if (baseUrl !== provider.baseUrl) {
+      changed = true;
+      provider = {
+        ...provider,
+        baseUrl,
+        updatedAt: Date.now(),
+      };
+    }
     if (
       isApiKeyFunProviderBaseUrl(provider.baseUrl) &&
       provider.wireApi === 'chat_completions'
@@ -488,7 +498,7 @@ async function ensureProvidersLoaded(): Promise<CodexModelProvider[]> {
     }
     return true;
   });
-  const migration = migrateApiKeyFunProviderWireApi(loaded);
+  const migration = migrateApiKeyFunProvider(loaded);
   loaded = migration.providers;
   let migratedDeepSeek = false;
   for (const provider of loaded) {

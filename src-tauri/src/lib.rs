@@ -828,6 +828,7 @@ pub fn run() {
             commands::announcement::announcement_force_refresh_top_right_ad,
             commands::announcement::announcement_get_sponsor_module,
             commands::announcement::announcement_force_refresh_sponsor_module,
+            commands::announcement::announcement_sync_sponsor_routes,
             commands::remote_config::remote_config_get_state,
             commands::remote_config::remote_config_force_refresh,
             // Group Commands
