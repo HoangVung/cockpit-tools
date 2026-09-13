@@ -2056,6 +2056,18 @@
     "other_group": "Altri modelli"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Questa chiave API non appartiene all'account Ainipy connesso.",
+      "balance": "Saldo (token)",
+      "today": "Usato oggi (token)",
+      "total": "Totale usato (token)",
+      "waiting": "In attesa dell'accesso ad Ainipy…",
+      "connect": "Collega sito Ainipy",
+      "hint": "Accedi all'account Ainipy corrispondente a questa scheda. Effettua nuovamente l'accesso dopo aver chiuso l'app.",
+      "cancelled": "Accesso ad Ainipy annullato.",
+      "timeout": "Accesso scaduto. Riprova.",
+      "failed": "Impossibile sincronizzare Ainipy. Riprova."
+    },
     "teamHistory": {
       "title": "Quota Team precedente (istantanea locale)",
       "unknown": "Nessun orario di ripristino precedente",

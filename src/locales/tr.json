@@ -2056,6 +2056,18 @@
     "other_group": "Diğer modeller"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Bu API anahtarı oturum açmış Ainipy hesabına ait değil.",
+      "balance": "Bakiye (jeton)",
+      "today": "Bugün kullanılan (jeton)",
+      "total": "Toplam kullanılan (jeton)",
+      "waiting": "Ainipy girişi bekleniyor…",
+      "connect": "Ainipy web sitesine bağlan",
+      "hint": "Bu kart için ilgili Ainipy hesabına giriş yapın. Uygulama kapatıldıktan sonra tekrar giriş yapılması gerekir.",
+      "cancelled": "Ainipy girişi iptal edildi.",
+      "timeout": "Giriş zaman aşımına uğradı. Lütfen tekrar deneyin.",
+      "failed": "Ainipy senkronize edilemedi. Lütfen tekrar deneyin."
+    },
     "teamHistory": {
       "title": "Önceki Team kotası (yerel anlık görüntü)",
       "unknown": "Önceki sıfırlama zamanı yok",

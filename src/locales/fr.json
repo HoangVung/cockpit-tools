@@ -2056,6 +2056,18 @@
     "other_group": "Autres modèles"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Cette clé API n'appartient pas au compte Ainipy connecté.",
+      "balance": "Solde (jetons)",
+      "today": "Utilisé aujourd'hui (jetons)",
+      "total": "Total utilisé (jetons)",
+      "waiting": "En attente de connexion à Ainipy…",
+      "connect": "Connecter le site Ainipy",
+      "hint": "Connectez-vous au compte Ainipy correspondant à cette carte. Reconnectez-vous après avoir fermé l'application.",
+      "cancelled": "Connexion à Ainipy annulée.",
+      "timeout": "Délai d'attente dépassé. Veuillez réessayer.",
+      "failed": "Impossible de synchroniser Ainipy. Veuillez réessayer."
+    },
     "teamHistory": {
       "title": "Quota Team précédent (instantané local)",
       "unknown": "Aucune heure de réinitialisation antérieure",

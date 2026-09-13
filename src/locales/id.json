@@ -2103,6 +2103,18 @@
     "other_group": "Model Lainnya"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Kunci API ini bukan milik akun Ainipy yang sedang masuk.",
+      "balance": "Saldo (token)",
+      "today": "Digunakan hari ini (token)",
+      "total": "Total digunakan (token)",
+      "waiting": "Menunggu login Ainipy…",
+      "connect": "Hubungkan situs Ainipy",
+      "hint": "Masuk ke akun Ainipy untuk kartu ini. Masuk kembali setelah menutup aplikasi.",
+      "cancelled": "Login Ainipy dibatalkan.",
+      "timeout": "Waktu login habis. Silakan coba lagi.",
+      "failed": "Gagal menyinkronkan Ainipy. Silakan coba lagi."
+    },
     "teamHistory": {
       "title": "Kuota Team sebelumnya (snapshot lokal)",
       "unknown": "Tidak ada waktu reset sebelumnya",

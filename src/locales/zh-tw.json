@@ -2056,6 +2056,18 @@
     "other_group": "其他模型"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "此 API 金鑰不屬於已登入的 Ainipy 帳號。",
+      "balance": "餘額 (tokens)",
+      "today": "今日用量 (tokens)",
+      "total": "總用量 (tokens)",
+      "waiting": "正在等待 Ainipy 登入…",
+      "connect": "連接 Ainipy 網站",
+      "hint": "請登入此卡對應的 Ainipy 帳號。關閉應用程式後需重新登入。",
+      "cancelled": "已取消 Ainipy 登入。",
+      "timeout": "登入逾時，請重試。",
+      "failed": "無法同步 Ainipy，請重試。"
+    },
     "teamHistory": {
       "title": "原 Team 席位額度（本機快照）",
       "unknown": "沒有歷史重設時間",

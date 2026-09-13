@@ -2056,6 +2056,18 @@
     "other_group": "Inne modele"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Ten klucz API nie należy do zalogowanego konta Ainipy.",
+      "balance": "Saldo (tokeny)",
+      "today": "Wykorzystano dzisiaj (tokeny)",
+      "total": "Łącznie wykorzystano (tokeny)",
+      "waiting": "Oczekiwanie na logowanie do Ainipy…",
+      "connect": "Połącz stronę Ainipy",
+      "hint": "Zaloguj się na konto Ainipy dla tej karty. Zaloguj się ponownie po zamknięciu aplikacji.",
+      "cancelled": "Logowanie do Ainipy anulowane.",
+      "timeout": "Przekroczono limit czasu logowania. Spróbuj ponownie.",
+      "failed": "Nie można zsynchronizować Ainipy. Spróbuj ponownie."
+    },
     "teamHistory": {
       "title": "Poprzedni limit Team (lokalna migawka)",
       "unknown": "Brak poprzedniego czasu resetu",

@@ -2056,6 +2056,18 @@
     "other_group": "Andere Modelle"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Dieser API-Schlüssel gehört nicht zum angemeldeten Ainipy-Konto.",
+      "balance": "Guthaben (Tokens)",
+      "today": "Heute verbraucht (Tokens)",
+      "total": "Insgesamt verbraucht (Tokens)",
+      "waiting": "Warte auf Ainipy-Anmeldung…",
+      "connect": "Ainipy-Website verbinden",
+      "hint": "Melden Sie sich mit dem Ainipy-Konto für diese Karte an. Nach dem Schließen der App ist eine erneute Anmeldung erforderlich.",
+      "cancelled": "Ainipy-Anmeldung abgebrochen.",
+      "timeout": "Zeitüberschreitung bei der Anmeldung. Bitte versuchen Sie es erneut.",
+      "failed": "Ainipy konnte nicht synchronisiert werden. Bitte versuchen Sie es erneut."
+    },
     "teamHistory": {
       "title": "Früheres Team-Kontingent (lokaler Stand)",
       "unknown": "Keine frühere Rücksetzzeit verfügbar",

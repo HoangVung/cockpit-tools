@@ -2056,6 +2056,18 @@
     "other_group": "기타 모델"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "이 API 키는 로그인된 Ainipy 계정에 속하지 않습니다.",
+      "balance": "잔액 (토큰)",
+      "today": "오늘 사용량 (토큰)",
+      "total": "총 사용량 (토큰)",
+      "waiting": "Ainipy 로그인 대기 중…",
+      "connect": "Ainipy 웹사이트 연결",
+      "hint": "이 카드에 해당하는 Ainipy 계정으로 로그인하세요. 앱을 닫은 후에는 다시 로그인해야 합니다.",
+      "cancelled": "Ainipy 로그인이 취소되었습니다.",
+      "timeout": "로그인 시간이 초과되었습니다. 다시 시도해 주세요.",
+      "failed": "Ainipy를 동기화할 수 없습니다. 다시 시도해 주세요."
+    },
     "teamHistory": {
       "title": "이전 Team 할당량(로컬 스냅샷)",
       "unknown": "이전 재설정 시간이 없습니다",

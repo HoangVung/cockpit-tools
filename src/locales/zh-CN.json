@@ -2255,6 +2255,18 @@
     "other_group": "其他模型"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "该 API 密钥不属于已登录的 Ainipy 账号。",
+      "balance": "余额 (tokens)",
+      "today": "今日用量 (tokens)",
+      "total": "总用量 (tokens)",
+      "waiting": "正在等待 Ainipy 登录…",
+      "connect": "连接 Ainipy 网站",
+      "hint": "请登录此卡对应的 Ainipy 账号。关闭应用后需重新登录。",
+      "cancelled": "已取消 Ainipy 登录。",
+      "timeout": "登录超时，请重试。",
+      "failed": "无法同步 Ainipy，请重试。"
+    },
     "teamHistory": {
       "title": "原 Team 席位额度（本地快照）",
       "unknown": "暂无历史重置时间",

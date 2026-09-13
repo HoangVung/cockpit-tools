@@ -2056,6 +2056,18 @@
     "other_group": "Ostatní modely"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "Tento klíč API nepatří k přihlášenému účtu Ainipy.",
+      "balance": "Zůstatek (tokeny)",
+      "today": "Dnes využito (tokeny)",
+      "total": "Celkem využito (tokeny)",
+      "waiting": "Čekání na přihlášení k Ainipy…",
+      "connect": "Připojit web Ainipy",
+      "hint": "Přihlaste se k účtu Ainipy pro tuto kartu. Po zavření aplikace je nutné se znovu přihlásit.",
+      "cancelled": "Přihlášení k Ainipy bylo zrušeno.",
+      "timeout": "Časový limit přihlášení vypršel. Zkuste to prosím znovu.",
+      "failed": "Nepodařilo se synchronizovat Ainipy. Zkuste to prosím znovu."
+    },
     "teamHistory": {
       "title": "Předchozí kvóta Team (místní snímek)",
       "unknown": "Historický čas obnovení není k dispozici",
