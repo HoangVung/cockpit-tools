@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "API 서비스를 중지하지 못했습니다. 먼저 비활성화한 뒤 다시 시도하세요.",
     "stopApiServiceFailedContinue": "API 서비스가 정상적으로 종료되지 않았습니다. 계속 재시작합니다...",
     "skipThisVersion": "이 버전 건너뛰기",
-    "skipFailed": "이 업데이트를 건너뛰지 못했습니다: {{error}}"
+    "skipFailed": "이 업데이트를 건너뛰지 못했습니다: {{error}}",
+    "syncAndBuild": "동기화 및 빌드 실행 (my-custom)",
+    "syncing": "동기화 및 테스트 진행 중...",
+    "syncSuccess": "동기화 완료 및 GitHub에서 빌드가 성공적으로 시작되었습니다!",
+    "openGitHubActions": "GitHub Actions 열기"
   },
   "closeDialog": {
     "title": "창 닫기",

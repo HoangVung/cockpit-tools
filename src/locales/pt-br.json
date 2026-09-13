@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "Não foi possível parar o serviço de API. Desative-o primeiro e tente novamente.",
     "stopApiServiceFailedContinue": "O serviço de API não foi encerrado corretamente. Reiniciando mesmo assim...",
     "skipThisVersion": "Ignorar esta versão",
-    "skipFailed": "Não foi possível ignorar esta atualização: {{error}}"
+    "skipFailed": "Não foi possível ignorar esta atualização: {{error}}",
+    "syncAndBuild": "Sincronizar e compilar (my-custom)",
+    "syncing": "Sincronizando e testando...",
+    "syncSuccess": "Sincronizado e compilação acionada com sucesso no GitHub!",
+    "openGitHubActions": "Abrir GitHub Actions"
   },
   "closeDialog": {
     "title": "Fechar janela",

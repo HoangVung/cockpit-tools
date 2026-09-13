@@ -2232,7 +2232,11 @@
     "restartRequiredAfterInstall": "更新已安装，请手动重启应用完成切换。",
     "stoppingApiService": "正在关闭 API 服务...",
     "stopApiServiceFailed": "无法关闭 API 服务，请先停用后重试。",
-    "stopApiServiceFailedContinue": "API 服务未正常关闭，将继续重启..."
+    "stopApiServiceFailedContinue": "API 服务未正常关闭，将继续重启...",
+    "syncAndBuild": "同步并触发构建 (my-custom)",
+    "syncing": "正在同步与测试...",
+    "syncSuccess": "已成功同步并在 GitHub 上触发构建！",
+    "openGitHubActions": "打开 GitHub Actions"
   },
   "closeDialog": {
     "title": "关闭窗口",

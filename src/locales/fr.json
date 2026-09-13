@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "Impossible d’arrêter le service API. Désactivez-le d’abord, puis réessayez.",
     "stopApiServiceFailedContinue": "Le service API ne s’est pas arrêté correctement. Redémarrage quand même...",
     "skipThisVersion": "Ignorer cette version",
-    "skipFailed": "Impossible d'ignorer cette mise à jour : {{error}}"
+    "skipFailed": "Impossible d'ignorer cette mise à jour : {{error}}",
+    "syncAndBuild": "Synchroniser et compiler (my-custom)",
+    "syncing": "Synchronisation et tests en cours...",
+    "syncSuccess": "Synchronisé et build déclenché avec succès sur GitHub !",
+    "openGitHubActions": "Ouvrir GitHub Actions"
   },
   "closeDialog": {
     "title": "Fermer la fenêtre",

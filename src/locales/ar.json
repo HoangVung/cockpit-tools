@@ -2080,7 +2080,11 @@
     "stopApiServiceFailed": "تعذّر إيقاف خدمة API. عطّلها أولًا ثم أعد المحاولة.",
     "stopApiServiceFailedContinue": "لم تتوقف خدمة API بشكل صحيح. ستتم متابعة إعادة التشغيل...",
     "skipThisVersion": "تخطي هذا الإصدار",
-    "skipFailed": "تعذر تخطي هذا التحديث: {{error}}"
+    "skipFailed": "تعذر تخطي هذا التحديث: {{error}}",
+    "syncAndBuild": "مزامنة وبدء البناء (my-custom)",
+    "syncing": "جارٍ المزامنة والاختبار...",
+    "syncSuccess": "تمت المزامنة وبدء البناء بنجاح على GitHub!",
+    "openGitHubActions": "فتح GitHub Actions"
   },
   "closeDialog": {
     "title": "إغلاق النافذة",

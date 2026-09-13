@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "Не удалось остановить службу API. Сначала отключите её и повторите попытку.",
     "stopApiServiceFailedContinue": "Служба API не остановилась корректно. Перезапуск продолжается...",
     "skipThisVersion": "Пропустить эту версию",
-    "skipFailed": "Не удалось пропустить это обновление: {{error}}"
+    "skipFailed": "Не удалось пропустить это обновление: {{error}}",
+    "syncAndBuild": "Синхронизировать и собрать (my-custom)",
+    "syncing": "Синхронизация и тестирование...",
+    "syncSuccess": "Успешно синхронизировано, сборка на GitHub запущена!",
+    "openGitHubActions": "Открыть GitHub Actions"
   },
   "closeDialog": {
     "title": "Закрыть окно",

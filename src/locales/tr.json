@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "API hizmeti durdurulamadı. Önce devre dışı bırakıp tekrar deneyin.",
     "stopApiServiceFailedContinue": "API hizmeti düzgün kapanmadı. Yine de yeniden başlatılıyor...",
     "skipThisVersion": "Bu sürümü atla",
-    "skipFailed": "Bu güncelleme atlanamadı: {{error}}"
+    "skipFailed": "Bu güncelleme atlanamadı: {{error}}",
+    "syncAndBuild": "Senkronize Et ve Derle (my-custom)",
+    "syncing": "Senkronize ediliyor ve test ediliyor...",
+    "syncSuccess": "Başarıyla senkronize edildi ve derleme GitHub'da tetiklendi!",
+    "openGitHubActions": "GitHub Actions'ı Aç"
   },
   "closeDialog": {
     "title": "Pencereyi kapat",

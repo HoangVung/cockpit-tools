@@ -819,6 +819,7 @@ pub fn run() {
             commands::update::update_log,
             commands::update::get_update_runtime_info,
             commands::update::install_linux_update,
+            commands::custom_updater::sync_and_trigger_custom_build,
             // Announcement Commands
             commands::announcement::announcement_get_state,
             commands::announcement::announcement_mark_as_read,

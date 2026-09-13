@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "Impossibile arrestare il servizio API. Disattivalo prima e riprova.",
     "stopApiServiceFailedContinue": "Il servizio API non si è chiuso correttamente. Riavvio comunque...",
     "skipThisVersion": "Salta questa versione",
-    "skipFailed": "Impossibile saltare questo aggiornamento: {{error}}"
+    "skipFailed": "Impossibile saltare questo aggiornamento: {{error}}",
+    "syncAndBuild": "Sincronizza e compila (my-custom)",
+    "syncing": "Sincronizzazione e test in corso...",
+    "syncSuccess": "Sincronizzazione completata e build avviata con successo su GitHub!",
+    "openGitHubActions": "Apri GitHub Actions"
   },
   "closeDialog": {
     "title": "Chiudi finestra",

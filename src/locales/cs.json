@@ -2033,7 +2033,11 @@
     "stopApiServiceFailed": "Službu API se nepodařilo zastavit. Nejprve ji zakažte a zkuste to znovu.",
     "stopApiServiceFailedContinue": "Služba API se neukončila korektně. Přesto pokračuje restart...",
     "skipThisVersion": "Přeskočit tuto verzi",
-    "skipFailed": "Tuto aktualizaci se nepodařilo přeskočit: {{error}}"
+    "skipFailed": "Tuto aktualizaci se nepodařilo přeskočit: {{error}}",
+    "syncAndBuild": "Synchronizovat a sestavit (my-custom)",
+    "syncing": "Synchronizace a testování...",
+    "syncSuccess": "Synchronizace proběhla úspěšně a sestavení bylo spuštěno na GitHubu!",
+    "openGitHubActions": "Otevřít GitHub Actions"
   },
   "closeDialog": {
     "title": "Zavřít okno",
