@@ -2056,6 +2056,18 @@
     "other_group": "Mô hình khác"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "API key của thẻ không thuộc tài khoản Ainipy vừa đăng nhập.",
+      "balance": "Số dư (token)",
+      "today": "Dùng hôm nay (token)",
+      "total": "Tổng đã dùng (token)",
+      "waiting": "Đang chờ đăng nhập Ainipy…",
+      "connect": "Đăng nhập web Ainipy",
+      "hint": "Đăng nhập tài khoản Ainipy tương ứng với thẻ này. Cần đăng nhập lại sau khi đóng ứng dụng.",
+      "cancelled": "Đã hủy đăng nhập Ainipy.",
+      "timeout": "Đăng nhập quá thời gian chờ. Vui lòng thử lại.",
+      "failed": "Chưa thể đồng bộ Ainipy. Vui lòng thử lại."
+    },
     "teamHistory": {
       "title": "Hạn mức Team trước đây (ảnh chụp cục bộ)",
       "unknown": "Không có thời gian đặt lại trước đây",

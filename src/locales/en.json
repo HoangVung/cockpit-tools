@@ -2255,6 +2255,18 @@
     "other_group": "Other Models"
   },
   "codex": {
+    "ainipy": {
+      "mismatch": "This API key does not belong to the signed-in Ainipy account.",
+      "balance": "Balance (tokens)",
+      "today": "Used today (tokens)",
+      "total": "Total used (tokens)",
+      "waiting": "Waiting for Ainipy login…",
+      "connect": "Connect Ainipy website",
+      "hint": "Sign in to the Ainipy account for this card. Sign in again after closing the app.",
+      "cancelled": "Ainipy login cancelled.",
+      "timeout": "Login timed out. Please try again.",
+      "failed": "Unable to sync Ainipy. Please try again."
+    },
     "teamHistory": {
       "title": "Previous Team quota (local snapshot)",
       "unknown": "No historical reset time",

@@ -17,7 +17,7 @@ import {
   DEFAULT_CODEX_INSTANCE_ID,
   type CodexLaunchPreviewLaunchOptions,
 } from "../components/codex/CodexLaunchPreviewModal";
-import { isDeepSeekAccount, isCodexTokenPlanAccount, resolveDeepSeekBindAccountId } from "../utils/codexDeepSeekAccess";
+import { isAinipyAccount, isDeepSeekAccount, isCodexTokenPlanAccount, resolveDeepSeekBindAccountId } from "../utils/codexDeepSeekAccess";
 import { contextWindowDraftsFromRecord, parseContextWindowDrafts } from "../utils/codexModelContextWindows";
 import type { CodexAccount } from "../types/codex";
 import { CODEX_API_SERVICE_BIND_ID, type InstanceProfile } from "../types/instance";
@@ -2985,6 +2985,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
         if (
           isCodexChatCompletionsApiKeyAccount(account) &&
           !isDeepSeekAccount(account) &&
+          !isAinipyAccount(account) &&
           !isCodexTokenPlanAccount(account)
         ) {
           return;
@@ -3058,6 +3059,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
           isCodexNewApiAccount(account) ||
           (isCodexChatCompletionsApiKeyAccount(account) &&
             !isDeepSeekAccount(account) &&
+            !isAinipyAccount(account) &&
             !isCodexTokenPlanAccount(account))
         ) {
           return false;
@@ -3081,9 +3083,13 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
         if (state?.loading || apiKeyUsageInFlightRef.current.has(account.id)) {
           return false;
         }
+        // Check the in-memory web session once on mount, even with a cached balance.
+        if (isAinipyAccount(account)) {
+          return !deepSeekUsageRetryIdsRef.current.has(account.id);
+        }
         if (state?.unavailable) {
           return (
-            isDeepSeekAccount(account) &&
+            (isDeepSeekAccount(account) || isAinipyAccount(account)) &&
             !state.summary &&
             !deepSeekUsageRetryIdsRef.current.has(account.id)
           );
@@ -3122,7 +3128,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
       for (const account of accounts) {
         const provider = resolveUsageProviderForApiKeyAccount(account);
         if (!shouldAutoRefreshApiKeyUsage(account, provider)) continue;
-        if (isDeepSeekAccount(account)) {
+        if (isDeepSeekAccount(account) || isAinipyAccount(account)) {
           deepSeekUsageRetryIdsRef.current.add(account.id);
         }
         void refreshApiKeyUsage(account, provider);
@@ -3155,6 +3161,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
             (account) =>
               isCodexChatCompletionsApiKeyAccount(account) &&
               !isDeepSeekAccount(account) &&
+              !isAinipyAccount(account) &&
               !isCodexTokenPlanAccount(account),
           )
           .map((account) => account.id),

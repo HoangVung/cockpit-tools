@@ -2,6 +2,7 @@ import type { CodexAccount } from '../types/codex';
 import {
   isCodexApiKeyUsageQueryEligible,
   isDeepSeekAccount,
+  isAinipyAccount,
 } from '../utils/codexDeepSeekAccess';
 import {
   findCodexModelProviderByBaseUrl,
@@ -91,7 +92,7 @@ export async function refreshCodexApiKeyUsageForAccounts(
   const initialCache = readCodexApiKeyUsageCache();
   const eligibleAccounts = accounts.filter((account) => {
     if (!isUsageEligibleApiKey(account)) return false;
-    if (options?.force || isDeepSeekAccount(account)) return true;
+    if (options?.force || isDeepSeekAccount(account) || isAinipyAccount(account)) return true;
     return !initialCache[account.id]?.unavailable;
   });
   if (eligibleAccounts.length === 0) return;

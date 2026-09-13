@@ -4,6 +4,7 @@ export type ModelProviderUsageIntegrationType = 'sub2api' | 'new_api';
 export type ModelProviderUsageMode =
   | ModelProviderUsageIntegrationType
   | 'deepseek'
+  | 'ainipy'
   | 'token_plan';
 
 export interface ModelProviderModel {
@@ -160,6 +161,7 @@ export function resolveModelProviderUsageMode(
     summary.mode === 'new_api' ||
     summary.mode === 'sub2api' ||
     summary.mode === 'deepseek' ||
+    summary.mode === 'ainipy' ||
     summary.mode === 'token_plan'
   ) {
     return summary.mode;

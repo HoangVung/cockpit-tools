@@ -1757,6 +1757,10 @@ pub async fn codex_query_model_provider_usage(
         .build()
         .map_err(|e| format!("CREATE_HTTP_CLIENT_FAILED: {}", e))?;
 
+    if is_ainipy_usage_base_url(&base_url) {
+        return query_ainipy_usage(key).await;
+    }
+
     if let Some(provider) = codex_model_provider_token_plan_provider(&base_url)? {
         return query_token_plan_model_provider_usage(&client, &base_url, key, provider).await;
     }
