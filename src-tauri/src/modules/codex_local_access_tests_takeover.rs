@@ -183,6 +183,7 @@
         let config =
             fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
         assert!(config.contains("model_provider = \"codex_local_access\""));
+        assert!(config.contains("name = \"OpenAI\""));
         assert!(config.contains("requires_openai_auth = false"));
         assert!(config.contains(CODEX_IMAGEGEN_ACTOR_HEADER));
         assert!(config.contains(CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER));
@@ -370,7 +371,7 @@
         write_local_access_profile_takeover(&profile_dir, &collection, None)
             .await
             .expect("write local access takeover");
-        assert!(!super::local_access_profile_takeover_needs_websocket_sync(
+        assert!(!super::local_access_profile_takeover_needs_sync(
             &profile_dir,
             &collection
         ));
@@ -400,14 +401,14 @@
         )
         .expect("write stale model catalog");
 
-        assert!(super::local_access_profile_takeover_needs_websocket_sync(
+        assert!(super::local_access_profile_takeover_needs_sync(
             &profile_dir,
             &collection
         ));
         super::ensure_profile_takeover(&profile_dir, &collection)
             .await
             .expect("reconcile stale local access takeover");
-        assert!(!super::local_access_profile_takeover_needs_websocket_sync(
+        assert!(!super::local_access_profile_takeover_needs_sync(
             &profile_dir,
             &collection
         ));
@@ -429,6 +430,42 @@
             }));
 
         fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+    }
+
+    #[tokio::test]
+    async fn legacy_profile_provider_name_triggers_reconciliation() {
+        let profile_dir = make_temp_dir("codex-local-access-legacy-provider-name");
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.api_key = "local-service-key".to_string();
+
+        write_local_access_profile_takeover(&profile_dir, &collection, None)
+            .await
+            .expect("write local access takeover");
+
+        let config_path = profile_dir.join(CODEX_PROFILE_CONFIG_FILE);
+        let config = fs::read_to_string(&config_path).expect("read config");
+        fs::write(
+            &config_path,
+            config.replace("name = \"OpenAI\"", "name = \"Codex API Service\""),
+        )
+        .expect("write legacy provider name");
+
+        assert!(super::local_access_profile_takeover_needs_sync(
+            &profile_dir,
+            &collection
+        ));
+        super::ensure_profile_takeover(&profile_dir, &collection)
+            .await
+            .expect("reconcile legacy provider name");
+        assert!(!super::local_access_profile_takeover_needs_sync(
+            &profile_dir,
+            &collection
+        ));
+
+        let repaired_config = fs::read_to_string(&config_path).expect("read repaired config");
+        assert!(repaired_config.contains("name = \"OpenAI\""));
+        assert!(!repaired_config.contains("name = \"Codex API Service\""));
+        fs::remove_dir_all(profile_dir).expect("cleanup temp dir");
     }
 
     #[test]

@@ -1968,7 +1968,7 @@ async fn ensure_runtime_loaded_for_app_startup() -> Result<(), String> {
             runtime.collection.clone()
         };
         if let Some(collection) = collection.as_ref() {
-            if local_access_profile_takeovers_need_websocket_sync(collection) {
+            if local_access_profile_takeovers_need_sync(collection) {
                 ensure_local_access_profile_takeovers_from_runtime().await?;
             }
         }

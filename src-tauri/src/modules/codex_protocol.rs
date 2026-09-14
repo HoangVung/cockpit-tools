@@ -741,7 +741,11 @@ fn response_item_non_empty_string<'a>(obj: &'a Map<String, Value>, key: &str) ->
         .filter(|value| !value.is_empty())
 }
 
-fn ensure_responses_call_ids(items: &mut [Value]) -> bool {
+fn responses_call_output_can_stand_alone(item_type: &str, obj: &Map<String, Value>) -> bool {
+    item_type == "function_call_output" && response_item_non_empty_string(obj, "name").is_some()
+}
+
+fn ensure_responses_call_ids(items: &mut Vec<Value>) -> bool {
     let mut used = HashSet::new();
     for item in items.iter() {
         if let Some(call_id) = item
@@ -753,6 +757,7 @@ fn ensure_responses_call_ids(items: &mut [Value]) -> bool {
     }
 
     let mut pending: Vec<(String, Option<String>)> = Vec::new();
+    let mut drop_indices = Vec::new();
     let mut changed = false;
     for (index, item) in items.iter_mut().enumerate() {
         let Some(obj) = item.as_object_mut() else {
@@ -786,7 +791,13 @@ fn ensure_responses_call_ids(items: &mut [Value]) -> bool {
                         .or_else(|| (!pending.is_empty()).then_some(0));
                     match matched {
                         Some(position) => pending.remove(position).0,
-                        None => next_generated_call_id("call_missing_output", index, &mut used),
+                        None if responses_call_output_can_stand_alone(&item_type, obj) => {
+                            continue;
+                        }
+                        None => {
+                            drop_indices.push(index);
+                            continue;
+                        }
                     }
                 };
                 obj.insert("call_id".to_string(), Value::String(generated.clone()));
@@ -800,6 +811,10 @@ fn ensure_responses_call_ids(items: &mut [Value]) -> bool {
         } else if let Some(position) = pending.iter().position(|(id, _)| id == &call_id) {
             pending.remove(position);
         }
+    }
+    for index in drop_indices.into_iter().rev() {
+        items.remove(index);
+        changed = true;
     }
     changed
 }
@@ -1381,6 +1396,58 @@ mod tests {
             input[5].get("call_id").and_then(Value::as_str),
             Some("call_existing")
         );
+    }
+
+    #[test]
+    fn drops_anonymous_orphan_outputs_while_preserving_paired_history() {
+        let mut body = json!({
+            "model": "deepseek-v4-flash",
+            "input": [
+                {"type": "message", "role": "user", "content": "continue"},
+                {"type": "function_call_output", "output": "orphan result"},
+                {"type": "function_call", "name": "exec_command", "arguments": "{}"},
+                {"type": "function_call_output", "output": "paired result"},
+                {"type": "function_call_output", "name": "heartbeat", "output": "keep standalone"}
+            ]
+        });
+
+        assert!(normalize_responses_body_for_codex(&mut body));
+        let input = body.get("input").and_then(Value::as_array).unwrap();
+        assert_eq!(input.len(), 4);
+        assert_eq!(
+            input[1].get("type").and_then(Value::as_str),
+            Some("function_call")
+        );
+        let call_id = input[1]
+            .get("call_id")
+            .and_then(Value::as_str)
+            .expect("synthesized call id");
+        assert_eq!(
+            input[2].get("call_id").and_then(Value::as_str),
+            Some(call_id)
+        );
+        assert_eq!(
+            input[3].get("name").and_then(Value::as_str),
+            Some("heartbeat")
+        );
+        assert!(input[3].get("call_id").is_none());
+    }
+
+    #[test]
+    fn preserves_existing_replay_input_items() {
+        let mut body = json!({
+            "model": "gpt-5.6-sol",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "continue"}]},
+                {"type": "function_call", "call_id": "old_unanswered", "name": "exec_command", "arguments": "{}"},
+                {"type": "function_call", "call_id": "old_answered", "name": "lookup", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "old_answered", "output": "ok"}
+            ]
+        });
+        let expected_input = body["input"].clone();
+
+        normalize_responses_body_for_codex(&mut body);
+        assert_eq!(body["input"], expected_input);
     }
 
     #[test]

@@ -713,7 +713,8 @@
         CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER,
         CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER_VALUE,
         CODEX_LOCAL_ACCESS_MODEL_CATALOG_FILE, CODEX_PROFILE_AUTH_FILE, CODEX_PROFILE_CONFIG_FILE,
-        CODEX_PROVIDER_MODEL_BACKUP_FILE, CODEX_PROVIDER_MODEL_CATALOG_FILE,
+        CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID, CODEX_PROVIDER_MODEL_BACKUP_FILE,
+        CODEX_PROVIDER_MODEL_CATALOG_FILE,
         DEFAULT_ACCOUNT_CONCURRENCY_WAIT_MS, DEFAULT_MAX_RETRY_INTERVAL_MS,
         DEFAULT_MODEL_PRICING_VERSION,
         DEFAULT_SESSION_AFFINITY_TTL_MS, MAX_HTTP_REQUEST_BYTES,
@@ -3600,6 +3601,11 @@ http_headers = { "x-cockpit-instance-id" = "default" }
         );
         assert!(account.api_supports_websockets);
         assert_eq!(account.api_wire_api.as_deref(), Some("responses"));
+        assert_eq!(account.api_provider_name.as_deref(), Some("OpenAI"));
+        assert_eq!(
+            account.api_provider_id.as_deref(),
+            Some(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID)
+        );
     }
 
     #[test]

@@ -7,6 +7,16 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [1.3.53] - 2026-09-14
+
+### 变更
+
+- **Codex API 服务的 provider 改为跟随官方远程压缩链路**：托管写入的 provider 显示名改为 `OpenAI`，与官方客户端的 provider 能力判断保持一致，使自动压缩和手动压缩都走远程 `/responses/compact`；已接管的旧 profile 也会自动校正。请求仍先经过本地网关，实际压缩能力由当前选择的上游负责。
+
+### 修复
+
+- **修复历史工具调用不完整导致 Codex 旧会话被严格 Responses 上游拒绝**：Codex 请求现在只在调用和输出能够配对时为缺失的 `function_call` / `custom_tool_call` 补齐 `call_id`，保留已有 ID 与回放命名空间；无法配对的匿名输出会从本次请求中移除，不再生成 `call_missing_output_*` 合成 ID，旧会话不会因 `No tool call found for function call output` 无法继续。该修复覆盖本地 API 网关与 provider gateway 两条链路。
+
 ## [1.3.52] - 2026-09-14
 
 ### 新增

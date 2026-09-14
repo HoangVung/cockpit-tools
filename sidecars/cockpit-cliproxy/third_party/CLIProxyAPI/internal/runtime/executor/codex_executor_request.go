@@ -460,6 +460,7 @@ func normalizeCodexCallIDs(body []byte) []byte {
 		name string
 	}
 	pending := make([]pendingCall, 0)
+	dropInputIndices := make([]int, 0)
 	index := -1
 	input.ForEach(func(_, item gjson.Result) bool {
 		index++
@@ -490,8 +491,11 @@ func normalizeCodexCallIDs(body []byte) []byte {
 				if matched >= 0 {
 					callID = pending[matched].id
 					pending = append(pending[:matched], pending[matched+1:]...)
+				} else if codexCallOutputCanStandAlone(itemType, item) {
+					return true
 				} else {
-					callID = nextGeneratedCodexCallID("call_missing_output", index, used)
+					dropInputIndices = append(dropInputIndices, index)
+					return true
 				}
 			}
 			body, _ = sjson.SetBytes(body, fmt.Sprintf("input.%d.call_id", index), callID)
@@ -508,7 +512,18 @@ func normalizeCodexCallIDs(body []byte) []byte {
 		}
 		return true
 	})
+	for index := len(dropInputIndices) - 1; index >= 0; index-- {
+		body, _ = sjson.DeleteBytes(body, fmt.Sprintf("input.%d", dropInputIndices[index]))
+	}
 	return body
+}
+
+func codexCallOutputCanStandAlone(itemType string, item gjson.Result) bool {
+	if itemType != "function_call_output" {
+		return false
+	}
+	name := item.Get("name")
+	return name.Type == gjson.String && strings.TrimSpace(name.String()) != ""
 }
 
 var imageGenToolJSON = []byte(`{"type":"image_generation","output_format":"png"}`)

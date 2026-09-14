@@ -7,6 +7,16 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.53] - 2026-09-14
+
+### Changed
+
+- **The Codex API Service provider now follows the official remote-compaction path**: its managed provider display name is written as `OpenAI`, matching the official client's provider capability check so automatic and manual history compaction use the remote `/responses/compact` flow. Existing managed profiles are reconciled as well, while requests still go through the configured local gateway and the selected upstream remains responsible for handling compaction.
+
+### Fixed
+
+- **Fixed incomplete historical tool calls breaking old Codex sessions on strict Responses upstreams**: Codex requests now repair missing `function_call` / `custom_tool_call` call IDs only when the call can be paired with its output, preserve existing IDs and replay namespaces, and remove anonymous orphan outputs instead of assigning synthetic `call_missing_output_*` IDs. This prevents old transcripts from failing with `No tool call found for function call output` through both the local API gateway and provider-gateway paths.
+
 ## [1.3.52] - 2026-09-14
 
 ### Added

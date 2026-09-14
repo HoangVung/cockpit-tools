@@ -1341,7 +1341,7 @@ fn build_runtime_account(
         CodexApiProviderMode::Custom,
         Some(base_url),
         Some(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID.to_string()),
-        Some("Codex API Service".to_string()),
+        Some(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_NAME.to_string()),
         Vec::new(),
     );
     runtime_account.account_name = Some("API Service".to_string());
@@ -1691,7 +1691,7 @@ fn profile_model_catalog_websocket_preference_matches(
             .all(|model| model.get("prefer_websockets").and_then(Value::as_bool) == Some(expected))
 }
 
-fn local_access_profile_takeover_needs_websocket_sync(
+fn local_access_profile_takeover_needs_sync(
     profile_dir: &Path,
     collection: &CodexLocalAccessCollection,
 ) -> bool {
@@ -1717,6 +1717,10 @@ fn local_access_profile_takeover_needs_websocket_sync(
             .and_then(|providers| providers.get(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID))
             .and_then(|item| item.as_table())
     });
+    let config_provider_name = config_provider
+        .and_then(|provider| provider.get("name"))
+        .and_then(|item| item.as_str())
+        .map(str::trim);
     let config_supports_websockets = config_provider
         .and_then(|provider| provider.get("supports_websockets"))
         .and_then(|item| item.as_bool());
@@ -1724,18 +1728,19 @@ fn local_access_profile_takeover_needs_websocket_sync(
         .as_ref()
         .and_then(|doc| doc.get("model_catalog_json").and_then(|item| item.as_str()));
 
-    config_supports_websockets != Some(expected)
+    config_provider_name != Some(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_NAME)
+        || config_supports_websockets != Some(expected)
         || !profile_model_catalog_websocket_preference_matches(profile_dir, catalog_file, expected)
 }
 
-fn local_access_profile_takeovers_need_websocket_sync(
+fn local_access_profile_takeovers_need_sync(
     collection: &CodexLocalAccessCollection,
 ) -> bool {
     collection.enabled
         && collect_local_access_profile_takeover_dirs()
             .iter()
             .any(|profile_dir| {
-                local_access_profile_takeover_needs_websocket_sync(profile_dir, collection)
+                local_access_profile_takeover_needs_sync(profile_dir, collection)
             })
 }
 
