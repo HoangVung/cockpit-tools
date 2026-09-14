@@ -259,13 +259,6 @@ fn validate_backup_target(target_directory: &str) -> Result<(PathBuf, PathBuf), 
         return Err("备份目录必须是非空绝对路径".to_string());
     }
     let current = get_backup_root_dir()?;
-    let current_cmp = normalize_comparison_path(&current);
-    let target_cmp = normalize_comparison_path(&target);
-    if target_cmp != current_cmp
-        && (target_cmp.starts_with(&current_cmp) || current_cmp.starts_with(&target_cmp))
-    {
-        return Err("新旧备份目录不能互相嵌套".to_string());
-    }
     Ok((current, target))
 }
 
@@ -392,11 +385,30 @@ fn build_migration_manifest(
             return Ok(());
         }
         let root_cmp = normalize_comparison_path(&root);
-        if target_cmp.starts_with(&root_cmp) || root_cmp.starts_with(&target_cmp) {
+        let managed_current_root = source == "managed"
+            && root_cmp == normalize_comparison_path(&current_root);
+        if !managed_current_root
+            && (target_cmp.starts_with(&root_cmp) || root_cmp.starts_with(&target_cmp))
+        {
             return Err(format!(
                 "新备份目录不能与历史备份目录互相嵌套: {}",
                 root.display()
             ));
+        }
+        if managed_current_root && target_cmp.starts_with(&root_cmp) {
+            // The managed root is intentionally scanned with a top-level allow-list below, so
+            // moving it into a regular child folder is safe. Never allow a destination inside
+            // the directories that contain behavior/legacy snapshots, however: those paths are
+            // cleaned after migration and would overlap the destination itself.
+            for reserved_name in [BEHAVIOR_DIR_NAME, "legacy"] {
+                let reserved_cmp = normalize_comparison_path(&root.join(reserved_name));
+                if target_cmp.starts_with(&reserved_cmp) {
+                    return Err(format!(
+                        "新备份目录不能位于受保护的备份目录内: {}",
+                        root.join(reserved_name).display()
+                    ));
+                }
+            }
         }
         collect_migration_tree(
             &root,

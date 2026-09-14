@@ -1996,6 +1996,7 @@ export function SettingsAccountTransferSection({
                     </button>
                   </div>
                   <div className="settings-backup-path">{backupSettings?.directory_path ?? '-'}</div>
+                  {backupFeedbackNode}
                 </div>
 
                 <div className="settings-backup-manager-card">
@@ -2254,8 +2255,6 @@ export function SettingsAccountTransferSection({
                     )}
                   </div>
                 </div>
-
-                {backupFeedbackNode}
 
                 <div className="settings-transfer-modal-actions">
                   <button
