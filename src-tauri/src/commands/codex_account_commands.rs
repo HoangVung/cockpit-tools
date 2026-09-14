@@ -669,43 +669,6 @@ fn repair_codex_session_visibility_after_credential_kind_change(
     ));
 }
 
-/// 切到官方直连账号时，清理历史里第三方（DeepSeek 等）留下的 reasoning 项，
-/// 避免官方后端因 `reasoning.content` 非空拒绝整段请求（普通回合与自动压缩都会失败）。
-async fn sanitize_session_history_after_codex_switch(account: &CodexAccount) {
-    if crate::modules::codex_local_access::account_requires_provider_gateway(account) {
-        return;
-    }
-    let data_dir = codex_account::get_codex_home();
-    let started = Instant::now();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        crate::modules::codex_session_history_sanitize::sanitize_official_incompatible_reasoning_history(
-            &data_dir,
-        )
-    })
-    .await;
-    match result {
-        Ok(Ok(summary)) => {
-            if summary.changed_anything() {
-                logger::log_info(&format!(
-                    "[Codex History Sanitize] 切号后清理第三方推理历史完成: databases={}, updated_items={}, changed_threads={}, elapsed_ms={}",
-                    summary.database_count,
-                    summary.updated_item_count,
-                    summary.changed_thread_count,
-                    started.elapsed().as_millis()
-                ));
-            }
-        }
-        Ok(Err(error)) => logger::log_warn(&format!(
-            "[Codex History Sanitize] 切号后清理第三方推理历史失败: error={}",
-            error
-        )),
-        Err(error) => logger::log_warn(&format!(
-            "[Codex History Sanitize] 等待会话历史清理任务失败: error={}",
-            error
-        )),
-    }
-}
-
 fn restart_codex_specified_app_if_enabled(user_config: &config::UserConfig) {
     if !user_config.codex_restart_specified_app_on_switch {
         logger::log_info("已关闭切换 Codex 时自动重启指定应用");
@@ -989,6 +952,39 @@ pub async fn codex_clear_client_auth_observation(account_id: String) -> Result<b
 }
 
 /// 切换 Codex 账号（包含 token 刷新检查）
+/// 默认实例切换到非 OAuth 账号时，关闭它的混合模型路由并释放对应的实例网关。
+///
+/// 混合路由只在绑定「可直接登录的 OAuth 订阅账号」时有意义，切换账号不应该被它拦住。
+async fn disable_default_model_routing_for_non_oauth_switch() {
+    let routing_enabled = crate::modules::codex_instance::load_default_settings()
+        .ok()
+        .and_then(|settings| settings.model_routing)
+        .is_some_and(|routing| routing.enabled);
+    if !routing_enabled {
+        return;
+    }
+    if let Err(error) = crate::modules::codex_instance::disable_model_routing(
+        crate::modules::codex_instance::CODEX_DEFAULT_INSTANCE_ID,
+    ) {
+        logger::log_warn(&format!(
+            "[Codex切号] 关闭默认实例混合模型路由失败: {}",
+            error
+        ));
+        return;
+    }
+    if let Ok(default_dir) = crate::modules::codex_instance::get_default_codex_home() {
+        if let Err(error) =
+            crate::modules::codex_local_access::release_instance_gateway_for_profile(&default_dir)
+                .await
+        {
+            logger::log_warn(&format!(
+                "[Codex切号] 停止默认实例混合模型路由网关失败: {}",
+                error
+            ));
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn switch_codex_account(
     app: AppHandle,
@@ -1026,6 +1022,11 @@ pub async fn switch_codex_account(
     let is_oauth_account = !initial_account.is_api_key_auth()
         && !initial_account.is_agent_identity_auth()
         && !initial_account.is_web_session_auth();
+    if !is_oauth_account {
+        // 默认实例切到普通 API Key / 其他非 OAuth 账号时，混合模型路由必须自动关闭：
+        // 路由的底座账号已经不存在，继续保留会拦住启动，并让后台监控反复尝试恢复网关。
+        disable_default_model_routing_for_non_oauth_switch().await;
+    }
     let access_token_present = !initial_account.tokens.access_token.trim().is_empty();
     let refresh_token_present = codex_account::account_has_refresh_token(&initial_account);
     let access_token_expires_at =
@@ -1272,15 +1273,6 @@ pub async fn switch_codex_account(
         "[Codex Switch][Backend] session visibility repair stage finished: account_id={}, elapsed_ms={}, total_ms={}",
         account_id,
         repair_started.elapsed().as_millis(),
-        flow_started.elapsed().as_millis()
-    ));
-
-    let history_sanitize_started = Instant::now();
-    sanitize_session_history_after_codex_switch(&account).await;
-    logger::log_info(&format!(
-        "[Codex Switch][Backend] session history sanitize stage finished: account_id={}, elapsed_ms={}, total_ms={}",
-        account_id,
-        history_sanitize_started.elapsed().as_millis(),
         flow_started.elapsed().as_millis()
     ));
 

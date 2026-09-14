@@ -9,6 +9,7 @@ import { PaginationControls } from "../components/PaginationControls";
 import { CodexAccountGroupModal, CodexAddToGroupModal } from "../components/CodexAccountGroupModal";
 import { CodexGroupAccountPickerModal } from "../components/CodexGroupAccountPickerModal";
 import { CodexLocalAccessModal } from "../components/CodexLocalAccessModal";
+import { CodexInstanceGatewaysModal } from "../components/CodexInstanceGatewaysModal";
 import { CodexAccountPoolHealthModal } from "../components/CodexAccountPoolHealthModal";
 import { isCodexApiKeyAccount, isCodexChatCompletionsApiKeyAccount, isCodexNewApiAccount } from "../types/codex";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
@@ -192,6 +193,14 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
     hasActiveOverviewFilters,
     hasDetectableFullQuotaWakeupAccounts,
     hasGroupEntryCards,
+    instanceGateways,
+    instanceGatewaysError,
+    instanceGatewaysLoading,
+    instanceGatewaysOpen,
+    closeInstanceGateways,
+    refreshInstanceGateways,
+    stopInstanceGateway,
+    restartInstanceGateway,
     includeExportSensitiveNotes,
     inlineFolderCards,
     isAllFilteredSelectionActive,
@@ -3602,6 +3611,18 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
             starting={localAccessStarting}
             portCleanupBusy={localAccessPortKilling}
             sidecarRestarting={localAccessSidecarRestarting}
+          />
+
+          <CodexInstanceGatewaysModal
+            isOpen={instanceGatewaysOpen}
+            gateways={instanceGateways}
+            loading={instanceGatewaysLoading}
+            error={instanceGatewaysError}
+            maskAccountText={maskAccountText}
+            onRefresh={() => void refreshInstanceGateways()}
+            onStopGateway={stopInstanceGateway}
+            onRestartGateway={restartInstanceGateway}
+            onClose={closeInstanceGateways}
           />
 
           {/* Codex 分组管理弹窗 */}

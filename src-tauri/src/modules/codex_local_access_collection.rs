@@ -731,7 +731,7 @@ fn resolve_prompt_cache_key(
         .unwrap_or_else(|| stable_prompt_cache_key(api_key))
 }
 
-fn is_valid_gpt_reasoning_signature(raw_signature: &str) -> bool {
+pub(crate) fn is_valid_gpt_reasoning_signature(raw_signature: &str) -> bool {
     if raw_signature.is_empty()
         || raw_signature.len() > MAX_GPT_REASONING_SIGNATURE_LEN
         || raw_signature != raw_signature.trim()

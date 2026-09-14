@@ -1370,17 +1370,33 @@ fn write_local_access_profile_model_catalog(
     supports_websockets: bool,
     experimental_model_catalog_enabled: bool,
 ) -> Result<(), String> {
-    let experimental_models = experimental_model_catalog_enabled
-        .then(|| codex_account::read_experimental_model_definitions(profile_dir))
-        .unwrap_or_default();
-    let mut client_models = if experimental_model_catalog_enabled {
-        let definitions = experimental_models
+    let definitions = experimental_model_catalog_enabled.then(|| {
+        codex_account::read_experimental_model_definitions(profile_dir)
             .iter()
             .map(|model| (model.model_id.clone(), model.display_name.clone()))
-            .collect::<Vec<_>>();
-        codex_protocol::build_codex_client_models_response_with_model_definitions(&definitions)
-    } else {
-        codex_protocol::build_codex_client_models_response(&supported_codex_model_ids())
+            .collect::<Vec<_>>()
+    });
+    write_local_access_profile_model_catalog_with_definitions(
+        profile_dir,
+        supports_websockets,
+        definitions,
+    )
+}
+
+/// 写入 profile 的 Codex 模型目录。
+///
+/// `definitions` 为 `Some` 时按给定清单（受管模型目录 / 混合路由临时目录）生成，
+/// 为 `None` 时使用官方模型清单。该写入只作用于当前 profile，不代表用户开启了模型管理。
+fn write_local_access_profile_model_catalog_with_definitions(
+    profile_dir: &Path,
+    supports_websockets: bool,
+    definitions: Option<Vec<(String, String)>>,
+) -> Result<(), String> {
+    let mut client_models = match definitions.as_deref() {
+        Some(definitions) => {
+            codex_protocol::build_codex_client_models_response_with_model_definitions(definitions)
+        }
+        None => codex_protocol::build_codex_client_models_response(&supported_codex_model_ids()),
     };
     codex_protocol::ensure_codex_reserve_fallback(&mut client_models);
     if let Some(models) = client_models

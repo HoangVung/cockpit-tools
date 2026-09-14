@@ -25,6 +25,7 @@ use crate::models::codex_local_access::{
     CodexLocalAccessTestResult, CodexLocalAccessTimeoutPreset, CodexLocalAccessTimeouts,
     CodexLocalAccessUsageEvent, CodexLocalAccessUsageEventPage, CodexLocalAccessUsageStats,
     CodexLocalAccessUsageTrendPoint,
+    CodexInstanceGatewayView,
     CodexTokenBreakdown,
 };
 use crate::models::{CodexInstanceApiRoute, CodexInstanceModelRouting};

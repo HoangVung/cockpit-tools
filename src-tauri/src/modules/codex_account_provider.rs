@@ -52,6 +52,9 @@ const CODEX_CONFIG_OPENAI_BASE_URL_KEY: &str = "openai_base_url";
 const CODEX_CONFIG_MODEL_PROVIDER_KEY: &str = "model_provider";
 const CODEX_CONFIG_MODEL_PROVIDERS_KEY: &str = "model_providers";
 const CODEX_CONFIG_MODEL_CATALOG_JSON_KEY: &str = "model_catalog_json";
+const CODEX_CONFIG_FORCED_LOGIN_METHOD_KEY: &str = "forced_login_method";
+const CODEX_FORCED_LOGIN_METHOD_CHATGPT: &str = "chatgpt";
+const CODEX_FORCED_LOGIN_METHOD_API: &str = "api";
 const CODEX_CONFIG_EXPERIMENTAL_BEARER_TOKEN_KEY: &str = "experimental_bearer_token";
 const CODEX_CONFIG_HTTP_HEADERS_KEY: &str = "http_headers";
 const CODEX_CONFIG_MODEL_CONTEXT_WINDOW_KEY: &str = "model_context_window";
@@ -660,7 +663,7 @@ pub(crate) fn sync_sponsor_base_urls(
     Ok(changed)
 }
 
-fn is_deepseek_account(account: &CodexAccount) -> bool {
+pub(crate) fn is_deepseek_account(account: &CodexAccount) -> bool {
     account
         .api_provider_id
         .as_deref()
@@ -1305,6 +1308,11 @@ const DEEPSEEK_TOP_LEVEL_BACKUP_SECTION: &str = "top_level_keys";
 /// 官方在 DeepSeek 下禁用 Codex 内置联网搜索（官方脚本写 `web_search = "disabled"`）。
 const DEEPSEEK_WEB_SEARCH_KEY: &str = "web_search";
 const DEEPSEEK_WEB_SEARCH_DISABLED: &str = "disabled";
+/// 切到 DeepSeek 时由 DeepSeek 运行态改写（不删除）的 config.toml 顶层键。
+///
+/// 这些键不属于官方 DEL_B 清单，禁止在切换期移除；但必须记录原值，保证切走时
+/// 还原用户设置，避免「切到 DeepSeek 后回不到官方账号」的残留（#1961）。
+const DEEPSEEK_OWNED_TOP_LEVEL_KEYS: &[&str] = &["preferred_auth_method"];
 /// 切到 DeepSeek 时必须临时移除的 config.toml 顶层键。
 ///
 /// 来源：DeepSeek 官方 codex-deepseek-setup.sh 的 DEL_B 清单——这些键会覆盖或污染
@@ -1361,6 +1369,7 @@ fn record_deepseek_top_level_backup(doc: &Document) -> serde_json::Value {
         .iter()
         .copied()
         .chain(std::iter::once(DEEPSEEK_WEB_SEARCH_KEY))
+        .chain(DEEPSEEK_OWNED_TOP_LEVEL_KEYS.iter().copied())
     {
         let Some(item) = doc.get(key) else {
             recorded.insert(

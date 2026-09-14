@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,39 @@ func TestNormalizeCodexInstructionsUsesModelBaseInstructions(t *testing.T) {
 	body := []byte(`{"instructions":"keep me"}`)
 	if got := gjson.GetBytes(normalizeCodexInstructions(body, "gpt-5.6-sol"), "instructions").String(); got != "keep me" {
 		t.Fatalf("explicit instructions = %q, want keep me", got)
+	}
+}
+
+func TestNormalizeCodexCallIDsRepairsMissingReplayIDs(t *testing.T) {
+	body := []byte(`{"model":"deepseek-v4-flash","input":[
+		{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"pwd\"}"},
+		{"type":"function_call_output","output":"/workspace"},
+		{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch"},
+		{"type":"custom_tool_call_output","output":"Done!"},
+		{"type":"function_call","call_id":"call_existing","name":"lookup","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_existing","output":"ok"}
+	]}`)
+
+	got := normalizeCodexCallIDs(body)
+	firstCallID := gjson.GetBytes(got, "input.0.call_id").String()
+	customCallID := gjson.GetBytes(got, "input.2.call_id").String()
+	if !strings.HasPrefix(firstCallID, "call_missing") {
+		t.Fatalf("missing function call id was not synthesized: %s", got)
+	}
+	if gotID := gjson.GetBytes(got, "input.1.call_id").String(); gotID != firstCallID {
+		t.Fatalf("function_call_output call_id = %q, want %q", gotID, firstCallID)
+	}
+	if !strings.HasPrefix(customCallID, "call_missing") {
+		t.Fatalf("missing custom tool call id was not synthesized: %s", got)
+	}
+	if gotID := gjson.GetBytes(got, "input.3.call_id").String(); gotID != customCallID {
+		t.Fatalf("custom_tool_call_output call_id = %q, want %q", gotID, customCallID)
+	}
+	if gotID := gjson.GetBytes(got, "input.4.call_id").String(); gotID != "call_existing" {
+		t.Fatalf("existing call_id changed to %q", gotID)
+	}
+	if gotID := gjson.GetBytes(got, "input.5.call_id").String(); gotID != "call_existing" {
+		t.Fatalf("existing output call_id changed to %q", gotID)
 	}
 }
 

@@ -1335,3 +1335,45 @@
         );
         assert_eq!(super::normalize_request_log_time_bound(0), 0);
     }
+
+    #[tokio::test]
+    async fn occupied_persisted_gateway_port_is_released_before_start() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock().unwrap_or_else(|error| error.into_inner());
+        let _env = LocalAccessTestDataGuard::new("gateway-port-conflict");
+        let profile_dir = make_temp_dir("gateway-port-conflict-profile");
+        let runtime_id = "codex_gateway_port_conflict";
+
+        // 先占住一个端口，模拟持久端口被其它实例或进程占用。
+        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind occupied port");
+        let occupied_port = occupied.local_addr().expect("occupied addr").port();
+        super::save_provider_gateway_profile_state(
+            &profile_dir,
+            runtime_id,
+            &super::ProviderGatewayProfileState {
+                api_key: "persisted-gateway-key".to_string(),
+                port: Some(occupied_port),
+                created_at: 0,
+                updated_at: 0,
+            },
+        )
+        .expect("save gateway state");
+
+        assert!(
+            super::provider_gateway_profile_port_occupied_by_others(&profile_dir, runtime_id).await,
+            "被其它进程占用的持久端口必须判为冲突"
+        );
+
+        super::release_occupied_provider_gateway_profile_port(&profile_dir, runtime_id).await;
+
+        let stored = super::load_provider_gateway_profile_state(&profile_dir, runtime_id)
+            .expect("load gateway state")
+            .expect("gateway state exists");
+        assert_eq!(stored.port, None, "冲突端口必须被放弃，改由重新分配取空闲端口");
+        assert_eq!(
+            stored.api_key, "persisted-gateway-key",
+            "放弃端口不能改动网关密钥等其它状态"
+        );
+
+        drop(occupied);
+    }
