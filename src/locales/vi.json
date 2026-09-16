@@ -3879,7 +3879,7 @@
       "addToGroup": "Thêm vào nhóm"
     },
     "subscription": {
-      "label": "Hết hạn gói",
+      "label": "Hạn gói",
       "column": "Hết hạn",
       "unknown": "Ủy quyền lại",
       "missingDetail": "Ủy quyền lại để lấy",
@@ -4500,8 +4500,8 @@
       "hideRelayQuota": "Ẩn hạn mức relay"
     },
     "instanceGateways": {
-      "entry": "Cổng instance",
-      "entryCount": "Cổng instance {{count}}",
+      "entry": "Cổng gateway",
+      "entryCount": "Cổng gateway {{count}}",
       "issueCount": "{{count}} bất thường",
       "title": "Cổng instance",
       "subtitle": "Cổng cục bộ khởi động cùng các instance Codex",

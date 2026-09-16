@@ -3671,7 +3671,7 @@
       "dateTime": "{{date}} {{time}}"
     },
     "subscription": {
-      "label": "Subscription validity",
+      "label": "Validity",
       "column": "Subscription info",
       "unknown": "No subscription info",
       "missingDetail": "No subscription info",
@@ -4699,8 +4699,8 @@
       "hideRelayQuota": "Hide relay quota"
     },
     "instanceGateways": {
-      "entry": "Instance gateways",
-      "entryCount": "Instance gateways {{count}}",
+      "entry": "Gateways",
+      "entryCount": "Gateways {{count}}",
       "issueCount": "{{count}} abnormal",
       "title": "Instance gateways",
       "subtitle": "Local gateways started with Codex instances",
