@@ -73,7 +73,7 @@ fn codex_model_provider_sub2api_urls(base_url: &str) -> Result<Vec<String>, Stri
     if trimmed.is_empty() {
         return Err("PROVIDER_BASE_URL_INVALID".to_string());
     }
-    let url =
+    let mut url =
         reqwest::Url::parse(trimmed).map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())?;
     match url.scheme() {
         "http" | "https" => {}
@@ -87,10 +87,9 @@ fn codex_model_provider_sub2api_urls(base_url: &str) -> Result<Vec<String>, Stri
         let mut v1_url = url.clone();
         v1_url.set_path("/v1/usage");
         v1_url.set_query(None);
-        let mut root_url = url;
-        root_url.set_path("/usage");
-        root_url.set_query(None);
-        Ok(vec![v1_url.to_string(), root_url.to_string()])
+        url.set_path("/usage");
+        url.set_query(None);
+        Ok(vec![v1_url.to_string(), url.to_string()])
     } else {
         url.set_path(&format!("{}/usage", path));
         url.set_query(None);
