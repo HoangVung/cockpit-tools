@@ -68,25 +68,39 @@ fn codex_model_provider_models_url(base_url: &str) -> Result<String, String> {
     Ok(url.to_string())
 }
 
-fn codex_model_provider_usage_url(base_url: &str) -> Result<String, String> {
+fn codex_model_provider_sub2api_urls(base_url: &str) -> Result<Vec<String>, String> {
     let trimmed = base_url.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err("PROVIDER_BASE_URL_INVALID".to_string());
     }
-    let mut url =
+    let url =
         reqwest::Url::parse(trimmed).map_err(|_| "PROVIDER_BASE_URL_INVALID".to_string())?;
     match url.scheme() {
         "http" | "https" => {}
         _ => return Err("PROVIDER_BASE_URL_INVALID".to_string()),
     }
-    let next_path = if url.path().is_empty() || url.path() == "/" {
-        "/usage".to_string()
+    let path = url.path().trim_end_matches('/');
+    if path.is_empty() {
+        // Sub2API-compatible services conventionally expose /usage under /v1.
+        // Some services expose /usage at the root domain.
+        // Try /v1/usage first, then /usage as fallback.
+        let mut v1_url = url.clone();
+        v1_url.set_path("/v1/usage");
+        v1_url.set_query(None);
+        let mut root_url = url;
+        root_url.set_path("/usage");
+        root_url.set_query(None);
+        Ok(vec![v1_url.to_string(), root_url.to_string()])
     } else {
-        format!("{}/usage", url.path().trim_end_matches('/'))
-    };
-    url.set_path(&next_path);
-    url.set_query(None);
-    Ok(url.to_string())
+        let mut target_url = url;
+        target_url.set_path(&format!("{}/usage", path));
+        target_url.set_query(None);
+        Ok(vec![target_url.to_string()])
+    }
+}
+
+fn codex_model_provider_usage_url(base_url: &str) -> Result<String, String> {
+    codex_model_provider_sub2api_urls(base_url).map(|urls| urls[0].clone())
 }
 
 /// DeepSeek 官方 `/user/balance` 地址。
@@ -1956,7 +1970,20 @@ async fn query_new_api_model_provider_usage(
         .await
         .map_err(|e| format!("PROVIDER_USAGE_NETWORK_FAILED: {}", e))?;
     let subscription_status = subscription_response.status();
+    let subscription_is_html = subscription_response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("text/html"))
+        .unwrap_or(false);
     let subscription_text = subscription_response.text().await.unwrap_or_default();
+    if subscription_is_html
+        || subscription_text.trim_start().starts_with("<!doctype")
+        || subscription_text.trim_start().starts_with("<!DOCTYPE")
+        || subscription_text.trim_start().starts_with("<html")
+    {
+        return Err("PROVIDER_USAGE_DETECT_FAILED: unexpected html response".to_string());
+    }
     if !subscription_status.is_success() {
         return Err(format!(
             "PROVIDER_USAGE_HTTP_{}: {}",
@@ -1973,7 +2000,20 @@ async fn query_new_api_model_provider_usage(
         .map_err(|e| format!("PROVIDER_USAGE_NETWORK_FAILED: {}", e))?;
     let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
     let usage_status = usage_response.status();
+    let usage_is_html = usage_response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("text/html"))
+        .unwrap_or(false);
     let usage_text = usage_response.text().await.unwrap_or_default();
+    if usage_is_html
+        || usage_text.trim_start().starts_with("<!doctype")
+        || usage_text.trim_start().starts_with("<!DOCTYPE")
+        || usage_text.trim_start().starts_with("<html")
+    {
+        return Err("PROVIDER_USAGE_DETECT_FAILED: unexpected html response".to_string());
+    }
     if !usage_status.is_success() {
         return Err(format!(
             "PROVIDER_USAGE_HTTP_{}: {}",
@@ -2011,26 +2051,62 @@ async fn query_sub2api_model_provider_usage(
     base_url: &str,
     key: &str,
 ) -> Result<CodexModelProviderUsageSummary, String> {
-    let url = codex_model_provider_usage_url(base_url)?;
-    let started = Instant::now();
-    let response = client
-        .get(&url)
-        .bearer_auth(key)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("PROVIDER_USAGE_NETWORK_FAILED: {}", e))?;
-    let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!(
-            "PROVIDER_USAGE_HTTP_{}: {}",
-            status.as_u16(),
-            text.chars().take(300).collect::<String>()
-        ));
+    let urls = codex_model_provider_sub2api_urls(base_url)?;
+    let mut last_error = None;
+    for url in urls {
+        let started = Instant::now();
+        let response = match client
+            .get(&url)
+            .bearer_auth(key)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                last_error = Some(format!("PROVIDER_USAGE_NETWORK_FAILED: {}", e));
+                continue;
+            }
+        };
+        let latency_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        let status = response.status();
+        let is_html = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.contains("text/html"))
+            .unwrap_or(false);
+        let text = response.text().await.unwrap_or_default();
+        let looks_like_html = is_html
+            || text.trim_start().starts_with("<!doctype")
+            || text.trim_start().starts_with("<!DOCTYPE")
+            || text.trim_start().starts_with("<html");
+
+        if looks_like_html || status == reqwest::StatusCode::NOT_FOUND {
+            last_error = Some(format!(
+                "PROVIDER_USAGE_HTTP_{}: {}",
+                status.as_u16(),
+                text.chars().take(300).collect::<String>()
+            ));
+            continue;
+        }
+
+        if !status.is_success() {
+            return Err(format!(
+                "PROVIDER_USAGE_HTTP_{}: {}",
+                status.as_u16(),
+                text.chars().take(300).collect::<String>()
+            ));
+        }
+
+        let parsed = match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                last_error = Some(format!("PROVIDER_USAGE_PARSE_FAILED: {}", e));
+                continue;
+            }
+        };
+        return Ok(summarize_model_provider_usage(&parsed, latency_ms));
     }
-    let parsed = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| format!("PROVIDER_USAGE_PARSE_FAILED: {}", e))?;
-    Ok(summarize_model_provider_usage(&parsed, latency_ms))
+    Err(last_error.unwrap_or_else(|| "PROVIDER_USAGE_DETECT_FAILED".to_string()))
 }

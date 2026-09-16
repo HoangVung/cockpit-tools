@@ -117,7 +117,9 @@ export async function queryModelProviderUsage(input: {
 }): Promise<ModelProviderUsageSummary> {
   const candidates = buildUsageBaseUrlCandidates(input.baseUrl);
   let lastError: unknown = null;
-  for (const baseUrl of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const baseUrl = candidates[i];
+    const isLast = i === candidates.length - 1;
     try {
       return await invoke('codex_query_model_provider_usage', {
         baseUrl,
@@ -126,6 +128,9 @@ export async function queryModelProviderUsage(input: {
       });
     } catch (error) {
       lastError = error;
+      if (!isLast && isModelProviderUsageRetryableCandidateError(error)) {
+        continue;
+      }
       if (!isModelProviderUsageUnavailableError(error)) {
         throw error;
       }
@@ -150,6 +155,15 @@ export function isModelProviderUsageUnavailableError(error: unknown): boolean {
     message.includes('PROVIDER_USAGE_DETECT_FAILED') ||
     message.includes('PROVIDER_USAGE_HTTP_404') ||
     message.includes('PROVIDER_USAGE_TYPE_UNSUPPORTED')
+  );
+}
+
+export function isModelProviderUsageRetryableCandidateError(error: unknown): boolean {
+  const message = String(error).replace(/^Error:\s*/, '');
+  return (
+    isModelProviderUsageUnavailableError(error) ||
+    message.includes('PROVIDER_USAGE_PARSE_FAILED') ||
+    message.includes('PROVIDER_USAGE_NETWORK_FAILED')
   );
 }
 

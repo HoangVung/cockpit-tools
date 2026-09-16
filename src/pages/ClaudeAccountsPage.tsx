@@ -61,6 +61,7 @@ import {
   queryModelProviderUsage,
   type ModelProviderUsageSummary,
 } from '../services/modelProviderUsageService';
+import { buildApiKeyFunProviderBaseUrl } from '../utils/apikeyFunLinks';
 import { compareCurrentAccountFirst } from '../utils/currentAccountSort';
 import { isPrivacyModeEnabledByDefault, maskSensitiveValue, persistPrivacyModeEnabled } from '../utils/privacy';
 import * as claudeService from '../services/claudeService';
@@ -2261,7 +2262,9 @@ export function ClaudeAccountsPage({ subPlatform = 'desktop' }: ClaudeAccountsPa
 
       try {
         const summary = await queryModelProviderUsage({
-          baseUrl,
+          baseUrl: isClaudeApiKeyFunAccount(account)
+            ? buildApiKeyFunProviderBaseUrl(baseUrl)
+            : baseUrl,
           apiKey,
           // APIKEY.FAN exposes the Sub2API-compatible usage endpoint at
           // /v1/usage. Skipping protocol probing avoids an unnecessary
