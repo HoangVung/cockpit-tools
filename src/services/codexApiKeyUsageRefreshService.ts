@@ -77,7 +77,7 @@ export function writeCodexApiKeyUsageCache(
   }
 }
 
-function notifyCodexApiKeyUsageRefreshed(): void {
+export function notifyCodexApiKeyUsageRefreshed(): void {
   window.dispatchEvent(new CustomEvent(CODEX_API_KEY_USAGE_REFRESHED_EVENT));
 }
 

@@ -30,7 +30,7 @@ import { APIKEY_FUN_PROVIDER_BASE_URL } from "../utils/apikeyFunLinks";
 import { APIKEY_FUN_PREFILL_EVENT, consumeApiKeyFunPrefill, type ApiKeyFunPrefillPayload } from "../utils/apiKeyFunPrefill";
 import { findCodexModelProviderById, findCodexModelProviderByBaseUrl, queryCodexModelProviderUsage, saveCodexModelProviderDetectedIntegrationType, type CodexModelProvider, upsertCodexModelProviderFromCredential } from "../services/codexModelProviderService";
 import { buildCodexModelProviderAccountSnapshot, findCodexAccountsReferencingModelProvider, mergeCodexModelProviderCredentialInput } from "../utils/codexModelProviderAccountSync";
-import { CODEX_API_KEY_USAGE_REFRESHED_EVENT, readCodexApiKeyUsageCache, writeCodexApiKeyUsageCache, type CodexApiKeyUsageState } from "../services/codexApiKeyUsageRefreshService";
+import { CODEX_API_KEY_USAGE_REFRESHED_EVENT, notifyCodexApiKeyUsageRefreshed, readCodexApiKeyUsageCache, writeCodexApiKeyUsageCache, type CodexApiKeyUsageState } from "../services/codexApiKeyUsageRefreshService";
 import { isModelProviderUsageUnavailableError, listModelProviderModels } from "../services/modelProviderUsageService";
 import { upsertSavedMfaRecord } from "../utils/mfaVault";
 import md5 from "blueimp-md5";
@@ -3219,6 +3219,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
   
     useEffect(() => {
       writeCodexApiKeyUsageCache(apiKeyUsageMap);
+      notifyCodexApiKeyUsageRefreshed();
     }, [apiKeyUsageMap]);
   
     useEffect(() => {
@@ -3238,7 +3239,33 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
     ]);
   
     useEffect(() => {
-      const syncUsageCache = () => setApiKeyUsageMap(readCodexApiKeyUsageCache());
+      const syncUsageCache = () => {
+        const cache = readCodexApiKeyUsageCache();
+        setApiKeyUsageMap((previous) => {
+          const prevKeys = Object.keys(previous);
+          const cacheKeys = Object.keys(cache);
+          if (prevKeys.length !== cacheKeys.length) {
+            return { ...previous, ...cache };
+          }
+          let changed = false;
+          for (const key of cacheKeys) {
+            const p = previous[key];
+            const c = cache[key];
+            if (
+              !p ||
+              p.updatedAt !== c.updatedAt ||
+              p.loading !== c.loading ||
+              p.unavailable !== c.unavailable ||
+              p.error !== c.error ||
+              p.summary !== c.summary
+            ) {
+              changed = true;
+              break;
+            }
+          }
+          return changed ? { ...previous, ...cache } : previous;
+        });
+      };
       window.addEventListener(
         CODEX_API_KEY_USAGE_REFRESHED_EVENT,
         syncUsageCache,
