@@ -79,7 +79,7 @@ fn codex_model_provider_sub2api_urls(base_url: &str) -> Result<Vec<String>, Stri
         "http" | "https" => {}
         _ => return Err("PROVIDER_BASE_URL_INVALID".to_string()),
     }
-    let path = url.path().trim_end_matches('/');
+    let path = url.path().trim_end_matches('/').to_string();
     if path.is_empty() {
         // Sub2API-compatible services conventionally expose /usage under /v1.
         // Some services expose /usage at the root domain.
@@ -92,10 +92,9 @@ fn codex_model_provider_sub2api_urls(base_url: &str) -> Result<Vec<String>, Stri
         root_url.set_query(None);
         Ok(vec![v1_url.to_string(), root_url.to_string()])
     } else {
-        let mut target_url = url;
-        target_url.set_path(&format!("{}/usage", path));
-        target_url.set_query(None);
-        Ok(vec![target_url.to_string()])
+        url.set_path(&format!("{}/usage", path));
+        url.set_query(None);
+        Ok(vec![url.to_string()])
     }
 }
 

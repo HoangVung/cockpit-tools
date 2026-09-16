@@ -1676,6 +1676,14 @@ fn close_captured_codex_direct_app_servers(
 }
 
 #[cfg(target_os = "windows")]
+fn extract_windowsapps_pkg_name(path: &str) -> Option<&str> {
+    let after = path.split("\\windowsapps\\").nth(1)?;
+    let pkg_dir = after.split('\\').next()?;
+    let pkg_name = pkg_dir.split('_').next()?;
+    Some(pkg_name)
+}
+
+#[cfg(target_os = "windows")]
 fn is_matching_codex_windows_exe(actual: &str, expected: &str) -> bool {
     if actual == expected {
         return true;
@@ -1690,13 +1698,7 @@ fn is_matching_codex_windows_exe(actual: &str, expected: &str) -> bool {
             .and_then(|f| f.to_str())
             .unwrap_or("");
         if !actual_file.is_empty() && actual_file.eq_ignore_ascii_case(expected_file) {
-            let extract_pkg = |path: &str| -> Option<&str> {
-                let after = path.split("\\windowsapps\\").nth(1)?;
-                let pkg_dir = after.split('\\').next()?;
-                let pkg_name = pkg_dir.split('_').next()?;
-                Some(pkg_name)
-            };
-            if let (Some(p1), Some(p2)) = (extract_pkg(actual), extract_pkg(expected)) {
+            if let (Some(p1), Some(p2)) = (extract_windowsapps_pkg_name(actual), extract_windowsapps_pkg_name(expected)) {
                 if p1.eq_ignore_ascii_case(p2) {
                     return true;
                 }
