@@ -2513,6 +2513,7 @@ fn launch_codex_via_powershell_exec_path(
     codex_home: &str,
     app_user_data_dir: &std::path::Path,
     extra_args: &[String],
+    extra_env: &[(String, String)],
 ) -> Result<(), String> {
     let launch_path = launch_path.to_string_lossy();
     let launch_path = launch_path.trim();
@@ -2520,12 +2521,20 @@ fn launch_codex_via_powershell_exec_path(
         return Err("Codex 启动路径为空".to_string());
     }
 
-    let mut env_pairs = managed_proxy_env_pairs();
-    env_pairs.push(("CODEX_HOME", codex_home.to_string()));
+    let mut env_pairs: Vec<(String, String)> = managed_proxy_env_pairs()
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
+    env_pairs.push(("CODEX_HOME".to_string(), codex_home.to_string()));
     env_pairs.push((
-        "CODEX_ELECTRON_USER_DATA_PATH",
+        "CODEX_ELECTRON_USER_DATA_PATH".to_string(),
         app_user_data_dir.to_string_lossy().to_string(),
     ));
+    // 临时登录的主进程注入（NODE_OPTIONS）等附加环境变量必须一起传下去，
+    // 否则 WindowsApps 直启被拒时改走 PowerShell 启动会静默丢掉注入。
+    for (key, value) in extra_env {
+        env_pairs.push((key.clone(), value.clone()));
+    }
     let env_lines = env_pairs
         .into_iter()
         .map(|(key, value)| format!("$env:{}='{}'", key, escape_powershell_single_quoted(&value)))
@@ -2559,11 +2568,62 @@ Start-Process -FilePath $exe{argument_list} -ErrorAction Stop | Out-Null"#,
 
 const CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX: &str = "CODEX_MANAGED_STORE_LAUNCH_UNSAFE:";
 
-fn codex_managed_store_launch_unsafe_error(direct_error: &str, powershell_error: &str) -> String {
+fn codex_managed_store_launch_unsafe_error(
+    direct_error: &str,
+    powershell_error: &str,
+    diagnostics: &str,
+) -> String {
     format!(
-        "{}direct_error={}; powershell_error={}",
-        CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX, direct_error, powershell_error
+        "{}direct_error={}; powershell_error={}{}",
+        CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX,
+        direct_error,
+        powershell_error,
+        if diagnostics.trim().is_empty() {
+            String::new()
+        } else {
+            format!("; {}", diagnostics.trim())
+        }
     )
+}
+
+/// 商店版 Codex 更新后，配置里可能残留旧版本包目录：目录仍然存在（所以不会被
+/// 「路径不存在」的重新探测覆盖），但已经不允许当前用户执行，直启固定报 `os error 5`。
+///
+/// 返回当前注册包对应的启动路径；路径一致、不是商店目录或无法确认时返回 `None`。
+#[cfg(target_os = "windows")]
+fn refresh_registered_codex_store_launch_path(
+    current: &Path,
+) -> Option<std::path::PathBuf> {
+    if !is_windowsapps_launch_path(current) {
+        return None;
+    }
+    let registered = detect_codex_exec_path_by_appx_install_location()?;
+    if normalized_windows_path_text(&registered) == normalized_windows_path_text(current) {
+        return None;
+    }
+    Some(registered)
+}
+
+/// 启动失败时附带的环境信息，便于用户自助排查与反馈定位。
+#[cfg(target_os = "windows")]
+fn codex_managed_store_launch_diagnostics(launch_path: &Path, codex_home: &str) -> String {
+    let mut parts = vec![
+        format!("launch_path={}", launch_path.to_string_lossy()),
+        format!("launch_path_exists={}", launch_path.exists()),
+    ];
+    match detect_codex_exec_path_by_appx_install_location() {
+        Some(registered) => {
+            parts.push(format!("registered_path={}", registered.to_string_lossy()));
+            parts.push(format!(
+                "path_matches_registered={}",
+                normalized_windows_path_text(&registered)
+                    == normalized_windows_path_text(launch_path)
+            ));
+        }
+        None => parts.push("registered_path=<unknown>".to_string()),
+    }
+    parts.push(format!("codex_home={}", codex_home));
+    parts.join("; ")
 }
 
 pub(crate) fn detect_codex_exec_path() -> Option<std::path::PathBuf> {
@@ -2592,7 +2652,7 @@ pub(crate) fn detect_codex_exec_path() -> Option<std::path::PathBuf> {
         if let Some(path) = detect_codex_exec_path_by_windowsapps_scan() {
             return Some(path);
         }
-        if let Some(path) = detect_codex_exec_path_by_appx_install_location() {
+        if let Some(path) = detect_codex_exec_path_by_windowsapps_scan() {
             return Some(path);
         }
     }

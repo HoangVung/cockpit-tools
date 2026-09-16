@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows-Vorgang nicht abgeschlossen",
       "accessDeniedDescription": "Windows hat den Vorgang verweigert. Das Ziel läuft möglicherweise mit höheren Rechten oder liegt in einem geschützten Ordner.",
+      "storeLaunchBlockedDescription": "Windows konnte den aktuell konfigurierten Codex-Client nicht ausführen: Der Store-Ordner wurde möglicherweise durch ein Update ersetzt oder lässt keine Ausführung mehr zu. Der direkte Start wurde blockiert, damit kein falsches Konto geöffnet wird. Nutze „Pfad neu erkennen und erneut versuchen“; schlägt das fehl, stelle diese Instanz auf den CLI-Start um.",
+      "repairPath": "Pfad neu erkennen und erneut versuchen",
       "fileInUseDescription": "Die Zieldatei wird von einem anderen Programm verwendet. Schließen Sie es und versuchen Sie es erneut.",
       "programNotFoundDescription": "Windows konnte das benötigte Programm nicht finden. Prüfen Sie Installation und Pfad.",
       "portDeniedDescription": "Windows hat den Portzugriff blockiert. Eine Systemrichtlinie oder ein anderes Programm verwendet ihn möglicherweise.",

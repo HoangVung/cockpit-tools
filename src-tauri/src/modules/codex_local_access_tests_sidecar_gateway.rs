@@ -1698,7 +1698,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             .expect("apply deepseek pool fallback");
         let applied = fs::read_to_string(&config_path).expect("read profile config");
         assert!(applied.contains("remote_compaction_v2 = false"));
-        assert!(applied.contains("token_budget = true"));
+        assert!(!applied.contains("token_budget"));
         assert!(applied.contains("js_repl = false"));
         // 混合账号池只动压缩键，官方账号的 service_tier 必须保留。
         assert!(applied.contains("service_tier = \"priority\""));
@@ -1733,7 +1733,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
             .expect("reapply deepseek fallback");
         let applied = fs::read_to_string(&config_path).expect("read profile config");
         assert!(applied.contains("remote_compaction_v2 = false"));
-        assert!(applied.contains("token_budget = true"));
+        assert!(!applied.contains("token_budget"));
         assert!(applied.contains("js_repl = false"));
 
         // 其它供应商的网关 profile 不做任何改写。

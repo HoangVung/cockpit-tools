@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operacja Windows nie została ukończona",
       "accessDeniedDescription": "Windows odmówił wykonania operacji. Program może działać z wyższymi uprawnieniami lub znajdować się w chronionej lokalizacji.",
+      "storeLaunchBlockedDescription": "Windows nie mógł uruchomić skonfigurowanego klienta Codex: folder ze Sklepu mógł zostać zastąpiony przez aktualizację lub nie pozwala już na uruchamianie. Bezpośrednie uruchomienie zablokowano, aby nie otworzyć niewłaściwego konta. Użyj „Wykryj ścieżkę ponownie i spróbuj ponownie”; jeśli to nie pomoże, przełącz tę instancję na tryb CLI.",
+      "repairPath": "Wykryj ścieżkę ponownie i spróbuj ponownie",
       "fileInUseDescription": "Plik jest używany przez inny program. Zamknij go i spróbuj ponownie.",
       "programNotFoundDescription": "Windows nie znalazł wymaganego programu. Sprawdź instalację lub skonfigurowaną ścieżkę.",
       "portDeniedDescription": "Windows zablokował dostęp do portu. Może go używać zasada systemowa lub inny program.",

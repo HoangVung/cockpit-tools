@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows 操作未完成",
       "accessDeniedDescription": "Windows 拒绝了本次操作。目标程序可能以更高权限运行，或位于受保护目录中。",
+      "storeLaunchBlockedDescription": "Windows 无法执行当前配置的 Codex 客户端：商店版应用目录可能已被更新替换，或该目录不再允许运行。为免打开错误的账号，已阻止直接启动。可「重新检测路径并重试」；仍失败时请把该实例的启动方式改为 CLI。",
+      "repairPath": "重新检测路径并重试",
       "fileInUseDescription": "目标文件正在被其他程序使用。请关闭占用程序后重试。",
       "programNotFoundDescription": "Windows 找不到完成本次操作所需的程序。请检查安装状态或路径设置。",
       "portDeniedDescription": "Windows 阻止了端口访问。端口可能被系统策略或其他程序占用。",

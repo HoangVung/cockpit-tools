@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows 操作が完了していません",
       "accessDeniedDescription": "Windows により操作が拒否されました。対象が高い権限で実行中か、保護された場所にある可能性があります。",
+      "storeLaunchBlockedDescription": "Windows は現在設定されている Codex クライアントを実行できませんでした。ストア版のフォルダーが更新で置き換わったか、実行が許可されていない可能性があります。誤ったアカウントで開かないよう、直接起動をブロックしました。「パスの再検出と再試行」を実行し、それでも失敗する場合はこのインスタンスの起動方式を CLI に変更してください。",
+      "repairPath": "パスを再検出して再試行",
       "fileInUseDescription": "対象ファイルは別のプログラムで使用中です。そのプログラムを閉じて再試行してください。",
       "programNotFoundDescription": "操作に必要なプログラムが見つかりません。インストール状態または設定パスを確認してください。",
       "portDeniedDescription": "Windows がポートへのアクセスをブロックしました。システムポリシーまたは別のプログラムが使用している可能性があります。",

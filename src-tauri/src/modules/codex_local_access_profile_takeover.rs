@@ -614,7 +614,7 @@ fn restore_config_toml_from_takeover_backup(
     }
 
     // 接管期间为 DeepSeek 账号池启用的本地压缩兜底属于 Cockpit 写入的受管状态：
-    // 拆掉接管时按接管前备份还原，避免把用户的 profile 永久留在本地压缩模式。
+    // 拆掉接管时按接管前备份还原，避免把用户的 profile 永久留在受管的压缩设置上。
     restore_managed_local_compaction_fallback(&mut current_doc, backup_doc.as_ref());
 
     let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut current_doc);

@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operación de Windows incompleta",
       "accessDeniedDescription": "Windows rechazó la operación. El destino puede ejecutarse con más privilegios o estar en una ubicación protegida.",
+      "storeLaunchBlockedDescription": "Windows no pudo ejecutar el cliente de Codex configurado: puede que una actualización haya reemplazado la carpeta de la Store o que ya no permita su ejecución. Se bloqueó el inicio directo para no abrir la cuenta equivocada. Usa «Volver a detectar la ruta y reintentar»; si sigue fallando, cambia esta instancia al modo CLI.",
+      "repairPath": "Volver a detectar la ruta y reintentar",
       "fileInUseDescription": "Otro programa está usando el archivo. Ciérralo e inténtalo de nuevo.",
       "programNotFoundDescription": "Windows no encontró el programa necesario. Comprueba la instalación o la ruta configurada.",
       "portDeniedDescription": "Windows bloqueó el acceso al puerto. Puede estar reservado por una directiva o por otro programa.",

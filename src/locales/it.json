@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operazione Windows non completata",
       "accessDeniedDescription": "Windows ha negato l’operazione. Il programma può avere privilegi superiori o trovarsi in una posizione protetta.",
+      "storeLaunchBlockedDescription": "Windows non ha potuto avviare il client Codex configurato: la cartella dello Store potrebbe essere stata sostituita da un aggiornamento o non consentire più l’esecuzione. L’avvio diretto è stato bloccato per non aprire l’account sbagliato. Usa «Rileva di nuovo il percorso e riprova»; se fallisce ancora, passa questa istanza alla modalità CLI.",
+      "repairPath": "Rileva di nuovo il percorso e riprova",
       "fileInUseDescription": "Il file è utilizzato da un altro programma. Chiudilo e riprova.",
       "programNotFoundDescription": "Windows non ha trovato il programma necessario. Controlla l’installazione o il percorso configurato.",
       "portDeniedDescription": "Windows ha bloccato l’accesso alla porta. Potrebbe essere usata da un criterio di sistema o da un altro programma.",

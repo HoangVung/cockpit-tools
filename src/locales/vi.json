@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Thao tác Windows chưa hoàn tất",
       "accessDeniedDescription": "Windows đã từ chối thao tác. Chương trình đích có thể chạy với quyền cao hơn hoặc nằm trong vị trí được bảo vệ.",
+      "storeLaunchBlockedDescription": "Windows không thể chạy ứng dụng Codex đã cấu hình: thư mục Store có thể đã bị bản cập nhật thay thế hoặc không còn cho phép thực thi. Đã chặn khởi chạy trực tiếp để tránh mở sai tài khoản. Hãy dùng “Dò lại đường dẫn và thử lại”; nếu vẫn lỗi, chuyển phiên bản này sang chế độ CLI.",
+      "repairPath": "Dò lại đường dẫn và thử lại",
       "fileInUseDescription": "Tệp đích đang được chương trình khác sử dụng. Hãy đóng chương trình rồi thử lại.",
       "programNotFoundDescription": "Windows không tìm thấy chương trình cần thiết. Hãy kiểm tra cài đặt hoặc đường dẫn đã cấu hình.",
       "portDeniedDescription": "Windows đã chặn truy cập cổng. Chính sách hệ thống hoặc chương trình khác có thể đang sử dụng cổng.",

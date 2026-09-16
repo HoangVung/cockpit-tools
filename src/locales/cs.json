@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operace Windows nebyla dokončena",
       "accessDeniedDescription": "Windows tuto operaci zamítl. Cílový program může běžet s vyšším oprávněním nebo být v chráněném umístění.",
+      "storeLaunchBlockedDescription": "Windows nemohl spustit nakonfigurovaného klienta Codex: složka z Store mohla být nahrazena aktualizací nebo už neumožňuje spuštění. Přímé spuštění bylo zablokováno, aby se neotevřel nesprávný účet. Použijte „Znovu zjistit cestu a zkusit to“; pokud to selže, přepněte tuto instanci na režim CLI.",
+      "repairPath": "Znovu zjistit cestu a zkusit to",
       "fileInUseDescription": "Cílový soubor používá jiný program. Zavřete jej a zkuste to znovu.",
       "programNotFoundDescription": "Windows nenašel program potřebný pro tuto operaci. Zkontrolujte instalaci nebo nastavenou cestu.",
       "portDeniedDescription": "Windows zablokoval přístup k portu. Může jej používat systémová zásada nebo jiný program.",

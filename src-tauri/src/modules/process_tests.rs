@@ -269,10 +269,26 @@ mod codex_launch_args_tests {
 
     #[test]
     fn managed_store_launch_error_is_machine_readable_and_keeps_causes() {
-        let error = codex_managed_store_launch_unsafe_error("denied", "fallback failed");
+        let error = codex_managed_store_launch_unsafe_error(
+            "denied",
+            "fallback failed",
+            "launch_path=C:\\Program Files\\WindowsApps\\OpenAI.Codex_1.0\\app\\ChatGPT.exe; launch_path_exists=true",
+        );
         assert!(error.starts_with(CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX));
         assert!(error.contains("direct_error=denied"));
         assert!(error.contains("powershell_error=fallback failed"));
+        // 诊断信息要跟着错误一起回传，用户复制错误即可让支持侧看到实际路径。
+        assert!(error.contains("launch_path="));
+        assert!(error.contains("launch_path_exists=true"));
+    }
+
+    #[test]
+    fn managed_store_launch_error_omits_empty_diagnostics() {
+        let error = codex_managed_store_launch_unsafe_error("denied", "fallback failed", "  ");
+        assert_eq!(
+            error,
+            "CODEX_MANAGED_STORE_LAUNCH_UNSAFE:direct_error=denied; powershell_error=fallback failed"
+        );
     }
 }
 
@@ -583,6 +599,67 @@ mod tests {
             solo_cn,
             TraePlatformKind::TraeSolo
         ));
+    }
+}
+
+#[cfg(test)]
+mod windows_codex_exe_match_tests {
+    use super::{is_matching_codex_windows_exe, windowsapps_package_family};
+
+    const OLD_STORE: &str = r"c:\program files\windowsapps\openai.codex_26.820.7780.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+    const NEW_STORE: &str = r"c:\program files\windowsapps\openai.codex_26.908.4834.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+    const OTHER_FAMILY: &str = r"c:\program files\windowsapps\openai.chatgpt_1.0.0.0_x64__2p2nqsd0c76g0\app\chatgpt.exe";
+
+    #[test]
+    fn windowsapps_family_is_parsed_from_package_directory() {
+        assert_eq!(
+            windowsapps_package_family(OLD_STORE).as_deref(),
+            Some("openai.codex")
+        );
+        assert_eq!(
+            windowsapps_package_family(r"C:/Program Files/WindowsApps/OpenAI.Codex_1.0_x64__abc/app/Codex.exe")
+                .as_deref(),
+            Some("openai.codex")
+        );
+        assert!(windowsapps_package_family(r"c:\users\me\codex\codex.exe").is_none());
+    }
+
+    #[test]
+    fn store_package_matches_across_version_directories() {
+        // 商店更新后配置路径与运行中进程只差版本目录，必须仍然认作同一实例，
+        // 否则会误判「客户端没启动 / 已关闭」，官方登录更会直接判定失败。
+        assert!(is_matching_codex_windows_exe(NEW_STORE, OLD_STORE));
+        assert!(is_matching_codex_windows_exe(OLD_STORE, NEW_STORE));
+        assert!(is_matching_codex_windows_exe(NEW_STORE, NEW_STORE));
+    }
+
+    #[test]
+    fn package_family_and_file_name_still_have_to_match() {
+        // 不同包族：ChatGPT 桌面端与 Codex 是两个应用，不能混为一谈。
+        assert!(!is_matching_codex_windows_exe(OTHER_FAMILY, OLD_STORE));
+        // 同包族但不是同一个可执行文件（内置 codex.exe 不应当成主进程）。
+        assert!(!is_matching_codex_windows_exe(
+            r"c:\program files\windowsapps\openai.codex_26.908.4834.0_x64__2p2nqsd0c76g0\app\resources\codex.exe",
+            NEW_STORE
+        ));
+    }
+
+    #[test]
+    fn non_store_paths_keep_strict_comparison() {
+        let local = r"c:\users\me\appdata\local\programs\codex\codex.exe";
+        let other = r"d:\elsewhere\codex\codex.exe";
+        assert!(is_matching_codex_windows_exe(local, local));
+        assert!(!is_matching_codex_windows_exe(other, local));
+        // 一侧是商店路径、另一侧不是时不得放宽。
+        assert!(!is_matching_codex_windows_exe(local, NEW_STORE));
+        assert!(!is_matching_codex_windows_exe(NEW_STORE, local));
+    }
+
+    #[test]
+    fn empty_paths_never_match() {
+        assert!(!is_matching_codex_windows_exe("", NEW_STORE));
+        assert!(!is_matching_codex_windows_exe(NEW_STORE, ""));
+        assert!(!is_matching_codex_windows_exe("", ""));
     }
 }
 

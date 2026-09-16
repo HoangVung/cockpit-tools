@@ -149,7 +149,8 @@
         let config = fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE))
             .expect("read config");
         assert!(config.contains("remote_compaction_v2 = false"));
-        assert!(config.contains("token_budget = true"));
+        // 只有远端压缩被关闭；`token_budget` 会把压缩换成不产摘要的窗口重置，不能写入。
+        assert!(!config.contains("token_budget"));
 
         let restored = restore_config_toml_from_takeover_backup(Some(&config), Some(original))
             .expect("restore")

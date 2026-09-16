@@ -312,7 +312,8 @@
         super::apply_deepseek_config_overrides(&mut doc, &base_dir);
         let applied = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
         assert!(applied.contains("remote_compaction_v2 = false"));
-        assert!(applied.contains("token_budget = true"));
+        // `token_budget = true` 会让客户端把压缩换成不产摘要的窗口重置，必须保持清除状态。
+        assert!(!applied.contains("token_budget"));
         assert!(applied.contains("js_repl = false"));
 
         assert!(super::restore_deepseek_config_overrides(&mut doc, &base_dir));
@@ -333,6 +334,7 @@
         super::apply_deepseek_config_overrides(&mut doc, &base_dir);
         let applied = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
         assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(!applied.contains("token_budget"));
 
         assert!(super::restore_deepseek_config_overrides(&mut doc, &base_dir));
         let restored = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
@@ -359,7 +361,7 @@
         assert!(super::reapply_deepseek_config_overrides_for_dir(&base_dir).expect("reapply"));
         let applied = fs::read_to_string(&config_path).expect("read config");
         assert!(applied.contains("remote_compaction_v2 = false"));
-        assert!(applied.contains("token_budget = true"));
+        assert!(!applied.contains("token_budget"));
         assert!(applied.contains("js_repl = false"));
         assert!(applied.contains("name = \"OpenAI\""));
         assert!(base_dir.join(super::DEEPSEEK_COMPACTION_BACKUP_FILE).exists());
@@ -395,12 +397,38 @@
         assert!(super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("apply"));
         let applied = fs::read_to_string(&config_path).expect("read config");
         assert!(applied.contains("remote_compaction_v2 = false"));
-        assert!(applied.contains("token_budget = true"));
+        assert!(!applied.contains("token_budget"));
         // 只动压缩键：账号池里的官方账号仍要保留 service_tier / web_search 等原有设置。
         assert!(applied.contains("service_tier = \"priority\""));
         assert!(applied.contains("web_search = \"live\""));
         assert!(!applied.contains("web_search = \"disabled\""));
 
+        assert!(!super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("idempotent"));
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("read config"),
+            applied
+        );
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn local_compaction_fallback_clears_legacy_token_budget_override() {
+        let base_dir = make_temp_dir("codex-local-compaction-legacy-cleanup");
+        let config_path = super::get_config_toml_path(&base_dir);
+        // 复现 1.3.54 / 1.3.55 写下的受管状态：远端压缩关闭 + token_budget 打开（换窗口模式）。
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &config_path,
+            "model = \"gpt-5.6-sol\"\n\n[features]\nremote_compaction_v2 = false\ntoken_budget = true\njs_repl = false\n",
+        )
+        .expect("write config");
+
+        assert!(super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("apply"));
+        let applied = fs::read_to_string(&config_path).expect("read config");
+        assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(!applied.contains("token_budget"));
+        assert!(applied.contains("js_repl = false"));
+
+        // 清理后保持幂等，避免每次启动都改写配置。
         assert!(!super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("idempotent"));
         assert_eq!(
             fs::read_to_string(&config_path).expect("read config"),

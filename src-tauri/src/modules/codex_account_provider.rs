@@ -1433,7 +1433,7 @@ fn restore_deepseek_top_level_backup(
 }
 
 /// 切到 DeepSeek 时写入官方要求的配置，并先记录原值以便切走时精确还原：
-/// - 压缩兜底：DeepSeek 没有服务端压缩端点，自动压缩会一直失败。
+/// - 压缩兜底：DeepSeek 没有服务端压缩端点，远端压缩会一直失败；本地压缩保留摘要流程。
 /// - 禁用内置联网搜索。
 /// - 移除与官方 models.json 声明冲突的顶层键。
 pub(crate) fn apply_deepseek_config_overrides(doc: &mut Document, base_dir: &Path) {
@@ -1523,8 +1523,8 @@ pub(crate) fn restore_deepseek_config_overrides(doc: &mut Document, base_dir: &P
 /// 与 `responses/compact`）会把整段历史交给上游校验，而本地网关出口已经把第三方推理正文
 /// 改写成官方形状，上游会以
 /// `The reasoning_text in the thinking mode must be passed back to the API` 拒绝压缩。
-/// 这里在接管完成后按 profile 目录补回兜底（关闭 `remote_compaction_v2`、启用 `token_budget`），
-/// 让压缩回到本地流程；切走时仍按同一份备份还原用户设置。
+/// 这里在接管完成后按 profile 目录补回兜底（关闭 `remote_compaction_v2`、移除 `token_budget`），
+/// 让压缩留在本地摘要流程；切走时仍按同一份备份还原用户设置。
 pub(crate) fn reapply_deepseek_config_overrides_for_dir(base_dir: &Path) -> Result<bool, String> {
     let config_path = get_config_toml_path(base_dir);
     // 没有 config.toml 说明接管流程还没写入 profile 配置，此时单独写兜底键会生成
@@ -1551,7 +1551,7 @@ pub(crate) fn reapply_deepseek_config_overrides_for_dir(base_dir: &Path) -> Resu
     Ok(true)
 }
 
-/// 只写压缩兜底（`remote_compaction_v2 = false` + `token_budget = true`），不写其它 DeepSeek 专属覆盖。
+/// 只写压缩兜底（`remote_compaction_v2 = false`，并移除 `token_budget`），不写其它 DeepSeek 专属覆盖。
 ///
 /// 供「账号池里同时有官方账号与 DeepSeek 账号」的转发 profile 使用：这类 profile 不能整体套用
 /// `web_search = "disabled"`、移除 `service_tier` 等 DeepSeek 专属改写，否则会一并影响池里的官方账号。
@@ -1561,7 +1561,11 @@ pub(crate) fn apply_local_compaction_fallback(doc: &mut Document) {
     }
     if let Some(table) = doc["features"].as_table_mut() {
         table["remote_compaction_v2"] = toml_edit::value(false);
-        table["token_budget"] = toml_edit::value(true);
+        // `token_budget = true` 会把压缩改成「窗口用尽即换新窗口」：客户端直接进入新窗口，
+        // 不生成摘要，任务只留在旧窗口里（表现为压缩完成后丢掉任务）。本地压缩必须保留摘要流程，
+        // 因此这里显式移除该键——包括早前版本由 Cockpit 写下的 `true`。
+        // 用户自己的原值由切号备份（cockpit-deepseek-compaction.json）与接管备份负责还原。
+        let _ = table.remove("token_budget");
     }
 }
 

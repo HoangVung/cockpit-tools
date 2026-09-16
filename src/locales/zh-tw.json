@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows 操作尚未完成",
       "accessDeniedDescription": "Windows 拒絕了這次操作。目標程式可能以較高權限執行，或位於受保護的位置。",
+      "storeLaunchBlockedDescription": "Windows 無法執行目前設定的 Codex 用戶端：商店版應用程式目錄可能已被更新替換，或該目錄已不允許執行。為免開啟錯誤的帳號，已阻止直接啟動。可「重新偵測路徑並重試」；仍失敗時請將此執行個體的啟動方式改為 CLI。",
+      "repairPath": "重新偵測路徑並重試",
       "fileInUseDescription": "目標檔案正由其他程式使用。請關閉占用程式後再試一次。",
       "programNotFoundDescription": "Windows 找不到完成操作所需的程式。請檢查安裝狀態或設定路徑。",
       "portDeniedDescription": "Windows 阻擋了連接埠存取。連接埠可能被系統原則或其他程式占用。",

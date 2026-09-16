@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operasi Windows belum selesai",
       "accessDeniedDescription": "Windows menolak operasi ini. Target mungkin berjalan dengan izin lebih tinggi atau berada di lokasi terlindungi.",
+      "storeLaunchBlockedDescription": "Windows tidak dapat menjalankan klien Codex yang dikonfigurasi: folder Store mungkin sudah diganti oleh pembaruan atau tidak lagi mengizinkan eksekusi. Peluncuran langsung diblokir agar akun yang salah tidak terbuka. Gunakan “Deteksi ulang jalur dan coba lagi”; jika masih gagal, ubah instans ini ke mode CLI.",
+      "repairPath": "Deteksi ulang jalur dan coba lagi",
       "fileInUseDescription": "File target sedang digunakan program lain. Tutup program tersebut lalu coba lagi.",
       "programNotFoundDescription": "Windows tidak menemukan program yang diperlukan. Periksa instalasi atau jalur yang diatur.",
       "portDeniedDescription": "Windows memblokir akses ke port. Kebijakan sistem atau program lain mungkin sedang menggunakannya.",

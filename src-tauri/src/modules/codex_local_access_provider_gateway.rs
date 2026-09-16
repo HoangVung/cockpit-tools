@@ -1176,8 +1176,8 @@ fn collection_pool_contains_official_deepseek_account(
 /// message；Codex 的远程压缩 v2 要求响应里恰好有一个 compaction 输出项，所以请求一旦被路由到
 /// DeepSeek 账号就必然失败，并且会先撞上
 /// `The reasoning_text in the thinking mode must be passed back to the API`。
-/// 这里只关闭该 profile 的远程压缩并启用 `token_budget`（本地上下文窗口重置），不写其它
-/// DeepSeek 专属覆盖，避免影响同一账号池里的官方账号。
+/// 这里只关闭该 profile 的远程压缩、并移除会切成「换窗口」模式的 `token_budget`，
+/// 让压缩留在本地摘要流程；不写其它 DeepSeek 专属覆盖，避免影响同一账号池里的官方账号。
 pub(crate) fn ensure_local_compaction_for_account_pool(
     profile_dir: &Path,
     collection: &CodexLocalAccessCollection,
@@ -1200,6 +1200,9 @@ pub(crate) fn ensure_local_compaction_for_account_pool(
 /// DeepSeek：本地网关出口已经把第三方推理正文改写成官方形状，远程压缩会把整段历史交给上游
 /// 校验，上游会以 `The reasoning_text in the thinking mode must be passed back to the API`
 /// 拒绝压缩。只有上游确实是 DeepSeek 官方账号时才补写，其它供应商不受影响。
+///
+/// 补写只关远端压缩并移除 `token_budget`：后者会把压缩换成不产摘要的「窗口重置」，
+/// 让任务在压缩后丢失。
 fn reapply_deepseek_profile_compaction_fallback(
     profile_dir: &Path,
     account: &CodexAccount,

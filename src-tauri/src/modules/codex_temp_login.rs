@@ -487,6 +487,42 @@ async fn run_session(app: AppHandle, session_id: String) {
     forget_session(&session_id);
 }
 
+/// 在后台线程启动官方客户端，返回启动后的实际主进程 pid。
+async fn launch_temp_login_client(
+    profile_dir: &Path,
+    intercept_auth_url: bool,
+) -> Result<u32, String> {
+    let profile_dir_for_launch = profile_dir.to_path_buf();
+    match tauri::async_runtime::spawn_blocking(move || {
+        launch_official_client(&profile_dir_for_launch, intercept_auth_url)
+    })
+    .await
+    {
+        Ok(Ok(pid)) => Ok(pid),
+        Ok(Err(error)) => Err(error),
+        Err(error) => Err(format!("启动官方客户端失败: {}", error)),
+    }
+}
+
+fn log_temp_login_client_started(
+    session_id: &str,
+    pid: u32,
+    profile_dir: &Path,
+    intercepting: bool,
+) {
+    logger::log_info(&format!(
+        "[Codex临时登录] 官方客户端已启动（{}）: session_id={}, pid={}, profile_dir={}",
+        if intercepting {
+            "已注入授权地址拦截"
+        } else {
+            "官方原生流程"
+        },
+        session_id,
+        pid,
+        profile_dir.display()
+    ));
+}
+
 async fn run_session_flow(app: &AppHandle, session_id: &str) -> SessionOutcome {
     let Some(profile_dir) = session_profile_dir(session_id) else {
         return SessionOutcome::Failed("官方登录会话不存在".to_string());
@@ -510,28 +546,21 @@ async fn run_session_flow(app: &AppHandle, session_id: &str) -> SessionOutcome {
     };
 
     emit_progress(app, session_id, "launching", 14, None, None);
-    let profile_dir_for_launch = profile_dir.clone();
-    let pid = match tauri::async_runtime::spawn_blocking(move || {
-        launch_official_client(&profile_dir_for_launch, intercept_auth_url)
-    })
-    .await
-    {
-        Ok(Ok(pid)) => pid,
-        Ok(Err(error)) => return SessionOutcome::Failed(error),
-        Err(error) => return SessionOutcome::Failed(format!("启动官方客户端失败: {}", error)),
+    let mut client_pid = match launch_temp_login_client(&profile_dir, intercept_auth_url).await {
+        Ok(pid) => pid,
+        Err(error) => return SessionOutcome::Failed(error),
     };
-    logger::log_info(&format!(
-        "[Codex临时登录] 官方客户端已启动: session_id={}, pid={}, profile_dir={}",
-        session_id,
-        pid,
-        profile_dir.display()
-    ));
+    log_temp_login_client_started(session_id, client_pid, &profile_dir, intercept_auth_url);
     emit_progress(app, session_id, "waiting-login", 24, None, None);
 
     let started_at = Instant::now();
-    let launched_at = Instant::now();
+    let mut launched_at = Instant::now();
     let mut capture_reader = AuthCaptureReader::default();
     let mut arm_timeout_reported = false;
+    // 当前是否仍处于「注入拦截」模式：注入让官方客户端起不来时会退回官方原生流程。
+    let mut intercepting = intercept_auth_url;
+    // 只允许自动退回一次，避免官方客户端被反复拉起。
+    let mut injection_fallback_used = false;
     loop {
         if cancel.load(Ordering::SeqCst) {
             return SessionOutcome::Cancelled;
@@ -559,7 +588,7 @@ async fn run_session_flow(app: &AppHandle, session_id: &str) -> SessionOutcome {
             }
         }
 
-        let client_running = process::is_pid_running(pid);
+        let client_running = process::is_pid_running(client_pid);
         if official_credentials_present(&profile_dir) {
             emit_progress(app, session_id, "importing", 56, None, None);
             match codex_account::import_from_local_at(&profile_dir) {
@@ -582,6 +611,32 @@ async fn run_session_flow(app: &AppHandle, session_id: &str) -> SessionOutcome {
         }
 
         if !client_running {
+            // 注入让官方客户端在启动阶段直接失败时（主进程加载注入脚本失败会立即退出，
+            // 不会留下任何采集记录），退回官方原生流程再启动一次，保证这次仍能完成登录；
+            // 只是授权地址不再显示在弹框里，由官方客户端照常打开浏览器。
+            if intercepting
+                && !injection_fallback_used
+                && session_auth_capture_status(session_id).is_none()
+            {
+                injection_fallback_used = true;
+                intercepting = false;
+                mark_auth_capture_unavailable(
+                    app,
+                    session_id,
+                    "官方客户端在注入后未能启动，已改用官方原生登录流程",
+                );
+                emit_progress(app, session_id, "launching", 14, None, None);
+                match launch_temp_login_client(&profile_dir, false).await {
+                    Ok(pid) => {
+                        client_pid = pid;
+                        launched_at = Instant::now();
+                        log_temp_login_client_started(session_id, pid, &profile_dir, false);
+                        emit_progress(app, session_id, "waiting-login", 24, None, None);
+                        continue;
+                    }
+                    Err(error) => return SessionOutcome::Failed(error),
+                }
+            }
             return SessionOutcome::Failed(
                 "官方客户端已关闭，但没有检测到可导入的登录信息。".to_string(),
             );
@@ -649,6 +704,16 @@ fn prepare_auth_hook(profile_dir: &Path) -> Result<PathBuf, String> {
     Ok(capture_path)
 }
 
+/// 拼装注入脚本的 `NODE_OPTIONS` 值。
+fn build_auth_hook_node_options(hook_path: &Path) -> String {
+    // Node 解析 `NODE_OPTIONS` 时会把引号内的反斜杠当转义符，Windows 路径会被吃掉分隔符
+    // （`C:\Users\...` → `C:Users...`），`--require` 找不到文件后 Electron 会在启动阶段
+    // 直接退出，官方客户端表现为「刚打开就关闭」。统一换成正斜杠（Windows 同样接受），
+    // 并整体加引号以兼容含空格的路径。
+    let normalized = hook_path.to_string_lossy().replace('\\', "/");
+    format!("--require=\"{}\"", normalized)
+}
+
 /// 用独立 CODEX_HOME 与 Electron user-data-dir 打开官方客户端（与多开实例启动一致）。
 ///
 /// `intercept_auth_url` 为 true 时注入主进程脚本：官方客户端把授权地址交给系统浏览器
@@ -663,8 +728,7 @@ fn launch_official_client(profile_dir: &Path, intercept_auth_url: bool) -> Resul
         return process::start_codex_with_args(&profile_dir_string, &injection_plan.args);
     }
     let (hook_path, capture_path) = auth_capture_paths(profile_dir);
-    // 路径可能含空格，NODE_OPTIONS 按 shell 规则解析，必须整体加引号。
-    let node_options = format!("--require=\"{}\"", hook_path.to_string_lossy());
+    let node_options = build_auth_hook_node_options(&hook_path);
     let extra_env = vec![
         ("NODE_OPTIONS".to_string(), node_options),
         (
@@ -1243,6 +1307,23 @@ mod tests {
             read_pending_cleanup_entries().is_empty(),
             "pending entry should be cleared once cleanup succeeds"
         );
+    }
+
+    #[test]
+    fn auth_hook_node_options_normalizes_windows_path_separators() {
+        // NODE_OPTIONS 解析会吃掉引号内的反斜杠，Windows 路径必须换成正斜杠，
+        // 否则 `--require` 找不到注入脚本，Electron 主进程直接在启动阶段退出。
+        let options = build_auth_hook_node_options(Path::new(
+            r"C:\Users\some user\.antigravity_cockpit\codex-temp-login\abc\.cockpit-auth-hook.cjs",
+        ));
+        assert_eq!(
+            options,
+            "--require=\"C:/Users/some user/.antigravity_cockpit/codex-temp-login/abc/.cockpit-auth-hook.cjs\""
+        );
+        // 路径含空格时仍然要有引号，Shell / Node 才会当成一个路径。
+        assert!(options.starts_with("--require=\""));
+        assert!(options.ends_with('"'));
+        assert!(!options.contains('\\'));
     }
 
     #[test]

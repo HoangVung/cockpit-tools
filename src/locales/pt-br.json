@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Operação do Windows não concluída",
       "accessDeniedDescription": "O Windows negou esta operação. O destino pode estar com privilégios elevados ou em um local protegido.",
+      "storeLaunchBlockedDescription": "O Windows não conseguiu executar o cliente Codex configurado: a pasta da Store pode ter sido substituída por uma atualização ou já não permite execução. O início direto foi bloqueado para não abrir a conta errada. Use “Detectar o caminho novamente e tentar de novo”; se ainda falhar, mude esta instância para o modo CLI.",
+      "repairPath": "Detectar o caminho novamente e tentar de novo",
       "fileInUseDescription": "O arquivo está sendo usado por outro programa. Feche-o e tente novamente.",
       "programNotFoundDescription": "O Windows não encontrou o programa necessário. Verifique a instalação ou o caminho configurado.",
       "portDeniedDescription": "O Windows bloqueou o acesso à porta. Uma política do sistema ou outro programa pode estar usando-a.",

@@ -1441,7 +1441,8 @@ fn collect_codex_windows_resource_process_pids() -> Vec<u32> {
             continue;
         }
         let (resolved_exe, _) = resolve_windows_process_exe_for_match(process);
-        if resolved_exe.as_deref() != Some(expected.as_str()) {
+        let resolved_exe = resolved_exe.unwrap_or_default();
+        if !is_matching_codex_windows_exe(&resolved_exe, &expected) {
             continue;
         }
         let args_line = process

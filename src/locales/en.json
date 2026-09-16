@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows operation incomplete",
       "accessDeniedDescription": "Windows denied this operation. The target may be running with higher privileges or stored in a protected location.",
+      "storeLaunchBlockedDescription": "Windows could not run the currently configured Codex client: the Store package folder may have been replaced by an update, or it no longer allows execution. Launching directly was blocked so the wrong account is not opened. Use \"Re-detect path and retry\"; if it still fails, switch this instance to CLI launch mode.",
+      "repairPath": "Re-detect path and retry",
       "fileInUseDescription": "The target file is in use by another program. Close the program and try again.",
       "programNotFoundDescription": "Windows could not find the program required for this operation. Check the installation or configured path.",
       "portDeniedDescription": "Windows blocked access to the port. A system policy or another program may be using it.",

@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Opération Windows inachevée",
       "accessDeniedDescription": "Windows a refusé cette opération. La cible peut s’exécuter avec des droits supérieurs ou se trouver dans un emplacement protégé.",
+      "storeLaunchBlockedDescription": "Windows n’a pas pu exécuter le client Codex configuré : le dossier du Store a peut-être été remplacé par une mise à jour ou n’autorise plus l’exécution. Le lancement direct a été bloqué pour ne pas ouvrir le mauvais compte. Utilisez « Redétecter le chemin et réessayer » ; si l’échec persiste, passez cette instance en mode CLI.",
+      "repairPath": "Redétecter le chemin et réessayer",
       "fileInUseDescription": "Le fichier cible est utilisé par un autre programme. Fermez-le puis réessayez.",
       "programNotFoundDescription": "Windows n’a pas trouvé le programme requis. Vérifiez l’installation ou le chemin configuré.",
       "portDeniedDescription": "Windows a bloqué l’accès au port. Une stratégie système ou un autre programme peut l’utiliser.",

@@ -1,5 +1,13 @@
 const STRUCTURED_PREFIX = "WINDOWS_OPERATION_ERROR:";
 
+/**
+ * 多开实例（客户端模式）启动被系统拒绝时后端回传的标记：
+ * 直启 WindowsApps 内的 ChatGPT.exe 与 PowerShell 兜底都被拒绝，
+ * 后端为避免打开默认账号而放弃商店入口兜底。
+ */
+export const CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX =
+  "CODEX_MANAGED_STORE_LAUNCH_UNSAFE:";
+
 export type WindowsOperationKind =
   | "launch_app"
   | "stop_process"
@@ -16,7 +24,13 @@ export type WindowsOperationErrorCode =
   | "file_in_use"
   | "program_not_found"
   | "port_denied"
+  | "codex_store_launch_blocked"
   | "operation_failed";
+
+export interface WindowsOperationDiagnostic {
+  label: string;
+  value: string;
+}
 
 export interface WindowsOperationErrorDetail {
   code: WindowsOperationErrorCode;
@@ -29,6 +43,8 @@ export interface WindowsOperationErrorDetail {
   canElevate: boolean;
   manualActionAvailable: boolean;
   attemptedRecoveries: string[];
+  /** 后端附带的诊断字段（launch_path / registered_path 等），仅用于展示与复制。 */
+  diagnostics: WindowsOperationDiagnostic[];
 }
 
 interface StructuredWindowsOperationError {
@@ -115,10 +131,65 @@ function parseStructured(raw: string): WindowsOperationErrorDetail | null {
       attemptedRecoveries: Array.isArray(payload.attemptedRecoveries)
         ? payload.attemptedRecoveries.map(String).filter(Boolean)
         : [],
+      diagnostics: [],
     };
   } catch {
     return null;
   }
+}
+
+/** 后端在商店版启动失败时附带的 `key=value` 诊断字段。 */
+const CODEX_STORE_LAUNCH_DIAGNOSTIC_KEYS = [
+  "launch_path",
+  "launch_path_exists",
+  "registered_path",
+  "path_matches_registered",
+] as const;
+
+function readDiagnosticField(payload: string, name: string): string | null {
+  const match = payload.match(new RegExp(`(?:^|[;\\s])${name}=([^;]*)`));
+  const value = match?.[1]?.trim();
+  return value ? value : null;
+}
+
+/**
+ * 解析 `CODEX_MANAGED_STORE_LAUNCH_UNSAFE:` 错误。
+ *
+ * 这类错误说明当前配置的商店版 Codex 路径无法执行（常见于商店包更新后旧目录残留），
+ * 后端已阻止直接启动以免打开错误账号。前端据此给出「重新检测路径并重试」的修复入口。
+ */
+function parseCodexStoreLaunchBlocked(
+  raw: string,
+  defaults?: {
+    operation?: WindowsOperationKind;
+    target?: string | null;
+    summary?: string;
+  },
+): WindowsOperationErrorDetail | null {
+  const marker = raw.indexOf(CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX);
+  if (marker < 0) return null;
+
+  const payload = raw.slice(marker + CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX.length);
+  const diagnostics: WindowsOperationDiagnostic[] = [];
+  for (const key of CODEX_STORE_LAUNCH_DIAGNOSTIC_KEYS) {
+    const value = readDiagnosticField(payload, key);
+    if (value) diagnostics.push({ label: key, value });
+  }
+  const launchPath = readDiagnosticField(payload, "launch_path");
+
+  return {
+    code: "codex_store_launch_blocked",
+    operation: defaults?.operation ?? "launch_app",
+    summary: defaults?.summary?.trim() || raw.split(/\r?\n/, 1)[0],
+    originalReason: redactWindowsOperationError(raw),
+    target: launchPath ?? defaults?.target?.trim() ?? null,
+    pids: [],
+    retryable: true,
+    canElevate: false,
+    manualActionAvailable: false,
+    attemptedRecoveries: [],
+    diagnostics,
+  };
 }
 
 function classifyCode(raw: string): WindowsOperationErrorCode {
@@ -181,6 +252,9 @@ export function parseWindowsOperationError(
   const raw = String(error ?? "").replace(/^Error:\s*/, "").trim();
   if (!raw) return null;
 
+  const storeLaunchBlocked = parseCodexStoreLaunchBlocked(raw, defaults);
+  if (storeLaunchBlocked) return storeLaunchBlocked;
+
   const structured = parseStructured(raw);
   if (structured) return structured;
 
@@ -199,5 +273,6 @@ export function parseWindowsOperationError(
     canElevate: code === "access_denied" && operation === "stop_process" && pids.length > 0,
     manualActionAvailable: operation === "stop_process",
     attemptedRecoveries: [],
+    diagnostics: [],
   };
 }

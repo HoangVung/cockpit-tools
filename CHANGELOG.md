@@ -7,6 +7,23 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.56] - 2026-09-16
+
+### Fixed
+
+- **Fixed losing the current task after context compaction**: compaction now summarises the current task before continuing instead of resetting the context window and losing it.
+- **Fixed Official login closing the client right after launch with no importable sign-in data**: the injected script path was not normalized on Windows, which aborted the client during startup. The path is now normalized, and when the injection does not take effect Cockpit falls back to the official native flow instead of failing the sign-in, so the default **Intercept the browser jump** switch works again.
+- **Fixed multi-open instances failing to start after a Store version update (access denied / os error 5)**: a Store update moves the package while the stale path was kept, so every launch was rejected by Windows and only a manual **Reset path** recovered it. Cockpit now resolves the path from the registered Store package and retries automatically.
+- **Fixed the PowerShell fallback dropping extra environment variables when a direct WindowsApps launch is denied**: the fallback now forwards the extra environment variables, including the `NODE_OPTIONS` used for temporary-login injection.
+- **Fixed "the client is running but Cockpit reports it as stopped" after a Store version update**: process detection required the executable full path to match exactly, so a new package folder made the real PID unreadable. Store package paths are now treated as the same instance when they share the same package family and executable name (non-Store paths still require an exact match).
+- **Fixed DeepSeek rejecting a whole turn because tool calls and their outputs were out of position**: DeepSeek validates tool calls by position — the calls of one assistant turn must stay contiguous and their outputs must follow that batch directly, otherwise the whole request is rejected (`No tool output found for tool call ...` when a message sits between a call and its output, and a missing `reasoning_text` when a parallel batch is split by its own outputs) and the thread cannot continue. Requests sent to DeepSeek now restore the order per batch: consecutive calls stay adjacent and their outputs follow the batch, while history that is already valid passes through byte-for-byte.
+- **Fixed DeepSeek rejecting a whole request because replayed reasoning text was missing**: DeepSeek's thinking mode requires `reasoning_text` on replayed reasoning items. Requests sent to DeepSeek now restore that text, and every other request passes through byte-for-byte.
+
+### Changed
+
+- **Store launch failures no longer surface a raw internal error string**: they now use the shared Windows operation dialog, which explains the cause and offers a **Re-detect path and retry** button, and the diagnostics can be copied together with the error.
+- **Parallel tool calls are now disabled in requests to DeepSeek through the gateway**: this reduces the number of parallel batches that corrupt call and output order, and the batch-order restore covers histories that are already on disk.
+
 ## [1.3.55] - 2026-09-16
 
 ### Fixed

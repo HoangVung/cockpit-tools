@@ -4,6 +4,7 @@ import * as codexTempLoginService from "../services/codexTempLoginService";
 import type { CodexTempLoginPhase } from "../services/codexTempLoginService";
 import type { CodexAccount } from "../types/codex";
 import { emitAccountsChanged } from "../utils/accountSyncEvents";
+import { parseWindowsOperationError } from "../utils/windowsOperationError";
 import type { useCodexAccountsBaseController } from "./useCodexAccountsBaseController";
 import type { useCodexAccountsOAuthController } from "./useCodexAccountsOAuthController";
 
@@ -97,6 +98,26 @@ export function useCodexTempLoginController(
     setTempLoginAuthUrlUnavailable(false);
   }, []);
 
+  /**
+   * 商店版 Codex 路径失效（商店包更新后旧目录残留等）时，后端回传的是内部错误串，
+   * 直接展示对用户不可读，这里换成可操作的说明并保留原始原因。
+   */
+  const describeTempLoginFailure = useCallback(
+    (message: string): string => {
+      const parsed = parseWindowsOperationError(message, {
+        operation: "launch_app",
+      });
+      if (!parsed || parsed.code !== "codex_store_launch_blocked") {
+        return message;
+      }
+      return `${t(
+        "common.windowsOperation.storeLaunchBlockedDescription",
+        "Windows 无法执行当前配置的 Codex 客户端：商店版应用目录可能已被更新替换，或不再允许运行。为免打开错误账号，已阻止直接启动。请到设置中重新检测 Codex 路径后重试；仍失败时请改用 CLI 启动方式。",
+      )}\n${parsed.originalReason}`;
+    },
+    [t],
+  );
+
   const reportTempLoginFailure = useCallback(
     (message: string) => {
       setTempLoginError(message);
@@ -104,11 +125,11 @@ export function useCodexTempLoginController(
       page.setAddMessage(
         t("codex.tempLogin.failed", "官方登录失败：{{error}}").replace(
           "{{error}}",
-          message,
+          describeTempLoginFailure(message),
         ),
       );
     },
-    [page, t],
+    [describeTempLoginFailure, page, t],
   );
 
   /** 复制官方客户端生成的授权地址（原样复制，不做任何改写）。 */

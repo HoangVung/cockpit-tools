@@ -1578,6 +1578,112 @@ func TestRelayServerKeepsStreamContextOpenAfterOpen(t *testing.T) {
 	}
 }
 
+func TestExecuteStreamKeepsAttemptContextUntilStreamEnds(t *testing.T) {
+	runtime := &fakeRuntime{
+		streamResultFromContext: true,
+		streamResultDelay:       10 * time.Millisecond,
+		streamResultPayload:     []byte(`[DONE]`),
+	}
+	server := &relayServer{runtime: runtime}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result, err := server.executeStreamWithOpenTimeout(
+		nil,
+		ctx,
+		[]string{"codex"},
+		cliproxyexecutor.Request{Model: "gpt-5.5"},
+		cliproxyexecutor.Options{},
+		"gpt-5.5",
+		time.Now(),
+		time.Second,
+	)
+	if err != nil {
+		t.Fatalf("unexpected open error: %v", err)
+	}
+	if result == nil || result.Chunks == nil {
+		t.Fatal("expected an opened stream result")
+	}
+	attemptCtx := runtime.lastStreamCtx
+	if attemptCtx == nil {
+		t.Fatal("expected runtime to receive the attempt context")
+	}
+	if errAttempt := attemptCtx.Err(); errAttempt != nil {
+		t.Fatalf("attempt context must stay open while the stream runs, got %v", errAttempt)
+	}
+
+	var payloads []string
+	for chunk := range result.Chunks {
+		payloads = append(payloads, string(chunk.Payload))
+	}
+	if len(payloads) != 1 || !strings.Contains(payloads[0], "[DONE]") {
+		t.Fatalf("chunks produced on the attempt context must still be forwarded: %#v", payloads)
+	}
+
+	select {
+	case <-attemptCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("attempt context must be released once the stream ends")
+	}
+}
+
+func TestExecuteStreamReleasesAttemptContextOnOpenFailure(t *testing.T) {
+	runtime := &fakeRuntime{err: fmt.Errorf("upstream refused")}
+	server := &relayServer{runtime: runtime}
+
+	result, err := server.executeStreamWithOpenTimeout(
+		nil,
+		context.Background(),
+		[]string{"codex"},
+		cliproxyexecutor.Request{Model: "gpt-5.5"},
+		cliproxyexecutor.Options{},
+		"gpt-5.5",
+		time.Now(),
+		time.Second,
+	)
+	if err == nil {
+		t.Fatal("expected a failed stream open")
+	}
+	if result != nil {
+		t.Fatalf("failed open must not return a stream result: %#v", result)
+	}
+	attemptCtx := runtime.lastStreamCtx
+	if attemptCtx == nil {
+		t.Fatal("expected runtime to receive the attempt context")
+	}
+	if errAttempt := attemptCtx.Err(); errAttempt == nil {
+		t.Fatal("failed attempt must release its context")
+	}
+}
+
+func TestReleaseAttemptOnStreamEndStopsWhenDownstreamEnds(t *testing.T) {
+	upstream := make(chan cliproxyexecutor.StreamChunk)
+	released := make(chan struct{})
+	ctx, cancelDownstream := context.WithCancel(context.Background())
+	defer cancelDownstream()
+
+	result := releaseAttemptOnStreamEnd(
+		ctx,
+		&cliproxyexecutor.StreamResult{Headers: http.Header{"Content-Type": []string{"text/event-stream"}}, Chunks: upstream},
+		func() { close(released) },
+	)
+	if result == nil || result.Chunks == nil {
+		t.Fatal("expected a wrapped stream result")
+	}
+	if result.Headers.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("upstream headers must be preserved: %#v", result.Headers)
+	}
+
+	// 下游结束（客户端断开 / idle 超时）时，即使没人再读通道也必须释放 attempt，
+	// 并且不能把转发 goroutine 卡在通道上。
+	cancelDownstream()
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("downstream cancellation must release the attempt context")
+	}
+}
+
 func TestRelayServerTimesOutIdleOpenedStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldTimeout := streamIdleTimeout
@@ -1809,10 +1915,11 @@ type fakeRuntime struct {
 	streamResultDelay       time.Duration
 	streamResultPayload     []byte
 
-	executeCalls int
-	streamCalls  int
-	lastReq      cliproxyexecutor.Request
-	lastOpts     cliproxyexecutor.Options
+	executeCalls  int
+	streamCalls   int
+	lastReq       cliproxyexecutor.Request
+	lastOpts      cliproxyexecutor.Options
+	lastStreamCtx context.Context
 
 	alphaSearchStatus  int
 	alphaSearchHeaders http.Header
@@ -1851,6 +1958,7 @@ func (r *fakeRuntime) CodexAlphaSearch(_ context.Context, model string, body []b
 
 func (r *fakeRuntime) ExecuteStream(ctx context.Context, _ []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 	r.streamCalls++
+	r.lastStreamCtx = ctx
 	r.lastReq = req
 	r.lastOpts = opts
 	if r.streamWaitForContext || r.streamCalls <= r.streamWaitAttempts {

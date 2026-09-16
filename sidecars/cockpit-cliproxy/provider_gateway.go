@@ -247,6 +247,26 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 			}
 		}
 	}
+	if wireAPI == "responses" && providerGatewayRepairsToolCallOrder(gateway) {
+		// 先关掉并行工具调用（从源头避免竞态），再还原已经落盘历史里的顺序。
+		body = providerGatewaySerializeToolCalls(body)
+		ordered, relocated, ok := providerGatewayRepairsToolCallOrderBody(body)
+		if ok && relocated > 0 {
+			body = ordered
+			if s.emitter != nil {
+				s.emitter.emit(requestDiagnosticPayload{
+					Type:         "provider_gateway_tool_call_outputs_relocated",
+					RequestID:    internallogging.GetRequestID(c.Request.Context()),
+					Method:       c.Request.Method,
+					Path:         requestPath(c.Request),
+					RequestKind:  requestKindFromPath(requestPath(c.Request)),
+					Model:        upstreamModel,
+					Transport:    diagnosticTransport(c.Request),
+					ErrorMessage: providerGatewayToolOrderDiagnostic(relocated),
+				})
+			}
+		}
+	}
 	upstreamPath := "/v1/responses"
 	upstreamBody := rewriteProviderGatewayBodyModel(body, upstreamModel)
 	if wireAPI == "chat_completions" {
@@ -265,6 +285,10 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 	} else if !sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {
 		writeAPIError(c, http.StatusBadRequest, "provider gateway responses wire API only accepts responses requests", "invalid_request")
 		return
+	} else if isDeepSeekResponsesGateway(gateway.BaseURL) {
+		// DeepSeek 思考模式要求回放的历史带 reasoning_text，而响应出口为了兼容官方账号
+		// 已经把正文改写成 summary（见 responses_reasoning_replay.go）。
+		upstreamBody = restoreResponsesReasoningTextForReplay(upstreamBody)
 	}
 
 	upstreamURL, err := providerGatewayURL(gateway.BaseURL, upstreamPath)

@@ -123,6 +123,8 @@
     "windowsOperation": {
       "title": "Windows işlemi tamamlanmadı",
       "accessDeniedDescription": "Windows bu işlemi reddetti. Hedef daha yüksek yetkiyle çalışıyor veya korumalı bir konumda olabilir.",
+      "storeLaunchBlockedDescription": "Windows yapılandırılmış Codex istemcisini çalıştıramadı: Store klasörü bir güncellemeyle değiştirilmiş veya artık çalıştırmaya izin vermiyor olabilir. Yanlış hesabın açılmaması için doğrudan başlatma engellendi. “Yolu yeniden algıla ve yeniden dene” seçeneğini kullanın; yine başarısız olursa bu örneği CLI moduna geçirin.",
+      "repairPath": "Yolu yeniden algıla ve yeniden dene",
       "fileInUseDescription": "Hedef dosya başka bir program tarafından kullanılıyor. Programı kapatıp yeniden deneyin.",
       "programNotFoundDescription": "Windows gerekli programı bulamadı. Kurulumu veya ayarlanan yolu kontrol edin.",
       "portDeniedDescription": "Windows bağlantı noktasına erişimi engelledi. Bir sistem ilkesi veya başka bir program kullanıyor olabilir.",
