@@ -1676,39 +1676,6 @@ fn close_captured_codex_direct_app_servers(
 }
 
 #[cfg(target_os = "windows")]
-fn extract_windowsapps_pkg_name(path: &str) -> Option<&str> {
-    let after = path.split("\\windowsapps\\").nth(1)?;
-    let pkg_dir = after.split('\\').next()?;
-    let pkg_name = pkg_dir.split('_').next()?;
-    Some(pkg_name)
-}
-
-#[cfg(target_os = "windows")]
-fn is_matching_codex_windows_exe(actual: &str, expected: &str) -> bool {
-    if actual == expected {
-        return true;
-    }
-    if actual.contains("\\windowsapps\\") && expected.contains("\\windowsapps\\") {
-        let actual_file = std::path::Path::new(actual)
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
-        let expected_file = std::path::Path::new(expected)
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
-        if !actual_file.is_empty() && actual_file.eq_ignore_ascii_case(expected_file) {
-            if let (Some(p1), Some(p2)) = (extract_windowsapps_pkg_name(actual), extract_windowsapps_pkg_name(expected)) {
-                if p1.eq_ignore_ascii_case(p2) {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
-#[cfg(target_os = "windows")]
 fn collect_codex_process_entries_from_powershell(
     expected_exe_path: &str,
 ) -> Vec<(u32, Option<String>)> {
