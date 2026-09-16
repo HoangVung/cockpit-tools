@@ -43,7 +43,8 @@ const COCKPIT_API_LOGIN_PLAN_TYPE: &str = "Cockpit Api";
 const COCKPIT_API_DEFAULT_ACCOUNT_NAME: &str = "Codex API";
 const API_KEY_EMAIL_PREFIX: &str = "api-key";
 const API_KEY_AUTH_MODE: &str = "apikey";
-const CODEX_AUTH_TYPE: &str = "codex";
+/// OAuth 账号 auth.json 的 auth_mode 取值，与官方 codex `AuthMode::Chatgpt` 序列化结果一致。
+const CODEX_AUTH_MODE_CHATGPT: &str = "chatgpt";
 const CODEX_ACCOUNT_GROUPS_FILE: &str = "codex_account_groups.json";
 const CODEX_ACCOUNT_TOMBSTONES_DIR: &str = "codex_account_tombstones";
 const CODEX_CONFIG_FILE_NAME: &str = "config.toml";
@@ -1302,7 +1303,8 @@ pub(crate) fn apply_deepseek_reasoning_effort(doc: &mut Document) {
 /// DeepSeek 切换期临时改动的备份文件名。沿用旧文件名，避免升级后丢失既有备份记录；
 /// 现在除压缩兜底外还记录顶层冲突键的原值。
 const DEEPSEEK_COMPACTION_BACKUP_FILE: &str = "cockpit-deepseek-compaction.json";
-const DEEPSEEK_COMPACTION_FALLBACK_KEYS: &[&str] = &["remote_compaction_v2", "token_budget"];
+pub(crate) const DEEPSEEK_COMPACTION_FALLBACK_KEYS: &[&str] =
+    &["remote_compaction_v2", "token_budget"];
 /// 备份记录里存放顶层配置键原值的分区名。
 const DEEPSEEK_TOP_LEVEL_BACKUP_SECTION: &str = "top_level_keys";
 /// 官方在 DeepSeek 下禁用 Codex 内置联网搜索（官方脚本写 `web_search = "disabled"`）。
@@ -1458,13 +1460,7 @@ pub(crate) fn apply_deepseek_config_overrides(doc: &mut Document, base_dir: &Pat
         );
         write_deepseek_compaction_backup(base_dir, &original);
     }
-    if doc.get("features").and_then(|item| item.as_table()).is_none() {
-        doc["features"] = toml_edit::table();
-    }
-    if let Some(table) = doc["features"].as_table_mut() {
-        table["remote_compaction_v2"] = toml_edit::value(false);
-        table["token_budget"] = toml_edit::value(true);
-    }
+    apply_local_compaction_fallback(doc);
     // 同样只接管标量：Codex 的 `web_search` 是字符串开关，用户若写成表结构就不动它。
     let web_search_is_scalar = match doc.get(DEEPSEEK_WEB_SEARCH_KEY) {
         Some(item) => item.as_value().is_some(),
@@ -1518,6 +1514,86 @@ pub(crate) fn restore_deepseek_config_overrides(doc: &mut Document, base_dir: &P
     }
     restore_deepseek_top_level_backup(doc, &record);
     true
+}
+
+/// 供应商网关（实例网关）接管 profile 后，把 DeepSeek 压缩兜底补写回来。
+///
+/// 实例网关接管写入的是网关运行账号（provider 名 `OpenAI`），接管流程按「非 DeepSeek 账号」
+/// 清掉了切号时写入的兜底；但该 profile 的上游仍是 DeepSeek：远程压缩（`compaction_trigger`
+/// 与 `responses/compact`）会把整段历史交给上游校验，而本地网关出口已经把第三方推理正文
+/// 改写成官方形状，上游会以
+/// `The reasoning_text in the thinking mode must be passed back to the API` 拒绝压缩。
+/// 这里在接管完成后按 profile 目录补回兜底（关闭 `remote_compaction_v2`、启用 `token_budget`），
+/// 让压缩回到本地流程；切走时仍按同一份备份还原用户设置。
+pub(crate) fn reapply_deepseek_config_overrides_for_dir(base_dir: &Path) -> Result<bool, String> {
+    let config_path = get_config_toml_path(base_dir);
+    // 没有 config.toml 说明接管流程还没写入 profile 配置，此时单独写兜底键会生成
+    // 缺少 provider 的残缺配置，因此直接跳过。
+    if !config_path.exists() {
+        return Ok(false);
+    }
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let mut doc = if existing.trim().is_empty() {
+        Document::new()
+    } else {
+        crate::modules::codex_config_format::read_codex_config_doc_from_str(&existing)
+            .map_err(|e| format!("解析 config.toml 失败: {}", e))?
+    };
+    let mut before_doc = doc.clone();
+    let before = crate::modules::codex_config_format::codex_config_doc_to_string(&mut before_doc);
+    apply_deepseek_config_overrides(&mut doc, base_dir);
+    let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+    if content == before {
+        return Ok(false);
+    }
+    crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
+        .map_err(|e| format!("写入 config.toml 失败: {}", e))?;
+    Ok(true)
+}
+
+/// 只写压缩兜底（`remote_compaction_v2 = false` + `token_budget = true`），不写其它 DeepSeek 专属覆盖。
+///
+/// 供「账号池里同时有官方账号与 DeepSeek 账号」的转发 profile 使用：这类 profile 不能整体套用
+/// `web_search = "disabled"`、移除 `service_tier` 等 DeepSeek 专属改写，否则会一并影响池里的官方账号。
+pub(crate) fn apply_local_compaction_fallback(doc: &mut Document) {
+    if doc.get("features").and_then(|item| item.as_table()).is_none() {
+        doc["features"] = toml_edit::table();
+    }
+    if let Some(table) = doc["features"].as_table_mut() {
+        table["remote_compaction_v2"] = toml_edit::value(false);
+        table["token_budget"] = toml_edit::value(true);
+    }
+}
+
+/// 按 profile 目录写回压缩兜底（仅压缩键），已写过时不重复改写。
+///
+/// 用于 Codex API 服务的转发 profile：DeepSeek 没有服务端压缩——`/responses/compact` 返回 404，
+/// `compaction_trigger` 只会返回普通 message，而 Codex 的远程压缩 v2 要求响应里恰好有一个
+/// compaction 输出项，因此请求一旦被路由到 DeepSeek 账号就必然失败；在此之前本地网关出口
+/// 还会因为兼容官方账号而把推理正文改写成 `summary`，DeepSeek 于思考模式下先以
+/// `The reasoning_text in the thinking mode must be passed back to the API` 拒绝整段请求。
+pub(crate) fn ensure_local_compaction_fallback_for_dir(base_dir: &Path) -> Result<bool, String> {
+    let config_path = get_config_toml_path(base_dir);
+    if !config_path.exists() {
+        return Ok(false);
+    }
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let mut doc = if existing.trim().is_empty() {
+        Document::new()
+    } else {
+        crate::modules::codex_config_format::read_codex_config_doc_from_str(&existing)
+            .map_err(|e| format!("解析 config.toml 失败: {}", e))?
+    };
+    let mut before_doc = doc.clone();
+    let before = crate::modules::codex_config_format::codex_config_doc_to_string(&mut before_doc);
+    apply_local_compaction_fallback(&mut doc);
+    let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+    if content == before {
+        return Ok(false);
+    }
+    crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
+        .map_err(|e| format!("写入 config.toml 失败: {}", e))?;
+    Ok(true)
 }
 
 fn cleanup_deepseek_official_model_catalog_for_dir(base_dir: &Path) -> Result<bool, String> {
@@ -1590,6 +1666,12 @@ fn official_deepseek_display_name(upstream_model: &str) -> String {
         // 用户自定义模型：显示名保持模型 ID，便于对照上游。
         upstream_model.to_string()
     }
+}
+
+/// 账号模型写入客户端模型目录时使用的显示名：已知供应商模型用官方显示名，
+/// 其余（用户自定义模型）保持模型 ID，便于对照上游。
+pub(crate) fn provider_model_display_name(model_id: &str) -> String {
+    official_deepseek_display_name(model_id)
 }
 
 fn deepseek_model_default_vision(value: &serde_json::Value) -> bool {

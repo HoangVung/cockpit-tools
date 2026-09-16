@@ -1350,7 +1350,7 @@ pub async fn restart_local_access_sidecar() -> Result<CodexLocalAccessState, Str
     }
     .ok_or_else(|| "API 服务集合尚未创建".to_string())?;
 
-    if !collection.enabled {
+    if !local_access_gateway_should_run(&collection) {
         return Err("API 服务当前未启用，无法重启 Sidecar".to_string());
     }
 
@@ -1469,7 +1469,11 @@ pub async fn set_local_access_enabled(enabled: bool) -> Result<CodexLocalAccessS
         ensure_local_access_profile_takeovers(&next_collection).await?;
         snapshot_state().await
     } else {
-        stop_gateway().await;
+        if internal_api_service_required() {
+            ensure_gateway_matches_runtime().await?;
+        } else {
+            stop_gateway().await;
+        }
         restore_takeover_profiles_after_disable(&next_collection)?;
         snapshot_state_without_gateway_reload().await
     }

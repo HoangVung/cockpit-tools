@@ -1662,7 +1662,7 @@ fn apply_codex_switch_auth_projections(account: &CodexAccount, user_config: &con
 }
 
 /// Re-activate current account after import when needed, then project auth side effects.
-async fn reactivate_imported_current_if_needed(imported: &[CodexAccount]) {
+pub(crate) async fn reactivate_imported_current_if_needed(imported: &[CodexAccount]) {
     if let Some(account) = codex_account::reactivate_if_imported_matches_current(imported).await {
         let user_config = config::get_user_config();
         apply_codex_switch_auth_projections(&account, &user_config);
@@ -1672,7 +1672,7 @@ async fn reactivate_imported_current_if_needed(imported: &[CodexAccount]) {
     }
 }
 
-async fn refresh_imported_codex_accounts(
+pub(crate) async fn refresh_imported_codex_accounts(
     app: &AppHandle,
     accounts: Vec<CodexAccount>,
 ) -> Vec<CodexAccount> {
@@ -1735,10 +1735,34 @@ pub async fn import_codex_access_token_account(
         .ok_or_else(|| "Account could not be loaded after import".to_string())
 }
 
+/// 解析「获取本地账号」要读取的 profile 目录。
+///
+/// 未指定实例（默认实例）时读取默认 `CODEX_HOME`；指定多开实例时读取该实例自己的
+/// profile 目录，避免多开场景下只能拿到默认实例的本地账号。
+fn resolve_codex_local_import_dir(instance_id: Option<&str>) -> Result<PathBuf, String> {
+    match instance_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(instance_id) => {
+            crate::modules::codex_instance::profile_dir_for_instance(instance_id)
+        }
+        None => Ok(crate::modules::codex_account::get_codex_home()),
+    }
+}
+
 /// 从官方 Codex 本机凭据存储导入账号（auth.json / macOS Keychain）
+///
+/// `instance_id` 为空表示默认实例；传入多开实例 ID 时读取该实例 profile 目录下的凭据。
 #[tauri::command]
-pub async fn import_codex_from_local(app: AppHandle) -> Result<CodexAccount, String> {
-    let account = codex_account::import_from_local()?;
+pub async fn import_codex_from_local(
+    app: AppHandle,
+    instance_id: Option<String>,
+) -> Result<CodexAccount, String> {
+    let base_dir = resolve_codex_local_import_dir(instance_id.as_deref())?;
+    logger::log_info(&format!(
+        "Codex 获取本地账号: instance_id={}, profile_dir={}",
+        instance_id.as_deref().unwrap_or("<default>"),
+        base_dir.display()
+    ));
+    let account = codex_account::import_from_local_at(&base_dir)?;
     reactivate_imported_current_if_needed(std::slice::from_ref(&account)).await;
     let mut accounts = refresh_imported_codex_accounts(&app, vec![account]).await;
     accounts

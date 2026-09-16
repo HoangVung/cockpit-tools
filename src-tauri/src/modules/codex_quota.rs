@@ -1,8 +1,6 @@
 use crate::models::codex::{CodexAccount, CodexQuota, CodexQuotaErrorInfo, CodexResetCredit};
 use crate::modules::{codex_account, codex_agent_identity, logger};
-use reqwest::header::{
-    HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT,
-};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, REFERER, USER_AGENT};
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,6 +19,7 @@ const LEGACY_NEW_API_PROVIDER_ID: &str = "new_api";
 const COCKPIT_API_PLAN_TYPE: &str = "Cockpit Api";
 const LEGACY_NEW_API_EXCLUSIVE_PLAN_TYPE: &str = "NEW_API_EXCLUSIVE";
 const COCKPIT_API_BASE_URL: &str = "https://chongcodex.cn/v1";
+const CODEX_DESKTOP_ORIGINATOR: &str = "Codex Desktop";
 const CHATGPT_WEB_REFERER: &str = "https://chatgpt.com/";
 const CHATGPT_WEB_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 const RESET_CREDITS_MOCK_JSON_ENV: &str = "CODEX_RESET_CREDITS_MOCK_JSON";
@@ -1242,17 +1241,18 @@ fn build_codex_api_headers(
                 .map_err(|e| format!("构建 Authorization 头失败: {}", e))?,
         );
     }
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(REFERER, HeaderValue::from_static(CHATGPT_WEB_REFERER));
-    headers.insert(USER_AGENT, HeaderValue::from_static(CHATGPT_WEB_USER_AGENT));
-    headers.insert("OpenAI-Beta", HeaderValue::from_static("codex-1"));
-    headers.insert("oai-language", HeaderValue::from_static("zh-CN"));
-    headers.insert("originator", HeaderValue::from_static("Codex Desktop"));
-    headers.insert("sec-fetch-site", HeaderValue::from_static("none"));
-    headers.insert("sec-fetch-mode", HeaderValue::from_static("no-cors"));
-    headers.insert("sec-fetch-dest", HeaderValue::from_static("empty"));
-    headers.insert("priority", HeaderValue::from_static("u=4, i"));
+    // 与官方 codex `default_client` 一致：只带 originator + codex 形态 User-Agent，
+    // 不伪装成 chatgpt.com 网页请求（不写 Referer / sec-fetch-* / OpenAI-Beta / oai-language）。
+    // 请求体的 Content-Type 由 `.json(body)` 自动补齐，与官方 consume 请求一致。
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_str(&codex_desktop_user_agent())
+            .map_err(|e| format!("构建 User-Agent 头失败: {}", e))?,
+    );
+    headers.insert(
+        "originator",
+        HeaderValue::from_static(CODEX_DESKTOP_ORIGINATOR),
+    );
 
     if account
         .agent_identity
@@ -1271,6 +1271,34 @@ fn build_codex_api_headers(
     }
 
     Ok(headers)
+}
+
+/// 官方 codex 的 User-Agent 形态：`<originator>/<version> (<os> <os_version>; <arch>)`。
+///
+/// 桌面端还会在尾部追加终端/宿主信息，本工具无法复现该段，只保留官方形态的前缀部分。
+fn codex_desktop_user_agent() -> String {
+    let os_type = match std::env::consts::OS {
+        "macos" => "Mac OS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        value => value,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        value => value,
+    };
+    let os_version = sysinfo::System::os_version().unwrap_or_default();
+    let os_label = if os_version.trim().is_empty() {
+        os_type.to_string()
+    } else {
+        format!("{} {}", os_type, os_version.trim())
+    };
+
+    format!(
+        "{}/{version} ({os_label}; {arch})",
+        CODEX_DESKTOP_ORIGINATOR,
+        version = crate::modules::codex_oauth::official_client_version()
+    )
 }
 
 struct CodexApiResponse {
@@ -2106,13 +2134,14 @@ mod tests {
         attach_runtime_snapshot_to_account_ids, build_codex_api_headers,
         normalize_http_error_body_for_display, normalize_remaining_percentage,
         parse_account_check_snapshot, parse_reset_credits_snapshot,
-        send_codex_api_request_with_agent_auth_base_url, WindowInfo,
+        send_codex_api_request_with_agent_auth_base_url, WindowInfo, CODEX_DESKTOP_ORIGINATOR,
         HTTP_ERROR_BODY_DISPLAY_MAX_CHARS,
     };
     use crate::models::codex::{CodexAccount, CodexAgentIdentity, CodexTokens};
     use base64::{engine::general_purpose, Engine as _};
     use ed25519_dalek::{pkcs8::EncodePrivateKey, SigningKey};
     use rand::rngs::OsRng;
+    use reqwest::header::{REFERER, USER_AGENT};
     use reqwest::Method;
     use serde_json::json;
     use std::sync::{Arc, Mutex};
@@ -2403,10 +2432,20 @@ mod tests {
         let headers = build_codex_api_headers(&account, account.account_id.as_deref())
             .expect("build common headers");
         assert!(headers.get("authorization").is_none());
-        assert_eq!(headers.get("openai-beta").unwrap(), "codex-1");
-        assert_eq!(headers.get("originator").unwrap(), "Codex Desktop");
+        assert_eq!(headers.get("originator").unwrap(), CODEX_DESKTOP_ORIGINATOR);
         assert_eq!(headers.get("chatgpt-account-id").unwrap(), "team-test");
         assert_eq!(headers.get("x-openai-fedramp").unwrap(), "true");
+        assert!(
+            headers
+                .get(USER_AGENT)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("Codex Desktop/")),
+            "额度请求必须使用官方 codex 形态 User-Agent: {:?}",
+            headers.get(USER_AGENT)
+        );
+        assert!(headers.get("openai-beta").is_none());
+        assert!(headers.get(REFERER).is_none());
+        assert!(headers.get("sec-fetch-site").is_none());
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -2478,10 +2517,13 @@ mod tests {
         );
         assert!(usage_requests.iter().all(|request| {
             let lower = request.to_ascii_lowercase();
-            lower.contains("openai-beta: codex-1")
+            lower.contains("user-agent: codex desktop/")
                 && lower.contains("originator: codex desktop")
                 && lower.contains("chatgpt-account-id: team-test")
                 && lower.contains("x-openai-fedramp: true")
+                && !lower.contains("openai-beta")
+                && !lower.contains("referer:")
+                && !lower.contains("sec-fetch-site:")
         }));
     }
 }

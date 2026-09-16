@@ -19,7 +19,7 @@
         let reserve = models.iter().find(|model| model["slug"] == "gpt-reserve").unwrap();
         let luna = models.iter().find(|model| model["slug"] == "gpt-5.6-luna").unwrap();
         assert_eq!(reserve["visibility"], "list");
-        assert_eq!(reserve["display_name"], "Luna Reserve");
+        assert_eq!(reserve["display_name"], "GPT-5.6 Reserve");
         assert_eq!(reserve["context_window"], luna["context_window"]);
         assert_eq!(reserve["supported_reasoning_levels"], luna["supported_reasoning_levels"]);
         assert!(reserve["auto_compact_token_limit"].is_null());
@@ -666,7 +666,7 @@
         let mut expected = models.clone();
         expected.push(CodexExperimentalModelDefinition {
             model_id: "gpt-reserve".to_string(),
-            display_name: "Luna Reserve".to_string(),
+            display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
         });
         assert_eq!(result.experimental_model_catalog_models, expected);
@@ -853,7 +853,7 @@
         let mut expected = models.clone();
         expected.push(CodexExperimentalModelDefinition {
             model_id: "gpt-reserve".to_string(),
-            display_name: "Luna Reserve".to_string(),
+            display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
         });
         assert_eq!(result.experimental_model_catalog_models, expected);

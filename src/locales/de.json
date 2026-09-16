@@ -2371,6 +2371,7 @@
       "apiKey": "Schlüssel",
       "statusRunning": "Aktiv",
       "statusStopped": "Gestoppt",
+      "internalSchedulerLabel": "Interner Scheduler",
       "statusDisabled": "Deaktiviert",
       "emptyMembers": "Diese Sammlung enthält noch keine Konten",
       "footerHint": "Zugriff: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Free-Konten begrenzen",
         "sessionAffinityConfirmTitle": "Sitzungsbindung aktivieren?",
         "sessionAffinityDescription": "Nach dem Aktivieren versucht dieselbe Unterhaltung, dasselbe Konto weiterzuverwenden. Ist es nicht verfügbar, kann das Routing wechseln; nach Ablauf wird ein Konto neu gewählt.",
-        "chatApiKeyUnsupported": "Chat Completions nicht unterstützt",
-        "deepseekUnsupported": "DeepSeek noch nicht",
         "pendingOauthUnsupported": "Ausstehend nicht möglich",
         "freeNoticeRestricted": "Free-Konten sind eingeschränkt. Deaktiviere dies, um sie auszuwählen.",
         "freeNoticeUnstable": "Proxy für Free-Konten kann instabil sein. Vorsichtig verwenden.",
@@ -2726,8 +2725,41 @@
       "desc": "Aktuell eingeloggtes Konto aus ~/.codex/auth.json importieren",
       "import": "Lokales Konto abrufen"
     },
+    "tempLogin": {
+      "tab": "Offizielle Anmeldung",
+      "desc": "Die Anmeldung läuft vollständig im offiziellen Desktop-Client ab: Die Autorisierungs-URL wird vom offiziellen Client erzeugt, und auch der Autorisierungs-Callback und der Token-Austausch werden vom offiziellen Client verarbeitet. Cockpit ist am Autorisierungs-Callback nicht beteiligt und liest die Anmeldedaten erst nach dem Speichern durch den offiziellen Client, um sie zu importieren.",
+      "note": "Das temporäre Profil ist ein leerer Ordner im App-Datenverzeichnis. Nach dem Auslesen des Kontos wird es zusammen mit dem Laufzeitverzeichnis des Clients und dem Schlüsselbund-Eintrag gelöscht; Standardinstanz und Multi-Instanzen bleiben unberührt.",
+      "start": "Offiziellen Client öffnen und anmelden",
+      "cancel": "Anmeldung abbrechen",
+      "cancelling": "Offizielle Anmeldung wird abgebrochen…",
+      "waitingHint": "Schließen Sie die Anmeldung im offiziellen Client ab. Er wird automatisch beendet, sobald die Anmeldedaten erkannt wurden (maximal 10 Minuten).",
+      "cancelled": "Offizielle Anmeldung abgebrochen und temporäres Profil entfernt.",
+      "failed": "Offizielle Anmeldung fehlgeschlagen: {{error}}",
+      "success": "Konto übernommen: {{email}}",
+      "intercept": {
+        "toggle": "Browser-Sprung abfangen und die Autorisierungs-URL hier anzeigen",
+        "hint": "Ist dies aktiv, öffnet ein Klick auf „Weiter“ im offiziellen Client keinen Browser mehr, sondern zeigt die vom offiziellen Client erzeugte Autorisierungs-URL hier zum Kopieren an. Nach der Anmeldung in einem beliebigen Browser werden Autorisierungs-Callback und Token-Austausch weiterhin vom offiziellen Desktop-Client ausgeführt; Cockpit ist an der Autorisierung nicht beteiligt. Ist es aus, läuft der offizielle Ablauf unverändert."
+      },
+      "authUrl": {
+        "label": "Autorisierungs-URL (vom offiziellen Client erzeugt)",
+        "open": "Im Standardbrowser öffnen",
+        "openFailed": "Autorisierungs-URL konnte nicht geöffnet werden: {{error}}",
+        "hint": "Die URL stammt vom offiziellen Client und lässt sich nur in einem Browser auf diesem Rechner öffnen. Lass das offizielle Fenster bis zum Ende der Anmeldung geöffnet.",
+        "unavailable": "Diesmal konnte die Autorisierungs-URL nicht abgefangen werden. Der offizielle Client öffnet wie gewohnt den Browser; melde dich dort an."
+      },
+      "phase": {
+        "prepare": "Temporäres Profil vorbereiten",
+        "launch": "Offiziellen Client starten",
+        "wait": "Auf Anmeldung warten",
+        "import": "Anmeldedaten lesen",
+        "close": "Offiziellen Client beenden",
+        "clean": "Temporäres Profil entfernen"
+      }
+    },
     "import": {
       "localDesc": "Codex-Konten aus lokal angemeldeten Sitzungen importieren.",
+      "localInstanceTitle": "Instanz auswählen",
+      "localInstanceDesc": "Es wurden mehrere Codex-Instanzen gefunden. Wählen Sie die Instanz, aus der das lokale Konto importiert werden soll:",
       "importing": "Lokales Konto wird importiert...",
       "successMsg": "Import erfolgreich: {{email}}"
     },

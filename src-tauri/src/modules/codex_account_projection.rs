@@ -24,15 +24,6 @@ fn get_current_account_from_loaded(
     Some(account)
 }
 
-fn mark_codex_auth_type(value: &mut serde_json::Value) {
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert(
-            "type".to_string(),
-            serde_json::Value::String(CODEX_AUTH_TYPE.to_string()),
-        );
-    }
-}
-
 fn is_codex_auth_token_payload_key(key: &str) -> bool {
     matches!(
         key.to_ascii_lowercase().as_str(),
@@ -138,12 +129,10 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
     }
 
     if let Some(identity) = account.agent_identity.clone() {
-        let mut value = serde_json::json!({
+        return Ok(serde_json::json!({
             "auth_mode": "agentIdentity",
             "agent_identity": normalize_agent_identity(identity)?,
-        });
-        mark_codex_auth_type(&mut value);
-        return Ok(value);
+        }));
     }
 
     if account.tokens.access_token.trim().is_empty() {
@@ -155,20 +144,20 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
     if account.tokens.id_token.trim().is_empty()
         && normalize_optional_ref(account.tokens.refresh_token.as_deref()).is_none()
     {
-        let mut value = serde_json::json!({
+        // 官方 personal access token 形态：只写凭据字段，不写 auth_mode（兼容旧版 Codex 反序列化）。
+        return Ok(serde_json::json!({
             "OPENAI_API_KEY": null,
             "personal_access_token": account.tokens.access_token,
-        });
-        mark_codex_auth_type(&mut value);
-        return Ok(value);
+        }));
     }
 
+    // 与官方 codex `AuthDotJson` 一致：last_refresh 由 chrono 默认序列化（纳秒为 0 时不带小数位）。
     let last_refresh = account
         .token_updated_at
         .and_then(|timestamp| chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0))
-        .map(|value| serde_json::Value::String(value.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()));
-    let mut value = serde_json::to_value(CodexAuthFile {
-        auth_mode: None,
+        .and_then(|value| serde_json::to_value(value).ok());
+    let value = serde_json::to_value(CodexAuthFile {
+        auth_mode: Some(CODEX_AUTH_MODE_CHATGPT.to_string()),
         openai_api_key: Some(serde_json::Value::Null),
         base_url: None,
         tokens: Some(CodexAuthTokens {
@@ -188,7 +177,6 @@ fn build_auth_file_value(account: &CodexAccount) -> Result<serde_json::Value, St
         last_refresh,
     })
     .map_err(|e| format!("auth.json 序列化失败: {}", e))?;
-    mark_codex_auth_type(&mut value);
     Ok(value)
 }
 
@@ -200,6 +188,81 @@ fn build_codex_keychain_account(base_dir: &Path) -> String {
     let digest = hasher.finalize();
     let digest_hex = format!("{:x}", digest);
     format!("cli|{}", &digest_hex[..16])
+}
+
+/// 判断指定 profile 目录在 macOS 钥匙串中是否已有官方凭据条目。
+///
+/// 只查询条目是否存在（不读取密钥内容），因此不会触发钥匙串授权弹框，
+/// 可用于「官方客户端是否已经写入登录信息」的高频探测。
+pub(crate) fn codex_keychain_entry_exists_for_dir(base_dir: &Path) -> bool {
+    #[cfg(all(target_os = "macos", not(test)))]
+    {
+        let keychain_account = build_codex_keychain_account(base_dir);
+        if let Ok(output) = std::process::Command::new("security")
+            .arg("find-generic-password")
+            .arg("-s")
+            .arg(CODEX_KEYCHAIN_SERVICE)
+            .arg("-a")
+            .arg(&keychain_account)
+            .output()
+        {
+            if output.status.success() {
+                return true;
+            }
+        }
+    }
+
+    #[cfg(not(all(target_os = "macos", not(test))))]
+    {
+        let _ = base_dir;
+    }
+    false
+}
+
+/// 删除指定 profile 目录对应的官方钥匙串条目（macOS）。
+///
+/// 返回值表示「本次确实删除了一条」：条目不存在时按“无需删除”处理，
+/// 供临时登录结束后清理使用，避免登录凭据残留在钥匙串里。
+pub(crate) fn delete_codex_keychain_entry_for_dir(base_dir: &Path) -> Result<bool, String> {
+    #[cfg(all(target_os = "macos", not(test)))]
+    {
+        let keychain_account = build_codex_keychain_account(base_dir);
+        let output = std::process::Command::new("security")
+            .arg("delete-generic-password")
+            .arg("-s")
+            .arg(CODEX_KEYCHAIN_SERVICE)
+            .arg("-a")
+            .arg(&keychain_account)
+            .output()
+            .map_err(|e| format!("执行 security 命令失败: {}", e))?;
+        if output.status.success() {
+            logger::log_info(&format!(
+                "[Codex临时登录] 已清理 keychain 登录信息: service={}, account={}",
+                CODEX_KEYCHAIN_SERVICE, keychain_account
+            ));
+            return Ok(true);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+        if stderr.contains("could not be found")
+            || stderr.contains("item not found")
+            || stderr.contains("secitemnotfound")
+        {
+            return Ok(false);
+        }
+        return Err(format!(
+            "删除 Codex keychain 失败: status={}, stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    #[cfg(not(all(target_os = "macos", not(test))))]
+    {
+        let _ = base_dir;
+    }
+    #[allow(unreachable_code)]
+    Ok(false)
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
@@ -477,8 +540,43 @@ fn write_auth_json_value(auth_path: &Path, auth_value: &serde_json::Value) -> Re
             auth_path.display(),
             e
         )
-    })
+    })?;
+    restrict_auth_file_permissions(auth_path);
+    Ok(())
 }
+
+/// 官方 codex 以 0600 创建 `auth.json`（含 keyring 兜底文件），这里保持同等权限。
+///
+/// 原子写先落临时文件再 rename，权限受 umask 影响，因此写完必须显式收敛；
+/// 备份文件保存同一份凭据，一并收敛。权限收敛失败只告警，不回滚已写入的凭据。
+#[cfg(unix)]
+fn restrict_auth_file_permissions(auth_path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let backup_path = auth_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| auth_path.with_file_name(format!("{}.bak", name)));
+
+    for path in [Some(auth_path.to_path_buf()), backup_path]
+        .into_iter()
+        .flatten()
+    {
+        if !path.exists() {
+            continue;
+        }
+        if let Err(error) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+            logger::log_warn(&format!(
+                "[Codex切号] 收敛凭据文件权限失败: path={}, error={}",
+                path.display(),
+                error
+            ));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn restrict_auth_file_permissions(_auth_path: &Path) {}
 
 fn remove_auth_json_after_keyring_write(auth_path: &Path) {
     match fs::remove_file(auth_path) {

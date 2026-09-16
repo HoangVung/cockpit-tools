@@ -14,7 +14,7 @@ func TestReserveFallbackUsesLunaCapabilitiesForEachClientVersion(t *testing.T) {
 				t.Fatalf("models = %d, want 2", len(models))
 			}
 			luna, reserve := models[0], models[1]
-			if reserve["slug"] != "gpt-reserve" || reserve["visibility"] != "list" || reserve["display_name"] != "Luna Reserve" {
+			if reserve["slug"] != "gpt-reserve" || reserve["visibility"] != "list" || reserve["display_name"] != "GPT-5.6 Reserve" {
 				t.Fatalf("Reserve identity/visibility = %v/%v", reserve["slug"], reserve["visibility"])
 			}
 			for field, value := range luna {

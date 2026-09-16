@@ -2371,6 +2371,7 @@
       "apiKey": "金鑰",
       "statusRunning": "執行中",
       "statusStopped": "未執行",
+      "internalSchedulerLabel": "內部排程",
       "statusDisabled": "已停用",
       "emptyMembers": "目前集合沒有帳號",
       "footerHint": "監聽範圍：{{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "限制 Free 帳號使用",
         "sessionAffinityConfirmTitle": "開啟會話親和？",
         "sessionAffinityDescription": "開啟後，同一個會話會盡量持續使用同一個帳號進行對話；帳號不可用時仍會依調度策略切換，超過過期時間後會重新選擇帳號。",
-        "chatApiKeyUnsupported": "Chat Completions 不支援加入",
-        "deepseekUnsupported": "DeepSeek 暫不支援加入",
         "pendingOauthUnsupported": "待授權不可加入",
         "freeNoticeRestricted": "已限制 Free 帳號，關閉後才可勾選。",
         "freeNoticeUnstable": "Free 帳號反代可能不穩定，請謹慎使用。",
@@ -2857,8 +2856,41 @@
       "desc": "從 ~/.codex/auth.json 匯入目前已登入的帳號",
       "import": "取得本機帳號"
     },
+    "tempLogin": {
+      "tab": "官方登入",
+      "desc": "登入全程在官方桌面用戶端內完成：授權位址由官方用戶端產生，授權回呼與 token 交換也都由官方用戶端處理。Cockpit 不參與授權回呼，只在官方將登入憑證寫入磁碟後讀取並匯入。",
+      "note": "暫存設定建立於應用資料目錄下的獨立空目錄中，帳號讀取完成後會連同官方用戶端執行目錄與鑰匙圈項目一併刪除，預設實例與多開實例都不受影響。",
+      "start": "開啟官方用戶端並登入",
+      "cancel": "取消登入",
+      "cancelling": "正在取消官方登入…",
+      "waitingHint": "請在官方用戶端完成登入，讀取到登入資訊後會自動關閉用戶端（最長等待 10 分鐘）。",
+      "cancelled": "已取消官方登入，暫存設定已清理。",
+      "failed": "官方登入失敗：{{error}}",
+      "success": "已取得帳號：{{email}}",
+      "intercept": {
+        "toggle": "攔截瀏覽器跳轉，直接顯示授權地址",
+        "hint": "開啟後，在官方用戶端點「繼續登入」不會再開啟瀏覽器，只把官方產生的授權位址顯示在這裡供複製；複製到任意瀏覽器登入後，授權回呼與 token 交換仍由官方桌面用戶端完成，Cockpit 不參與授權。關閉後完全走官方原生流程。"
+      },
+      "authUrl": {
+        "label": "授權地址（官方產生）",
+        "open": "用預設瀏覽器開啟",
+        "openFailed": "開啟授權地址失敗：{{error}}",
+        "hint": "地址由官方客戶端產生，只能在本機瀏覽器開啟；請在官方視窗保持開啟的情況下完成登入。",
+        "unavailable": "本次未能截取官方授權地址，官方客戶端會照常開啟瀏覽器，可直接在那裡完成登入。"
+      },
+      "phase": {
+        "prepare": "準備暫存設定",
+        "launch": "開啟官方用戶端",
+        "wait": "等待登入完成",
+        "import": "讀取登入資訊",
+        "close": "關閉官方用戶端",
+        "clean": "清理暫存設定"
+      }
+    },
     "import": {
       "localDesc": "從本機已登入的會話匯入 Codex 帳號。",
+      "localInstanceTitle": "選擇實例",
+      "localInstanceDesc": "偵測到多個 Codex 實例，請選擇要從哪個實例取得本機帳號：",
       "importing": "正在匯入本地帳號...",
       "successMsg": "匯入成功: {{email}}"
     },

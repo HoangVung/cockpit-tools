@@ -457,6 +457,24 @@ func (s *backupAccountSelector) ReportAuthSelectionFailure(ctx context.Context, 
 func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*coreauth.Auth) (*coreauth.Auth, error) {
 	_ = opts
 	selectionStats := authPoolSelectionStats{candidateAuths: len(auths)}
+	if target, ok := ctx.Value(targetAccountIDContextKey).(string); ok && strings.TrimSpace(target) != "" {
+		target = strings.TrimSpace(target)
+		filtered := make([]*coreauth.Auth, 0, 1)
+		for _, auth := range auths {
+			if auth == nil {
+				continue
+			}
+			account := s.accountForAuth(auth)
+			if authMatchesTargetAccount(auth, target, account) {
+				filtered = append(filtered, auth)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("target account %s is not available", target)
+		}
+		auths = filtered
+		selectionStats.candidateAuths = 1
+	}
 	auths = s.filterAuthsForAPIKeyScope(ctx, auths)
 	selectionStats.scopedAuths = len(auths)
 	requestKind, _ := ctx.Value(requestKindContextKey).(string)
@@ -555,6 +573,27 @@ func (s *cockpitSelector) Pick(ctx context.Context, provider, model string, opts
 	selected := ordered[0]
 	s.emitAuthSelected(ctx, selected, provider, model, len(auths), len(available))
 	return selected, nil
+}
+
+func authMatchesTargetAccount(auth *coreauth.Auth, target string, account *accountSpec) bool {
+	if auth == nil {
+		return false
+	}
+	if strings.TrimSpace(auth.ID) == target {
+		return true
+	}
+	if account != nil && strings.TrimSpace(account.ID) == target {
+		return true
+	}
+	if auth.Attributes != nil && strings.TrimSpace(auth.Attributes["account_id"]) == target {
+		return true
+	}
+	if auth.Metadata != nil {
+		if value, ok := auth.Metadata["account_id"].(string); ok && strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ReportAuthSelectionFailure handles failures raised by the manager's
@@ -1172,6 +1211,11 @@ func (s *cockpitSelector) accountForAuth(auth *coreauth.Auth) *accountSpec {
 func accountForAuthInManifest(m *manifest, auth *coreauth.Auth) *accountSpec {
 	if m == nil || auth == nil {
 		return nil
+	}
+	if auth.Attributes != nil {
+		if account := m.accountByID[strings.TrimSpace(auth.Attributes["account_id"])]; account != nil {
+			return account
+		}
 	}
 	if auth.ID != "" {
 		if account := m.accountByAuthID[strings.ToLower(auth.ID)]; account != nil {

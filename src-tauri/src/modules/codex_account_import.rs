@@ -1,8 +1,16 @@
 // Codex 账号模块：Local import, token candidate parsing and batch import workflow。
 // 通过 include! 保持原 modules::codex_account 作用域，完整保留私有调用关系。
-/// 从官方 Codex 本机凭据存储导入账号（auth.json / macOS Keychain）
+/// 从官方 Codex 本机凭据存储导入账号（默认实例的 auth.json / macOS Keychain）
 pub fn import_from_local() -> Result<CodexAccount, String> {
-    let codex_home = get_codex_home();
+    import_from_local_at(&get_codex_home())
+}
+
+/// 从指定 profile 目录导入官方 Codex 本机凭据（auth.json / macOS Keychain）。
+///
+/// `codex_home` 既可以是默认实例的 `CODEX_HOME`，也可以是某个多开实例自己的 profile
+/// 目录（官方客户端按 `CODEX_HOME` 落盘凭据），因此多开实例的本地账号同样可以被读取。
+pub fn import_from_local_at(codex_home: &Path) -> Result<CodexAccount, String> {
+    let codex_home = codex_home.to_path_buf();
     let auth_path = codex_home.join("auth.json");
     let content = fs::read_to_string(&auth_path).ok();
     let raw_value = content

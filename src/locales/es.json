@@ -2371,6 +2371,7 @@
       "apiKey": "Clave",
       "statusRunning": "En ejecución",
       "statusStopped": "Detenido",
+      "internalSchedulerLabel": "Planificador interno",
       "statusDisabled": "Desactivado",
       "emptyMembers": "No hay cuentas en la colección",
       "footerHint": "Ámbito de acceso: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Limitar cuentas Free",
         "sessionAffinityConfirmTitle": "¿Activar afinidad de sesión?",
         "sessionAffinityDescription": "Al activarla, una misma conversación intentará seguir usando la misma cuenta. Si no está disponible, el enrutamiento podrá cambiarla; tras caducar se elegirá otra cuenta.",
-        "chatApiKeyUnsupported": "Chat Completions no compatible",
-        "deepseekUnsupported": "DeepSeek aún no",
         "pendingOauthUnsupported": "Pendiente no se admite",
         "freeNoticeRestricted": "Las cuentas Free están limitadas. Desactiva esto para seleccionarlas.",
         "freeNoticeUnstable": "El proxy de cuentas Free puede ser inestable. Úsalo con cuidado.",
@@ -2726,8 +2725,41 @@
       "desc": "Importa la cuenta actual desde ~/.codex/auth.json",
       "import": "Obtener cuenta local"
     },
+    "tempLogin": {
+      "tab": "Inicio oficial",
+      "desc": "El inicio de sesión se realiza por completo en el cliente de escritorio oficial: la URL de autorización la genera el cliente oficial, y la devolución de llamada de autorización y el intercambio de token también los gestiona el cliente oficial. Cockpit no participa en la devolución de llamada de autorización: solo lee e importa las credenciales después de que el cliente oficial las haya guardado en disco.",
+      "note": "El perfil temporal es una carpeta vacía dentro del directorio de datos de la aplicación. Tras leer la cuenta se elimina junto con el directorio de ejecución del cliente y la entrada del llavero; la instancia predeterminada y las instancias múltiples no se ven afectadas.",
+      "start": "Abrir el cliente oficial e iniciar sesión",
+      "cancel": "Cancelar inicio de sesión",
+      "cancelling": "Cancelando el inicio de sesión oficial…",
+      "waitingHint": "Completa el inicio de sesión en el cliente oficial. Se cerrará automáticamente al detectar las credenciales (máximo 10 minutos).",
+      "cancelled": "Inicio de sesión oficial cancelado y perfil temporal eliminado.",
+      "failed": "Error del inicio de sesión oficial: {{error}}",
+      "success": "Cuenta obtenida: {{email}}",
+      "intercept": {
+        "toggle": "Interceptar la apertura del navegador y mostrar aquí la URL de autorización",
+        "hint": "Si se activa, pulsar «Continuar» en el cliente oficial ya no abre el navegador: solo muestra aquí la URL de autorización generada por el cliente oficial para copiarla. Tras iniciar sesión desde cualquier navegador, la devolución de llamada de autorización y el intercambio de token siguen a cargo del cliente de escritorio oficial; Cockpit no participa en la autorización. Si se desactiva, el flujo oficial no cambia."
+      },
+      "authUrl": {
+        "label": "URL de autorización (generada por el cliente oficial)",
+        "open": "Abrir en el navegador predeterminado",
+        "openFailed": "No se pudo abrir la URL de autorización: {{error}}",
+        "hint": "La URL la genera el cliente oficial y solo funciona en un navegador de este equipo. Mantén abierta la ventana oficial hasta terminar el inicio de sesión.",
+        "unavailable": "Esta vez Cockpit no pudo interceptar la URL de autorización. El cliente oficial abrirá el navegador como siempre; inicia sesión allí."
+      },
+      "phase": {
+        "prepare": "Preparar el perfil temporal",
+        "launch": "Abrir el cliente oficial",
+        "wait": "Esperar el inicio de sesión",
+        "import": "Leer las credenciales",
+        "close": "Cerrar el cliente oficial",
+        "clean": "Eliminar el perfil temporal"
+      }
+    },
     "import": {
       "localDesc": "Importar cuentas de Codex desde sesiones iniciadas localmente.",
+      "localInstanceTitle": "Seleccionar instancia",
+      "localInstanceDesc": "Se encontraron varias instancias de Codex. Elige de qué instancia importar la cuenta local:",
       "importing": "Importando cuenta local...",
       "successMsg": "Importación exitosa: {{email}}"
     },

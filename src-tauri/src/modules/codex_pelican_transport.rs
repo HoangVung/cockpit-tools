@@ -1,5 +1,5 @@
 // Deliberately separate from wakeup: bounded streaming, no tools, no model fallback,
-// no API-service startup and no automatic generation retries.
+// and no automatic generation retries. Transport itself is still owned by API Service.
 pub const PELICAN_DELIVERY_INSTRUCTIONS: &str = "Return a complete standalone HTML document in your response. Do not use Markdown fences or external dependencies.";
 const PELICAN_MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const PELICAN_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -302,6 +302,7 @@ async fn pelican_chat_inner(
     prompt: &str,
     on_delta: impl Fn(String) + Send + Sync + 'static,
 ) -> Result<PelicanChatOutput, String> {
+    let _internal_permit = acquire_internal_request_permit(account_id).await?;
     let id = account_id.to_owned();
     let runtime_handle = tokio::runtime::Handle::current();
     // Blocking disk/syscall work cannot be forcibly cancelled. Keep its permit in
@@ -313,7 +314,7 @@ async fn pelican_chat_inner(
         .map_err(|_| "pelican.error.stateUnavailable".to_string())?;
     // Existing account preparation contains synchronous local credential I/O.
     // Keep it off the async executor and away from the main-window interaction path.
-    let (mut account, proxy, mut timeouts) = timeout(
+    let account = timeout(
         Duration::from_secs(90),
         tokio::task::spawn_blocking(move || {
             let _permit = preparation_permit;
@@ -321,9 +322,7 @@ async fn pelican_chat_inner(
                 // The inner deadline also stops detached async preparation after a caller
                 // cancels. Existing per-account refresh locks prevent duplicate refreshes.
                 timeout(Duration::from_secs(85), async move {
-                    let account = get_prepared_account(&id).await?;
-                    let (proxy, timeouts) = official_wakeup_network_config().await;
-                    Ok::<_, String>((account, proxy, timeouts))
+                    get_prepared_account(&id).await
                 })
                 .await
                 .map_err(|_| "PELICAN_TIMEOUT".to_string())?
@@ -349,94 +348,31 @@ async fn pelican_chat_inner(
     {
         headers.insert("x-openai-fedramp".into(), "true".into());
     }
-    // A retry after an uncertain send could generate twice. Retests are user actions.
-    timeouts.upstream_send_retry_attempts = 0;
-    let connect_timeout = duration_from_millis(
-        timeouts.legacy_upstream_connect_timeout_ms,
-        DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
-    );
     let target = resolve_upstream_target(RESPONSES_PATH)?;
-    let mut expected_task_id: Option<String> = None;
-    for attempt in 0..=1 {
-        let response = timeout(PELICAN_IDLE_TIMEOUT, async {
-            if account.is_agent_identity_auth() {
-                let (updated, auth_headers, task_id) =
-                    codex_agent_identity::build_authentication_headers_with_base_url(
-                        &account,
-                        expected_task_id.as_deref(),
-                        codex_agent_identity::AGENT_IDENTITY_AUTH_API_BASE_URL,
-                    )
-                    .await?;
-                account = updated;
-                expected_task_id = Some(task_id);
-                let authorization = auth_headers
-                    .get(AUTHORIZATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or("PELICAN_UNSUPPORTED_ACCOUNT")?;
-                send_upstream_request_with_authorization_url(
-                    "POST",
-                    &format!(
-                        "{}{}",
-                        UPSTREAM_CODEX_BASE_URL.trim_end_matches('/'),
-                        target
-                    ),
-                    &target,
-                    &headers,
-                    &body,
-                    &account,
-                    authorization,
-                    proxy.as_deref(),
-                    connect_timeout,
-                    &timeouts,
-                    CodexLocalAccessImageGenerationMode::Disabled,
-                    CodexLocalAccessRequestKind::Text,
-                )
-                .await
-            } else {
-                send_upstream_request(
-                    "POST",
-                    &target,
-                    &headers,
-                    &body,
-                    &account,
-                    proxy.as_deref(),
-                    connect_timeout,
-                    &timeouts,
-                    CodexLocalAccessImageGenerationMode::Disabled,
-                    CodexLocalAccessRequestKind::Text,
-                )
-                .await
-            }
-        })
-        .await
-        .map_err(|_| "PELICAN_TIMEOUT".to_string())??;
-        let status = response.status();
-        if !status.is_success() {
-            let raw = pelican_read_error_body(response).await?;
-            // Authentication recovery only on an explicit rejected task, never retry
-            // a generation which has begun producing output.
-            if attempt == 0
-                && account.is_agent_identity_auth()
-                && codex_agent_identity::is_task_invalid_response(status, &raw)
-            {
-                continue;
-            }
-            let safe = pelican_redact_error(&account, &raw);
-            let detail =
-                extract_upstream_error_message(&safe).unwrap_or_else(|| status.to_string());
-            return Err(format!(
-                "HTTP {}: {}",
-                status.as_u16(),
-                truncate_diagnostic_text(&detail, 1200)
-            ));
-        }
-        let result = pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &on_delta).await?;
-        if account.is_agent_identity_auth() {
-            cache_prepared_account(&account).await;
-        }
-        return Ok(result);
+    let response = timeout(
+        PELICAN_IDLE_TIMEOUT,
+        send_internal_api_service_request(
+            account_id,
+            &target,
+            &headers,
+            &body,
+            PELICAN_TOTAL_TIMEOUT,
+        ),
+    )
+    .await
+    .map_err(|_| "PELICAN_TIMEOUT".to_string())??;
+    let status = response.status();
+    if !status.is_success() {
+        let raw = pelican_read_error_body(response).await?;
+        let safe = pelican_redact_error(&account, &raw);
+        let detail = extract_upstream_error_message(&safe).unwrap_or_else(|| status.to_string());
+        return Err(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            truncate_diagnostic_text(&detail, 1200)
+        ));
     }
-    Err("PELICAN_STREAM_INCOMPLETE".into())
+    pelican_consume_response(response, PELICAN_IDLE_TIMEOUT, &on_delta).await
 }
 
 fn pelican_redact_error(account: &CodexAccount, raw: &str) -> String {

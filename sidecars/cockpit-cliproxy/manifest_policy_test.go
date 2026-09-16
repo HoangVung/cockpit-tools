@@ -395,7 +395,8 @@ func TestCodexClientModelsResponsePreservesAstraTemplate(t *testing.T) {
 		t.Fatalf("Astra models response = %#v, want one model", response["models"])
 	}
 	astra := models[0]
-	if got := stringFromAny(astra["display_name"]); got != "6 Astra" {
+	// 与官方客户端一致：展示名统一为 `GPT-6 Astra`。
+	if got := stringFromAny(astra["display_name"]); got != "GPT-6 Astra" {
 		t.Fatalf("Astra display_name = %q", got)
 	}
 	if got := intFromAny(astra["context_window"]); got != 1050000 {
@@ -1003,7 +1004,7 @@ func TestCodexReserveClientCatalogListsLunaReserveWithLunaCapabilities(t *testin
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
 	}
 	reserve := findCodexClientModelForTest(data, codexReserveModel)
-	if reserve == nil || reserve["display_name"] != "Luna Reserve" || reserve["visibility"] != "list" {
+	if reserve == nil || reserve["display_name"] != "GPT-5.6 Reserve" || reserve["visibility"] != "list" {
 		t.Fatalf("gpt-reserve catalog entry = %#v", reserve)
 	}
 	lunaResponse := buildCodexClientModelsResponse([]string{"gpt-5.6-luna"}, &apiKeySpec{}, nil)
@@ -1079,7 +1080,7 @@ func TestPrefixedCodexReserveKeepsVisibleLunaCapabilitiesAndExplicitContext(t *t
 	spec := &apiKeySpec{ModelPrefix: "team"}
 	response := buildCodexClientModelsResponse([]string{"team/gpt-reserve"}, spec, map[string]int64{"gpt-reserve": 516000})
 	reserve := findCodexClientModelForTest(response["models"].([]map[string]any), "team/gpt-reserve")
-	if reserve == nil || reserve["visibility"] != "list" || reserve["display_name"] != "Luna Reserve" {
+	if reserve == nil || reserve["visibility"] != "list" || reserve["display_name"] != "GPT-5.6 Reserve" {
 		t.Fatalf("prefixed Reserve = %#v", reserve)
 	}
 	if intFromAny(reserve["context_window"]) != 516000 || reserve["auto_compact_token_limit"] != nil {
@@ -1146,6 +1147,94 @@ func TestCockpitSelectorRestrictsAuthsToClientAPIKeyAccountScope(t *testing.T) {
 	}
 	if selected.ID != "account-scoped.json" {
 		t.Fatalf("expected only scoped account to be selected, got %q", selected.ID)
+	}
+}
+
+func TestAuthMatchesTargetAccountByManifestBusinessID(t *testing.T) {
+	auth := &coreauth.Auth{ID: "oauth-account.json", Provider: "codex"}
+	account := &accountSpec{ID: "business-account-id", AuthID: auth.ID}
+
+	if !authMatchesTargetAccount(auth, "business-account-id", account) {
+		t.Fatal("target account should match the manifest business account ID")
+	}
+	if !authMatchesTargetAccount(auth, "oauth-account.json", account) {
+		t.Fatal("target account should retain auth ID compatibility")
+	}
+	if authMatchesTargetAccount(auth, "different-account", account) {
+		t.Fatal("unrelated target account must not match")
+	}
+}
+
+func TestAuthMatchesTargetAccountByAPIKeyAttribute(t *testing.T) {
+	auth := &coreauth.Auth{
+		ID:         "codex:apikey:hash",
+		Provider:   "codex",
+		Attributes: map[string]string{"account_id": "api-key-business-id"},
+	}
+
+	if !authMatchesTargetAccount(auth, "api-key-business-id", nil) {
+		t.Fatal("API Key auth should match the business account attribute")
+	}
+}
+
+func TestTargetAccountHeaderRequiresInternalAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	internal := &apiKeySpec{ID: "internal", Key: "internal-key", Internal: true, Enabled: true}
+	external := &apiKeySpec{ID: "client", Key: "client-key", Enabled: true}
+	policy := &requestPolicy{
+		manifest: &manifest{
+			ModelIDs: []string{"gpt-5.5"},
+			APIKeys:  []apiKeySpec{*internal, *external},
+			apiKeyByValue: map[string]*apiKeySpec{
+				internal.Key: internal,
+				external.Key: external,
+			},
+		},
+		tracker: newRequestUsageTracker(),
+	}
+	router := gin.New()
+	router.Use(policy.middleware())
+	seenTarget := map[string]string{}
+	router.POST("/v1/responses", func(c *gin.Context) {
+		target, _ := c.Request.Context().Value(targetAccountIDContextKey).(string)
+		seenTarget[c.GetString(ginUserAPIKeyKey)] = target
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	for _, key := range []string{internal.Key, external.Key} {
+		request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.5"}`))
+		request.Header.Set("Authorization", "Bearer "+key)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set(targetAccountIDHeaderName, "target-account")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("request with %s returned %d: %s", key, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	if got := seenTarget[internal.Key]; got != "target-account" {
+		t.Fatalf("internal API key target account = %q, want %q", got, "target-account")
+	}
+	if got := seenTarget[external.Key]; got != "" {
+		t.Fatalf("external API key must not pin a target account, got %q", got)
+	}
+}
+
+func TestInternalAPIKeyBypassesExcludedModels(t *testing.T) {
+	manifest := &manifest{
+		ModelIDs:       []string{"gpt-5.5"},
+		ExcludedModels: []string{"gpt-5.4"},
+	}
+	internal := &apiKeySpec{ID: "internal", Key: "internal-key", Internal: true, Enabled: true}
+	external := &apiKeySpec{ID: "client", Key: "client-key", Enabled: true}
+	body := []byte(`{"model":"gpt-5.4"}`)
+
+	if _, model, err := rewriteBodyModel(manifest, internal, "text", body); err != nil {
+		t.Fatalf("internal key should keep host-selected models available, got %v (model=%s)", err, model)
+	}
+	if _, _, err := rewriteBodyModel(manifest, external, "text", body); err == nil {
+		t.Fatal("excluded model must stay unavailable for external API keys")
 	}
 }
 

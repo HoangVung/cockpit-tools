@@ -2371,6 +2371,7 @@
       "apiKey": "Khóa",
       "statusRunning": "Đang chạy",
       "statusStopped": "Đã dừng",
+      "internalSchedulerLabel": "Bộ lập lịch nội bộ",
       "statusDisabled": "Đã tắt",
       "emptyMembers": "Hiện chưa có tài khoản trong bộ sưu tập",
       "footerHint": "Phạm vi truy cập: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Giới hạn tài khoản Free",
         "sessionAffinityConfirmTitle": "Bật gắn kết phiên?",
         "sessionAffinityDescription": "Khi bật, cùng một cuộc trò chuyện sẽ cố gắng tiếp tục dùng cùng một tài khoản. Nếu tài khoản không khả dụng, định tuyến vẫn có thể chuyển đổi; sau khi hết hạn, tài khoản sẽ được chọn lại.",
-        "chatApiKeyUnsupported": "Không hỗ trợ Chat Completions",
-        "deepseekUnsupported": "DeepSeek chưa hỗ trợ",
         "pendingOauthUnsupported": "Chờ xác thực: không",
         "freeNoticeRestricted": "Tài khoản Free bị giới hạn. Tắt tùy chọn này để chọn chúng.",
         "freeNoticeUnstable": "Proxy tài khoản Free có thể không ổn định. Hãy dùng thận trọng.",
@@ -2726,8 +2725,41 @@
       "desc": "Nhập tài khoản hiện tại từ ~/.codex/auth.json",
       "import": "Lấy tài khoản cục bộ"
     },
+    "tempLogin": {
+      "tab": "Đăng nhập chính thức",
+      "desc": "Quá trình đăng nhập diễn ra hoàn toàn trong ứng dụng máy tính chính thức: địa chỉ ủy quyền do ứng dụng chính thức tạo, và cả phản hồi ủy quyền lẫn việc đổi token cũng do ứng dụng chính thức xử lý. Cockpit không tham gia phản hồi ủy quyền, chỉ đọc và nhập thông tin đăng nhập sau khi ứng dụng chính thức ghi vào đĩa.",
+      "note": "Hồ sơ tạm là một thư mục trống trong thư mục dữ liệu ứng dụng. Sau khi đọc tài khoản, nó bị xóa cùng với thư mục chạy của ứng dụng chính thức và mục trong keychain; phiên bản mặc định và các phiên bản khác không bị ảnh hưởng.",
+      "start": "Mở ứng dụng chính thức và đăng nhập",
+      "cancel": "Hủy đăng nhập",
+      "cancelling": "Đang hủy đăng nhập chính thức…",
+      "waitingHint": "Hãy hoàn tất đăng nhập trong ứng dụng chính thức. Ứng dụng sẽ tự đóng khi phát hiện thông tin đăng nhập (tối đa 10 phút).",
+      "cancelled": "Đã hủy đăng nhập chính thức và xóa hồ sơ tạm.",
+      "failed": "Đăng nhập chính thức thất bại: {{error}}",
+      "success": "Đã lấy tài khoản: {{email}}",
+      "intercept": {
+        "toggle": "Chặn việc mở trình duyệt và hiển thị địa chỉ ủy quyền tại đây",
+        "hint": "Khi bật, bấm «Tiếp tục» trong ứng dụng chính thức sẽ không mở trình duyệt nữa, mà chỉ hiển thị tại đây địa chỉ ủy quyền do ứng dụng chính thức tạo để bạn sao chép. Sau khi đăng nhập từ bất kỳ trình duyệt nào, phản hồi ủy quyền và việc đổi token vẫn do ứng dụng máy tính chính thức xử lý; Cockpit không tham gia ủy quyền. Khi tắt, quy trình chính thức giữ nguyên."
+      },
+      "authUrl": {
+        "label": "Địa chỉ ủy quyền (do ứng dụng chính thức tạo)",
+        "open": "Mở bằng trình duyệt mặc định",
+        "openFailed": "Không mở được địa chỉ ủy quyền: {{error}}",
+        "hint": "Địa chỉ do ứng dụng chính thức tạo và chỉ mở được bằng trình duyệt trên máy này. Hãy giữ cửa sổ chính thức mở cho đến khi đăng nhập xong.",
+        "unavailable": "Lần này Cockpit không lấy được địa chỉ ủy quyền. Ứng dụng chính thức sẽ mở trình duyệt như thường lệ; bạn hãy đăng nhập tại đó."
+      },
+      "phase": {
+        "prepare": "Chuẩn bị hồ sơ tạm",
+        "launch": "Mở ứng dụng chính thức",
+        "wait": "Chờ đăng nhập",
+        "import": "Đọc thông tin đăng nhập",
+        "close": "Đóng ứng dụng chính thức",
+        "clean": "Xóa hồ sơ tạm"
+      }
+    },
     "import": {
       "localDesc": "Nhập tài khoản Codex từ các phiên đăng nhập cục bộ.",
+      "localInstanceTitle": "Chọn phiên bản",
+      "localInstanceDesc": "Phát hiện nhiều phiên bản Codex. Hãy chọn phiên bản để lấy tài khoản cục bộ:",
       "importing": "Đang nhập tài khoản cục bộ...",
       "successMsg": "Nhập thành công: {{email}}"
     },

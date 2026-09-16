@@ -2371,6 +2371,7 @@
       "apiKey": "Clé",
       "statusRunning": "Actif",
       "statusStopped": "Arrêté",
+      "internalSchedulerLabel": "Planificateur interne",
       "statusDisabled": "Désactivé",
       "emptyMembers": "Aucun compte dans la collection",
       "footerHint": "Portée d’accès : {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Limiter les comptes Free",
         "sessionAffinityConfirmTitle": "Activer l’affinité de session ?",
         "sessionAffinityDescription": "Une fois activée, une même conversation essaie de conserver le même compte. S’il est indisponible, le routage peut en changer ; après expiration, un compte est sélectionné à nouveau.",
-        "chatApiKeyUnsupported": "Chat Completions non pris en charge",
-        "deepseekUnsupported": "DeepSeek pas encore",
         "pendingOauthUnsupported": "Auth en attente exclue",
         "freeNoticeRestricted": "Les comptes Free sont limités. Désactivez ceci pour les sélectionner.",
         "freeNoticeUnstable": "Le proxy des comptes Free peut être instable. À utiliser avec prudence.",
@@ -2726,8 +2725,41 @@
       "desc": "Importer le compte connecté depuis ~/.codex/auth.json",
       "import": "Récupérer le compte local"
     },
+    "tempLogin": {
+      "tab": "Connexion officielle",
+      "desc": "La connexion se déroule entièrement dans le client de bureau officiel : l'URL d'autorisation est générée par le client officiel, et le rappel d'autorisation ainsi que l'échange de jeton sont également gérés par le client officiel. Cockpit ne participe pas au rappel d'autorisation : il ne lit et n'importe les identifiants qu'après leur enregistrement par le client officiel.",
+      "note": "Le profil temporaire est un dossier vide dans le répertoire de données de l'application. Après la lecture du compte, il est supprimé avec le dossier d'exécution du client et l'entrée du trousseau ; l'instance par défaut et les instances multiples ne sont pas affectées.",
+      "start": "Ouvrir le client officiel et se connecter",
+      "cancel": "Annuler la connexion",
+      "cancelling": "Annulation de la connexion officielle…",
+      "waitingHint": "Terminez la connexion dans le client officiel. Il se ferme automatiquement dès que les identifiants sont détectés (10 minutes maximum).",
+      "cancelled": "Connexion officielle annulée et profil temporaire supprimé.",
+      "failed": "Échec de la connexion officielle : {{error}}",
+      "success": "Compte récupéré : {{email}}",
+      "intercept": {
+        "toggle": "Intercepter l'ouverture du navigateur et afficher l'URL d'autorisation ici",
+        "hint": "Une fois activé, cliquer sur « Continuer » dans le client officiel n'ouvre plus de navigateur : l'URL d'autorisation générée par le client officiel s'affiche ici pour être copiée. Après la connexion depuis n'importe quel navigateur, le rappel d'autorisation et l'échange de jeton restent gérés par le client de bureau officiel ; Cockpit ne participe pas à l'autorisation. Désactivé, le flux officiel reste inchangé."
+      },
+      "authUrl": {
+        "label": "URL d'autorisation (générée par le client officiel)",
+        "open": "Ouvrir dans le navigateur par défaut",
+        "openFailed": "Impossible d'ouvrir l'URL d'autorisation : {{error}}",
+        "hint": "L'URL provient du client officiel et ne fonctionne que dans un navigateur de cet ordinateur. Gardez la fenêtre officielle ouverte jusqu'à la fin de la connexion.",
+        "unavailable": "Cette fois, Cockpit n'a pas pu intercepter l'URL d'autorisation. Le client officiel ouvrira le navigateur comme d'habitude : connectez-vous depuis celui-ci."
+      },
+      "phase": {
+        "prepare": "Préparer le profil temporaire",
+        "launch": "Ouvrir le client officiel",
+        "wait": "Attendre la connexion",
+        "import": "Lire les identifiants",
+        "close": "Fermer le client officiel",
+        "clean": "Supprimer le profil temporaire"
+      }
+    },
     "import": {
       "localDesc": "Importer des comptes Codex depuis des sessions locales connectées.",
+      "localInstanceTitle": "Sélectionner l'instance",
+      "localInstanceDesc": "Plusieurs instances Codex ont été détectées. Choisissez l'instance dont importer le compte local :",
       "importing": "Importation du compte local...",
       "successMsg": "Importation réussie : {{email}}"
     },

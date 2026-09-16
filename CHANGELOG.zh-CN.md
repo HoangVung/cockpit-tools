@@ -7,6 +7,26 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
 ---
+## [1.3.54] - 2026-09-16
+
+### 新增
+
+- **新增「官方登录」：打开官方客户端登录，读取账号后自动关闭并清理**：添加账号弹框新增「官方登录」页签。点击后会按多开实例的空白实例方式，在应用数据目录下创建一次性的临时配置并打开官方 Codex 客户端，由官方客户端完成真实登录。在这台官方客户端里点「继续登录」不再跳转浏览器，官方生成的授权地址会直接显示在弹框里，可一键复制后拿到本机任意浏览器完成登录，也可以点「用默认浏览器打开」直接在本机浏览器继续（地址完全由官方客户端生成，Cockpit 不改写、不自行拼接、不替换参数，也不参与授权回调与 token 换取；万一本次没能截获，弹框会明确提示，官方客户端照常打开浏览器）。弹框里提供「拦截浏览器跳转，直接显示授权地址」开关，默认开启；关闭后完全走官方原生流程，仍可使用官方客户端自带的「复制登录链接」。Cockpit 一旦读到登录信息就立即关闭这台客户端，并硬删除临时配置目录、该实例的运行目录以及 macOS 钥匙串条目，不留凭据副本；随后在后台单独刷新这一个账号的额度与资料，不需要再手动刷新。成功、失败、取消都走同一套清理流程，关闭或取消都会一并清理；异常退出遗留的临时配置会在下次启动以及此后每 10 分钟的巡检中继续删除。默认实例与多开实例不受影响，临时配置也不会出现在实例列表里。
+- **Codex API 服务支持自动混合路由**：账号不再按类型过滤，OAuth 账号、`OpenAI API Key` 账号、Chat Completions / DeepSeek 账号以及其他 provider gateway 账号都可以加入集合。绑定 API 服务的 profile 会把集合里的模型写入客户端模型列表，同名模型只显示一次，且 GPT 推荐集始终排在最前面：GPT 系列只保留官方推荐集且显示名与官方客户端一致（`GPT-6 Astra`、`GPT-5.6 Sol`、`GPT-5.6 Terra`、`GPT-5.6 Luna`、`GPT-5.5`），额度兜底模型改名为 **GPT-5.6 Reserve**，`gpt-5.4` 等历史兼容模型仍可被旧客户端请求但不再出现在列表里；DeepSeek 账号与 DeepSeek 网关模式保持一致，只列出账号自身模型列表里的模型（`DeepSeek-V4.1-Flash`、`DeepSeek-V4-Pro`），推理档位同样为 low / high / max 三档（含最高档）。与该网关相同，账号只要拥有可识图模型，就会为这些模型声明可发送图片，并把带图片的请求自动转到识图模型，因此选中 Pro 这类纯文本模型时图片依然可用。请求优先走原生 Codex 账号池，只存在于 Chat Completions / DeepSeek 账号的模型会按对应协议自动转换并转发；首个账号在还没有输出任何内容前失败时，会自动改用其他提供同一模型的账号重试。账号选择界面不再把这些账号标记为不支持，路由清单在服务启动时生成，不会改写你保存的配置。
+- **获取本地账号支持选择多开实例**：点击「获取本地账号」时，只有一个实例仍然直接读取；检测到多个实例（含默认实例）时，会先列出实例让你指定从哪一个读取，列表显示实例名、profile 目录与运行状态。默认实例与多开实例都按官方客户端真实落盘规则读取各自 profile（`auth.json` 或 macOS Keychain），多开实例的账号不再需要手动导出导入；读取失败时错误显示在实例选择弹框内，可以直接改选其他实例。
+
+### 变更
+
+- **API 服务里的 DeepSeek 模型默认使用最高推理档位**：从 DeepSeek 账号汇总的模型继续保留官方 low / high / max 三档，但在客户端模型目录和网关模型列表里都把默认档位声明为 `max`，配合接管 profile 时补齐 `max` 档位开关，尚未选过档位、或当前档位对该模型不可用时，DeepSeek 会直接落在最高档；你在模型选择器里已经手动选择过的档位不会被覆盖。
+- **API 服务接管 profile 时自动补齐 `max` 推理档位**：Codex 客户端的「可用推理强度」默认不含 `max`，接管后会在该 profile 的 `config.toml` 中把 `max` 追加进 `[desktop] enabled-reasoning-efforts`，保留你已有的档位与顺序，仅在缺少该配置项时按客户端默认集合写入；这样 DeepSeek 等只声明 low / high / max 的模型在选择器里也能看到最高档，与 DeepSeek 网关模式保持一致。
+- **Codex 唤醒与鹈鹕测试改为统一走 API 服务进程**：定时/手动唤醒和鹈鹕测试不再各自直连上游，而是与其它请求一样交给同一个本地 API 服务进程处理，账号选择、Token 续期、额度冷却、账号级并发、重试与请求日志因此共用同一套调度；这些请求会以「内部调度」显示在 API 服务的请求日志中。停用 API 服务只关闭对外入口，唤醒与鹈鹕测试不受影响，进程随应用退出一起停止。
+- **Codex 授权与切号落盘对齐官方客户端**：切号写入桌面端登录信息时，`auth.json` 现在与官方 codex 同构——OAuth 账号写入 `auth_mode: "chatgpt"`，不再带历史上多余的 `type` 字段；`last_refresh` 改用官方同款时间格式，缺少更新时间时直接省略该键而不是写入 `null`；个人访问令牌（`at-` 开头）账号保持官方「只写凭据字段、不写登录方式」的形态；`auth.json` 与备份文件的权限统一收敛为仅本人可读写（`0600`）。OAuth 授权在本地 1455 端口被占用时自动改用 1457，不再直接提示端口冲突。额度与主动重置次数的查询不再伪装成网页请求，改用官方 codex 形态的 `User-Agent`（`Codex Desktop/<版本> (<系统> <版本>; <架构>)`）与 `originator`，不再携带网页专用的 `Referer`、`sec-fetch-*`、`OpenAI-Beta`、`oai-language` 等请求头。
+
+### 修复
+
+- **修复 DeepSeek 实例网关下自动压缩与手动压缩失败**：实例绑定 DeepSeek 供应商网关后，profile 由本地网关账号接管，接管写入会清掉切号时写入的 DeepSeek 压缩兜底，压缩因此走远端 `responses/compact` / `compaction_trigger`；而本地网关出口为兼容官方账号会把推理正文改写成 `summary`，DeepSeek 上游在思考模式下要求回传明文 `reasoning_text`，会直接以 `The reasoning_text in the thinking mode must be passed back to the API` 拒绝，表现为「上下文已压缩」处报错且会话无法继续。现在供应商网关接管 profile 后会按该 profile 补回 DeepSeek 压缩兜底（关闭 `features.remote_compaction_v2`、启用 `features.token_budget`），压缩回到本地流程；启动自愈发现网关仍健康、本次不重新接管时也会幂等补写一次，升级后无需重新绑定；切走时按原备份还原你的设置。
+- **修复 Codex API 服务账号池含 DeepSeek 时压缩失败**：DeepSeek 没有服务端压缩能力——`/responses/compact` 返回 404，`compaction_trigger` 只会返回普通 message，而 Codex 的远程压缩要求响应里恰好有一个压缩输出项，因此只要压缩请求被调度到 DeepSeek 账号就必然失败（并先以 `The reasoning_text in the thinking mode must be passed back to the API` 拒绝）。现在 API 服务接管的 profile 只要账号池或路由渠道里存在 DeepSeek 上游账号，就会把该 profile 的压缩切回本地流程（关闭 `features.remote_compaction_v2`、启用 `features.token_budget`）；该改动只涉及这两个压缩键，不影响同一账号池里官方账号的 `service_tier`、联网搜索等设置，停用 API 服务或解除接管时按接管前备份精确还原。混合模型路由同理适用于其中的 DeepSeek 渠道。
+
 ## [1.3.53] - 2026-09-14
 
 ### 变更

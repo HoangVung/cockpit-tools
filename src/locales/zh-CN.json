@@ -2728,6 +2728,7 @@
       },
       "statusRunning": "运行中",
       "statusStopped": "未运行",
+      "internalSchedulerLabel": "内部调度",
       "statusDisabled": "已停用",
       "statusUnconfigured": "未配置",
       "emptyMembers": "将账号添加到 API 服务，点击启动即可，无需其他配置",
@@ -2962,8 +2963,6 @@
         "restrictFreeToggle": "限制 Free 账号使用",
         "sessionAffinityConfirmTitle": "开启会话亲和？",
         "sessionAffinityDescription": "开启后，同一个会话会尽量持续使用同一个账号进行对话；账号不可用时仍会按调度策略切换，超过过期时间后会重新选择账号。",
-        "chatApiKeyUnsupported": "Chat Completions 不支持加入",
-        "deepseekUnsupported": "DeepSeek 暂不支持加入",
         "pendingOauthUnsupported": "待授权不可加入",
         "freeNoticeRestricted": "已限制 Free 账号，关闭后才可勾选。",
         "freeNoticeUnstable": "Free账号反代不稳定，请谨慎使用。",
@@ -3544,8 +3543,41 @@
       "desc": "从 ~/.codex/auth.json 导入当前已登录的账号",
       "import": "获取本地账号"
     },
+    "tempLogin": {
+      "tab": "官方登录",
+      "desc": "登录全程在官方桌面客户端内完成：授权地址由官方客户端生成，授权回调与 token 换取也都由官方客户端处理。Cockpit 不参与授权回调，只在官方把登录凭据落盘后读取并导入。",
+      "note": "临时配置创建在应用数据目录下的独立空目录中，账号读取完成后会连同官方客户端运行目录与钥匙串条目一起删除，默认实例和多开实例都不受影响。",
+      "start": "打开官方客户端并登录",
+      "cancel": "取消登录",
+      "cancelling": "正在取消官方登录…",
+      "waitingHint": "请在官方客户端完成登录，读取到登录信息后会自动关闭客户端（最长等待 10 分钟）。",
+      "cancelled": "已取消官方登录，临时配置已清理。",
+      "failed": "官方登录失败：{{error}}",
+      "success": "已获取账号：{{email}}",
+      "intercept": {
+        "toggle": "拦截浏览器跳转，直接显示授权地址",
+        "hint": "开启后，在官方客户端点「继续登录」不再打开浏览器，只把官方生成的授权地址显示在这里供复制；复制到任意浏览器登录后，授权回调与 token 换取仍由官方桌面客户端完成，Cockpit 不参与授权。关闭后完全走官方原生流程。"
+      },
+      "authUrl": {
+        "label": "授权地址（官方生成）",
+        "open": "用默认浏览器打开",
+        "openFailed": "打开授权地址失败：{{error}}",
+        "hint": "地址由官方客户端生成，只能在本机浏览器打开；请在官方窗口保持打开的情况下完成登录。",
+        "unavailable": "本次未能截获官方授权地址，官方客户端会照常打开浏览器，可直接在那里完成登录。"
+      },
+      "phase": {
+        "prepare": "准备临时配置",
+        "launch": "打开官方客户端",
+        "wait": "等待登录完成",
+        "import": "读取登录信息",
+        "close": "关闭官方客户端",
+        "clean": "清理临时配置"
+      }
+    },
     "import": {
       "localDesc": "从本地已登录的会话中导入 Codex 账号。",
+      "localInstanceTitle": "选择实例",
+      "localInstanceDesc": "检测到多个 Codex 实例，请选择要从哪个实例获取本地账号：",
       "importing": "正在导入本地账号...",
       "successMsg": "导入成功: {{email}}"
     },

@@ -28,6 +28,9 @@ import type {
 
 export type CodexApiServiceViewProps = ReturnType<typeof useCodexApiServicePageController>;
 
+/** 宿主内部调度（唤醒、鹈鹕测试）固定使用的 API 服务 Key ID，只在请求日志中展示本地化名称。 */
+const INTERNAL_API_KEY_ID = "__cockpit_internal__";
+
 /** 渲染 CodexApiServicePage 的界面；业务状态与动作统一由 Controller 提供。 */
 export function CodexApiServiceView(props: CodexApiServiceViewProps) {
   const {
@@ -2477,7 +2480,12 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
                           <span>{formatDateTime(event.timestamp)}</span>
                           <span>{requestKindLabel(event.requestKind, t)}</span>
                           <span>
-                            {event.apiKeyLabel || event.apiKeyId || "-"}
+                            {event.apiKeyId === INTERNAL_API_KEY_ID
+                              ? t(
+                                  "codex.localAccess.internalSchedulerLabel",
+                                  "Internal scheduler",
+                                )
+                              : event.apiKeyLabel || event.apiKeyId || "-"}
                           </span>
                           <span
                             title={

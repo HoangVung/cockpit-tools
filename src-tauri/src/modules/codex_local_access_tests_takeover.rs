@@ -36,7 +36,7 @@
         collection.bound_oauth_account_id = Some(account.id.clone());
         collection.account_ids = vec![account.id.clone()];
         collection.api_keys[0].account_ids = vec![account.id.clone()];
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await.expect("write bound mixed takeover");
         let auth: Value = serde_json::from_str(
             &fs::read_to_string(profile_dir.join(CODEX_PROFILE_AUTH_FILE)).expect("read auth")
@@ -57,7 +57,7 @@
         let collection = realtime_mixed_test_collection();
         let original = "model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n";
         fs::write(profile_dir.join(CODEX_PROFILE_CONFIG_FILE), original).expect("write original");
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await
             .expect("write mixed takeover");
         let config = fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
@@ -85,7 +85,7 @@
         let collection = realtime_mixed_test_collection();
         let original = "experimental_realtime_ws_base_url = \"https://voice.example.test/v1\"\n";
         fs::write(profile_dir.join(CODEX_PROFILE_CONFIG_FILE), original).expect("write original");
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await.expect("write mixed takeover");
         let config = fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
         assert_eq!(
@@ -116,6 +116,65 @@
         let restored = restore_config_toml_from_takeover_backup(Some(&edited.to_string()), Some(original))
             .expect("restore edited").expect("config");
         assert!(restored.contains("https://edited.example.test/v1"));
+    }
+
+    #[tokio::test]
+    async fn takeover_cleanup_restores_managed_local_compaction_fallback() {
+        let profile_dir = make_temp_dir("local-compaction-takeover-restore");
+        // 接管前用户没有任何压缩相关设置。
+        let original = "model = \"gpt-6-astra\"\n\n[features]\njs_repl = false\n";
+        fs::write(profile_dir.join(CODEX_PROFILE_CONFIG_FILE), original).expect("write original");
+
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.enabled = true;
+        let mut account_key = build_local_access_api_key(Some("DeepSeek pool"));
+        account_key.id = "provider_gateway_deepseek".to_string();
+        account_key.provider_gateway = Some(CodexLocalAccessProviderGateway {
+            base_url: "https://api.deepseek.com/v1".to_string(),
+            api_key: "sk-deepseek".to_string(),
+            upstream_model: "deepseek-v4-pro".to_string(),
+            upstream_models: vec!["deepseek-v4-pro".to_string()],
+            wire_api: Some("chat_completions".to_string()),
+            supports_vision: false,
+            model_capabilities: HashMap::new(),
+            vision_routing_model: None,
+        });
+        collection.api_keys = vec![account_key];
+        collection.api_key = collection.api_keys[0].key.clone();
+        collection.port = 15_991;
+
+        super::write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("write takeover");
+        let config = fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE))
+            .expect("read config");
+        assert!(config.contains("remote_compaction_v2 = false"));
+        assert!(config.contains("token_budget = true"));
+
+        let restored = restore_config_toml_from_takeover_backup(Some(&config), Some(original))
+            .expect("restore")
+            .expect("config exists");
+        assert!(!restored.contains("remote_compaction_v2"));
+        assert!(!restored.contains("token_budget"));
+        assert!(restored.contains("js_repl = false"));
+
+        // 用户原本就设过这两个键时按原值还原。
+        let user_config =
+            "model = \"gpt-6-astra\"\n\n[features]\nremote_compaction_v2 = true\ntoken_budget = false\n";
+        let restored = restore_config_toml_from_takeover_backup(Some(&config), Some(user_config))
+            .expect("restore")
+            .expect("config exists");
+        assert!(restored.contains("remote_compaction_v2 = true"));
+        assert!(restored.contains("token_budget = false"));
+
+        // 接管前的配置里没有 profile 时不应凭空生成 features 段。
+        let no_backup = restore_config_toml_from_takeover_backup(Some(&config), None)
+            .expect("restore without backup")
+            .expect("config exists");
+        assert!(!no_backup.contains("remote_compaction_v2"));
+        assert!(!no_backup.contains("token_budget"));
+
+        fs::remove_dir_all(profile_dir).expect("cleanup fixture");
     }
 
     #[test]
@@ -176,7 +235,7 @@
         let mut collection = test_local_access_collection(Vec::new());
         collection.api_key = "local-service-key".to_string();
 
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await
             .expect("write local access takeover");
 
@@ -201,35 +260,126 @@
             .find(|model| model["slug"] == "gpt-reserve")
             .expect("API Service catalog should list Reserve even with an empty account pool");
         assert_eq!(reserve["visibility"], "list");
-        assert_eq!(reserve["display_name"], "Luna Reserve");
+        assert_eq!(reserve["display_name"], "GPT-5.6 Reserve");
         assert!(reserve["auto_compact_token_limit"].is_null());
         assert_eq!(reserve["prefer_websockets"], false);
         assert!(!config.contains("model_context_window"));
         assert!(!config.contains("model_auto_compact_token_limit"));
         assert!(!config.contains("model = \"gpt-reserve\""));
-        let spark = catalog
-            .get("models")
-            .and_then(Value::as_array)
-            .and_then(|models| {
-                models.iter().find(|model| {
-                    model.get("slug").and_then(Value::as_str) == Some("gpt-5.3-codex-spark")
-                })
-            })
-            .expect("Spark should be present in the local access model catalog");
+        // 只保留官方推荐的 GPT 集：历史兼容模型（Spark / 5.4）不再出现在客户端目录里。
+        let catalog_models = catalog["models"].as_array().expect("catalog models");
+        let listed_gpt_slugs = catalog_models
+            .iter()
+            .filter_map(|model| model.get("slug").and_then(Value::as_str))
+            .filter(|slug| slug.starts_with("gpt-") && !slug.starts_with("gpt-image"))
+            .collect::<Vec<_>>();
         assert_eq!(
-            spark.get("display_name").and_then(Value::as_str),
-            Some("GPT-5.3-Codex-Spark")
+            listed_gpt_slugs,
+            vec![
+                "gpt-6-astra",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-reserve"
+            ]
         );
-        assert_eq!(
-            spark.get("prefer_websockets").and_then(Value::as_bool),
-            Some(false)
-        );
+        for hidden in ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"] {
+            assert!(
+                !catalog_models
+                    .iter()
+                    .any(|model| model["slug"].as_str() == Some(hidden)),
+                "历史模型 {hidden} 不应出现在客户端模型目录里"
+            );
+        }
         assert!(!profile_dir
             .join(CODEX_LEGACY_PROVIDER_MODEL_CATALOG_FILE)
             .exists());
         assert!(!profile_dir
             .join(CODEX_LEGACY_LOCAL_ACCESS_MODEL_CATALOG_FILE)
             .exists());
+
+        fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+    }
+
+    fn profile_reasoning_efforts(profile_dir: &std::path::Path) -> Vec<String> {
+        let config =
+            fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
+        let doc = config.parse::<Document>().expect("parse config");
+        doc.get("desktop")
+            .and_then(|desktop| desktop.get("enabled-reasoning-efforts"))
+            .and_then(|item| item.as_value())
+            .and_then(|value| value.as_array())
+            .map(|efforts| {
+                efforts
+                    .iter()
+                    .filter_map(|effort| effort.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn local_access_takeover_appends_max_reasoning_effort() {
+        let profile_dir = make_temp_dir("codex-local-access-max-effort");
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.api_key = "local-service-key".to_string();
+        // 用户已自定义推理强度：只补 max，保留原有档位与顺序。
+        fs::write(
+            profile_dir.join(CODEX_PROFILE_CONFIG_FILE),
+            "[desktop]\nenabled-reasoning-efforts = [\"low\", \"high\"]\n",
+        )
+        .expect("write initial config");
+
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("write local access takeover");
+        assert_eq!(
+            profile_reasoning_efforts(&profile_dir),
+            vec!["low", "high", "max"]
+        );
+
+        // 幂等：重复接管不会重复追加，也不会改写已存在的档位。
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("repeat local access takeover");
+        assert_eq!(
+            profile_reasoning_efforts(&profile_dir),
+            vec!["low", "high", "max"]
+        );
+
+        fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+    }
+
+    #[tokio::test]
+    async fn local_access_takeover_fills_client_default_reasoning_efforts() {
+        let profile_dir = make_temp_dir("codex-local-access-max-effort-default");
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.api_key = "local-service-key".to_string();
+
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("write local access takeover");
+
+        assert_eq!(
+            profile_reasoning_efforts(&profile_dir),
+            vec!["low", "medium", "high", "xhigh", "ultra", "persistent", "max"]
+        );
+
+        fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_takeover_leaves_reasoning_effort_untouched() {
+        let profile_dir = make_temp_dir("codex-provider-gateway-effort-scope");
+        let mut collection = test_local_access_collection(Vec::new());
+        collection.api_key = "provider-gateway-key".to_string();
+
+        write_local_access_profile_takeover(&profile_dir, &collection, None, false)
+            .await
+            .expect("write provider gateway takeover");
+
+        assert!(profile_reasoning_efforts(&profile_dir).is_empty());
 
         fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
     }
@@ -273,7 +423,7 @@
         let mut collection = test_local_access_collection(Vec::new());
         collection.api_key = "local-service-key".to_string();
 
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await
             .expect("write local access takeover");
 
@@ -352,7 +502,7 @@
             last_used_at: None,
         });
 
-        write_local_access_profile_takeover(&profile_dir, &collection, Some(&key))
+        write_local_access_profile_takeover(&profile_dir, &collection, Some(&key), true)
             .await
             .expect("write provider gateway takeover");
 
@@ -368,7 +518,7 @@
         let mut collection = test_local_access_collection(Vec::new());
         collection.api_key = "local-service-key".to_string();
 
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await
             .expect("write local access takeover");
         assert!(!super::local_access_profile_takeover_needs_sync(
@@ -438,7 +588,7 @@
         let mut collection = test_local_access_collection(Vec::new());
         collection.api_key = "local-service-key".to_string();
 
-        write_local_access_profile_takeover(&profile_dir, &collection, None)
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
             .await
             .expect("write local access takeover");
 
@@ -554,6 +704,158 @@
         assert_eq!(config.get("disable-auth-auto-refresh"), Some(&json!(true)));
 
         fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
+
+    /// API 服务 profile 即使开着「模型管理」，GPT 推荐集也必须用官方命名与顺序。
+    #[tokio::test]
+    async fn api_service_catalog_keeps_official_gpt_names_with_model_management_enabled() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _env = LocalAccessTestDataGuard::new("api-service-official-gpt-names");
+        let profile_dir = make_temp_dir("api-service-official-gpt-names-profile");
+
+        // 打开「模型管理」，并写入一组自定义显示名（旧版本默认的“6 Astra/5.6 Sol”）。
+        fs::write(
+            profile_dir.join(".cockpit-experimental-model-catalog-enabled"),
+            "enabled\n",
+        )
+        .expect("enable model management");
+        fs::write(
+            profile_dir.join(".cockpit-experimental-model-catalog-config.json"),
+            serde_json::to_string_pretty(&json!({
+                "version": 4,
+                "migrations": ["add-gpt-6-astra-model"],
+                "models": [
+                    {"model_id": "gpt-6-astra", "display_name": "6 Astra"},
+                    {"model_id": "gpt-5.6-sol", "display_name": "5.6 Sol"},
+                    {"model_id": "gpt-5.6-terra", "display_name": "5.6 Terra"},
+                    {"model_id": "gpt-5.6-luna", "display_name": "5.6 Luna"},
+                    {"model_id": "gpt-5.5", "display_name": "5.5"}
+                ]
+            }))
+            .expect("serialize custom catalog"),
+        )
+        .expect("write custom catalog");
+
+        let collection = test_local_access_collection(Vec::new());
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("write API service takeover");
+
+        let catalog = read_profile_model_catalog(&profile_dir);
+        let names = catalog["models"]
+            .as_array()
+            .expect("catalog models")
+            .iter()
+            .filter_map(|model| {
+                let object = model.as_object()?;
+                Some((
+                    object.get("slug")?.as_str()?.to_string(),
+                    object.get("display_name")?.as_str()?.to_string(),
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+        for (slug, expected_name) in [
+            ("gpt-6-astra", "GPT-6 Astra"),
+            ("gpt-5.6-sol", "GPT-5.6 Sol"),
+            ("gpt-5.6-terra", "GPT-5.6 Terra"),
+            ("gpt-5.6-luna", "GPT-5.6 Luna"),
+            ("gpt-5.5", "GPT-5.5"),
+        ] {
+            assert_eq!(
+                names.get(slug).map(String::as_str),
+                Some(expected_name),
+                "开启模型管理时 GPT 显示名仍必须带官方前缀: {names:?}"
+            );
+        }
+        assert_eq!(
+            names.get("gpt-reserve").map(String::as_str),
+            Some("GPT-5.6 Reserve")
+        );
+
+        fs::remove_dir_all(profile_dir).expect("cleanup fixture");
+    }
+
+    /// DeepSeek 账号在 API 服务里与「DeepSeek 网关模式」一致：只列出账号模型，
+    /// 并允许把图片自动转到识图模型，因此走 provider 路由而不是原生账号池。
+    #[test]
+    fn api_service_deepseek_account_routes_images_to_vision_model() {
+        let dir = make_temp_dir("api-service-deepseek-vision-route");
+        let mut deepseek = CodexAccount::new_api_key(
+            "deepseek-vision-account".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            vec!["deepseek-flash".to_string(), "deepseek-v4-pro".to_string()],
+        );
+        deepseek.api_wire_api = Some("responses".to_string());
+        deepseek.api_model_mappings =
+            crate::modules::codex_account::default_deepseek_api_model_mappings();
+        deepseek.api_model_vision_support = HashMap::from([
+            ("deepseek-flash".to_string(), true),
+            ("deepseek-v4-pro".to_string(), false),
+        ]);
+        let collection = test_local_access_collection(vec![deepseek.id.clone()]);
+
+        super::prepare_sidecar_launch_config_in_dir_sync(
+            &collection,
+            dir.clone(),
+            HashMap::new(),
+            None,
+            HashMap::from([(deepseek.id.clone(), deepseek.clone())]),
+            true,
+            None,
+        )
+        .expect("prepare API service sidecar config");
+
+        let manifest: Value = serde_json::from_str(
+            &fs::read_to_string(super::sidecar_manifest_path(&dir)).expect("read manifest"),
+        )
+        .expect("parse manifest");
+        let api_key = manifest
+            .get("apiKeys")
+            .and_then(Value::as_array)
+            .and_then(|keys| keys.first())
+            .expect("client API key");
+        let routes = api_key
+            .pointer("/modelRouting/routes")
+            .and_then(Value::as_array)
+            .expect("automatic routes");
+        assert_eq!(routes.len(), 1, "DeepSeek 账号必须走 provider 路由: {api_key}");
+        let route = &routes[0];
+        assert_eq!(
+            route
+                .pointer("/providerGateway/visionRoutingModel")
+                .and_then(Value::as_str),
+            Some("deepseek-flash"),
+            "带图片的文本模型请求必须自动转到识图模型"
+        );
+        let route_models = route
+            .get("models")
+            .and_then(Value::as_array)
+            .expect("route models");
+        assert_eq!(
+            route_models
+                .iter()
+                .filter_map(|model| model.get("clientModel").and_then(Value::as_str))
+                .collect::<Vec<_>>(),
+            vec!["deepseek-flash", "deepseek-v4-pro"]
+        );
+        // 原生账号池不得再注册该账号，否则请求会走原生通道、图片无法改道。
+        let config: Value = serde_json::from_str(
+            &fs::read_to_string(super::sidecar_config_path(&dir)).expect("read config"),
+        )
+        .expect("parse config");
+        assert!(
+            config.get("codex-api-key").is_none(),
+            "DeepSeek 账号不应再写入原生 codex-api-key: {config}"
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
@@ -1238,7 +1540,8 @@
         sanitize_collection_with_accounts(&mut collection, &[account])
             .expect("collection should sanitize");
 
-        assert!(collection.account_ids.is_empty());
+        // Chat 协议账号现在属于 API 服务成员，既保留在账号池，也保留在 API Key 作用域。
+        assert_eq!(collection.account_ids, vec![account_id.clone()]);
         assert_eq!(collection.api_keys.len(), 1);
         assert_eq!(collection.api_keys[0].account_ids, vec![account_id]);
     }
@@ -1293,7 +1596,8 @@
             collection.bound_oauth_account_id.as_deref(),
             Some("oauth-1")
         );
-        assert!(collection.account_ids.is_empty());
+        // Provider Gateway 账号同样属于 API 服务成员，账号池与 API Key 作用域都保留。
+        assert_eq!(collection.account_ids, vec![account_id.clone()]);
         assert_eq!(collection.api_keys.len(), 1);
         assert_eq!(collection.api_keys[0].account_ids, vec![account_id]);
     }
@@ -1413,4 +1717,281 @@
         );
 
         drop(occupied);
+    }
+
+    fn read_profile_model_catalog(profile_dir: &std::path::Path) -> Value {
+        let config =
+            fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
+        let doc = config.parse::<Document>().expect("parse config");
+        let catalog_file = doc["model_catalog_json"]
+            .as_str()
+            .expect("profile must point at a model catalog");
+        let content = fs::read_to_string(profile_dir.join(catalog_file)).expect("read catalog");
+        serde_json::from_str(&content).expect("parse catalog")
+    }
+
+    fn catalog_model_slugs(catalog: &Value) -> Vec<String> {
+        catalog
+            .get("models")
+            .and_then(Value::as_array)
+            .map(|models| {
+                models
+                    .iter()
+                    .filter_map(|model| model.get("slug").and_then(Value::as_str))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn api_service_takeover_catalog_lists_account_pool_models() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _env = LocalAccessTestDataGuard::new("api-service-pool-catalog");
+        let profile_dir = make_temp_dir("api-service-pool-catalog-profile");
+
+        let mut deepseek = CodexAccount::new_api_key(
+            "deepseek-pool-account".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            vec![
+                "deepseek-flash".to_string(),
+                "deepseek-v4-pro".to_string(),
+            ],
+        );
+        // 真实环境里 DeepSeek 这类账号既可能按原生 Responses 接入，也可能按 Chat 协议转发。
+        deepseek.api_wire_api = Some("responses".to_string());
+        // 规范化后的 DeepSeek 账号带有逐模型识图开关。
+        deepseek.api_model_vision_support = HashMap::from([
+            ("deepseek-flash".to_string(), true),
+            ("deepseek-v4-pro".to_string(), false),
+        ]);
+        crate::modules::codex_account::save_account(&deepseek).expect("save DeepSeek fixture");
+
+        let mut chat_account = CodexAccount::new_api_key(
+            "chat-pool-account".to_string(),
+            "chat@example.com".to_string(),
+            "sk-chat".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://example.com/v1".to_string()),
+            None,
+            None,
+            vec!["vendor-model".to_string()],
+        );
+        chat_account.api_wire_api = Some("chat_completions".to_string());
+        crate::modules::codex_account::save_account(&chat_account).expect("save chat fixture");
+
+        let collection = test_local_access_collection(vec![
+            deepseek.id.clone(),
+            chat_account.id.clone(),
+        ]);
+        write_local_access_profile_takeover(&profile_dir, &collection, None, true)
+            .await
+            .expect("write API service takeover");
+
+        let catalog = read_profile_model_catalog(&profile_dir);
+        let slugs = catalog_model_slugs(&catalog);
+        // 客户端按 priority 升序展示：GPT 官方推荐集在最前，其后是额度兜底，最后才是账号模型。
+        let ordered: Vec<(String, i64)> = catalog["models"]
+            .as_array()
+            .expect("catalog models")
+            .iter()
+            .filter_map(|model| {
+                let object = model.as_object()?;
+                let slug = object.get("slug")?.as_str()?.to_string();
+                if object.get("visibility")?.as_str()? == "hide" {
+                    return None;
+                }
+                Some((slug, object.get("priority")?.as_i64()?))
+            })
+            .collect::<Vec<_>>();
+        let mut ordered_slugs = ordered.clone();
+        ordered_slugs.sort_by_key(|(_, priority)| *priority);
+        let listed = ordered_slugs
+            .iter()
+            .map(|(slug, _)| slug.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            &listed[..6],
+            &[
+                "gpt-6-astra",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-reserve"
+            ],
+            "GPT 模型必须排在最前面: {listed:?}"
+        );
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|slug| slug.starts_with("deepseek"))
+                .copied()
+                .collect::<Vec<_>>(),
+            vec!["deepseek-flash", "deepseek-v4-pro"],
+            "账号模型必须排在 GPT 之后: {listed:?}"
+        );
+        // GPT 只保留官方推荐集，且显示名与官方客户端一致。
+        let gpt_slugs = slugs
+            .iter()
+            .filter(|slug| slug.starts_with("gpt-") && !slug.starts_with("gpt-image"))
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            gpt_slugs,
+            vec![
+                "gpt-6-astra",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-reserve"
+            ],
+            "只保留官方推荐的 GPT 模型: {slugs:?}"
+        );
+        let catalog_display_names = catalog
+            .get("models")
+            .and_then(Value::as_array)
+            .map(|models| {
+                models
+                    .iter()
+                    .filter_map(|model| {
+                        let object = model.as_object()?;
+                        Some((
+                            object.get("slug")?.as_str()?.to_string(),
+                            object.get("display_name")?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        for (slug, expected_name) in [
+            ("gpt-6-astra", "GPT-6 Astra"),
+            ("gpt-5.6-sol", "GPT-5.6 Sol"),
+            ("gpt-5.6-terra", "GPT-5.6 Terra"),
+            ("gpt-5.6-luna", "GPT-5.6 Luna"),
+            ("gpt-5.5", "GPT-5.5"),
+        ] {
+            assert_eq!(
+                catalog_display_names.get(slug).map(String::as_str),
+                Some(expected_name),
+                "模型 {slug} 显示名必须与官方客户端一致"
+            );
+        }
+        assert!(
+            catalog_display_names.contains_key("codex-auto-review"),
+            "客户端内部使用的隐藏模型元数据必须保留: {slugs:?}"
+        );
+        // DeepSeek 与网关模式一致：只展示账号模型列表里的两个模型。
+        let deepseek_slugs = slugs
+            .iter()
+            .filter(|slug| slug.starts_with("deepseek"))
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            deepseek_slugs,
+            vec!["deepseek-flash", "deepseek-v4-pro"],
+            "DeepSeek 只展示账号模型列表里的模型: {slugs:?}"
+        );
+        // 存在识图兜底模型时，两个模型都声明可发送图片（图片由网关转到识图模型）。
+        for model in catalog["models"].as_array().expect("catalog models") {
+            let slug = model.get("slug").and_then(Value::as_str).unwrap_or_default();
+            if !slug.starts_with("deepseek") {
+                continue;
+            }
+            let modalities = model
+                .get("input_modalities")
+                .and_then(Value::as_array)
+                .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                .unwrap_or_default();
+            assert!(
+                modalities.contains(&"image"),
+                "{slug} 必须声明可发送图片（与 DeepSeek 网关模式一致）: {modalities:?}"
+            );
+            // 推理档位必须与 DeepSeek 网关模式一致：low / high / max 三档，且包含最高档。
+            let levels = model
+                .get("supported_reasoning_levels")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|level| {
+                            level
+                                .get("effort")
+                                .and_then(Value::as_str)
+                                .or_else(|| level.as_str())
+                                .map(str::to_string)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            assert_eq!(
+                levels,
+                vec!["low", "high", "max"],
+                "{slug} 的推理档位必须与 DeepSeek 网关模式一致（含最高档）"
+            );
+            assert_eq!(
+                model.get("default_reasoning_level").and_then(Value::as_str),
+                Some("max"),
+                "{slug} 的默认档位应为最高档"
+            );
+        }
+        for expected in ["deepseek-flash", "deepseek-v4-pro", "vendor-model"] {
+            assert!(
+                slugs.iter().any(|slug| slug == expected),
+                "账号模型 {expected} 必须写入客户端模型目录，实际: {slugs:?}"
+            );
+        }
+        let display_names = catalog
+            .get("models")
+            .and_then(Value::as_array)
+            .map(|models| {
+                models
+                    .iter()
+                    .filter_map(|model| {
+                        let object = model.as_object()?;
+                        Some((
+                            object.get("slug")?.as_str()?.to_string(),
+                            object.get("display_name")?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        // 显示名与 DeepSeek 网关模式一致。
+        assert_eq!(
+            display_names.get("deepseek-flash").map(String::as_str),
+            Some("DeepSeek-V4.1-Flash"),
+            "DeepSeek 默认模型应使用官方显示名"
+        );
+        assert_eq!(
+            display_names.get("deepseek-v4-pro").map(String::as_str),
+            Some("DeepSeek-V4-Pro"),
+            "DeepSeek Pro 应使用官方显示名"
+        );
+
+        // 供应商网关 / 实例接管仍然自己写模型目录，不能被账号池模型覆盖。
+        let gateway_profile_dir = make_temp_dir("api-service-pool-catalog-gateway-profile");
+        write_local_access_profile_takeover(&gateway_profile_dir, &collection, None, false)
+            .await
+            .expect("write provider gateway takeover");
+        let gateway_slugs = catalog_model_slugs(&read_profile_model_catalog(&gateway_profile_dir));
+        assert!(
+            gateway_slugs.iter().all(|slug| !slug.starts_with("deepseek")),
+            "非 API 服务接管不应注入账号池模型: {gateway_slugs:?}"
+        );
+        assert!(
+            gateway_slugs.iter().all(|slug| slug != "vendor-model"),
+            "非 API 服务接管不应注入 Chat 账号模型: {gateway_slugs:?}"
+        );
+
+        fs::remove_dir_all(profile_dir).expect("cleanup fixture");
+        fs::remove_dir_all(gateway_profile_dir).expect("cleanup fixture");
     }

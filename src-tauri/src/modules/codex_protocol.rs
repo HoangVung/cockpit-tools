@@ -6,6 +6,8 @@ const REASONING_ENCRYPTED_CONTENT_INCLUDE: &str = "reasoning.encrypted_content";
 const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 const CODEX_RESERVE_MODEL_ID: &str = "gpt-reserve";
 const CODEX_RESERVE_TEMPLATE_MODEL_ID: &str = "gpt-5.6-luna";
+/// 额度兜底模型对客户端展示的名称（跟随官方 5.6 命名）。
+pub(crate) const CODEX_RESERVE_DISPLAY_NAME: &str = "GPT-5.6 Reserve";
 const CODEX_MODEL_CATALOG_TEMPLATE_SLUG: &str = "gpt-5.5";
 const CODEX_CLIENT_MODEL_TEMPLATES_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -445,7 +447,10 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         .expect("Codex client model template should be a JSON object");
     object.insert("slug".to_string(), Value::String(model_id.to_string()));
     if model_id.trim().eq_ignore_ascii_case(CODEX_RESERVE_MODEL_ID) {
-        object.insert("display_name".to_string(), json!("Luna Reserve"));
+        object.insert(
+            "display_name".to_string(),
+            json!(CODEX_RESERVE_DISPLAY_NAME),
+        );
         object.insert("visibility".to_string(), json!("list"));
     }
     if !is_catalog_model {
@@ -1028,7 +1033,7 @@ mod tests {
         let mut expected = before[1].clone();
         expected["slug"] = json!(CODEX_RESERVE_MODEL_ID);
         expected["visibility"] = json!("list");
-        expected["display_name"] = json!("Luna Reserve");
+        expected["display_name"] = json!(CODEX_RESERVE_DISPLAY_NAME);
         assert_eq!(models.last(), Some(&expected));
         assert!(expected["auto_compact_token_limit"].is_null());
 
@@ -1640,7 +1645,7 @@ mod tests {
             .expect("Astra model should be present");
         assert_eq!(
             model.get("display_name").and_then(Value::as_str),
-            Some("6 Astra")
+            Some("GPT-6 Astra")
         );
         assert_eq!(
             model.get("context_window").and_then(Value::as_i64),

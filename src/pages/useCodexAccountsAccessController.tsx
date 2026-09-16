@@ -6,6 +6,7 @@ import * as codexLocalAccessService from "../services/codexLocalAccessService";
 import { presentWindowsOperationError } from "../utils/windowsOperationDialog";
 import { isCodexApiKeyAccount, isCodexAgentIdentityAccount, isCodexWebSessionAccount, isCodexChatCompletionsApiKeyAccount, isCodexNewApiAccount } from "../types/codex";
 import { isCodexOAuthBindingEligibleAccount, resolveImportedCodexAccountIdsForLocalAccess } from "../utils/codexLocalAccessAccounts";
+import { buildCodexLocalImportInstanceOptions, type CodexLocalImportInstanceOption } from "../utils/codexLocalImportInstances";
 import { buildCodexAccountPresentation } from "../presentation/platformAccountPresentation";
 import { recoverCodexBatchImportStartFromPreview } from "../utils/codexBatchImportQueue";
 import { CodexSwitchAccountError } from "../utils/codexSwitchAuthFailure";
@@ -558,6 +559,20 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
       accountLabel: string;
       bindAccountId: string;
     } | null>(null);
+    /** 「获取本地账号」在存在多个实例时的候选列表；为 null 表示弹框关闭。 */
+    const [localImportInstances, setLocalImportInstances] = useState<
+      CodexLocalImportInstanceOption[] | null
+    >(null);
+    const [localImportBusy, setLocalImportBusy] = useState(false);
+    const [localImportError, setLocalImportError] = useState<string | null>(
+      null,
+    );
+    // 添加账号弹框关闭（含 Esc、成功后自动关闭）时一并收起实例选择弹框，避免下次残留。
+    useEffect(() => {
+      if (showAddModal || !localImportInstances) return;
+      setLocalImportInstances(null);
+      setLocalImportError(null);
+    }, [showAddModal, localImportInstances]);
     const activeLaunchPreviewAccount = useMemo(() => {
       if (!launchPreviewAccount) return null;
       return (
@@ -1434,41 +1449,63 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
       };
     }, [selectedTerminal]);
   
-    const handleImportFromLocal = async () => {
+    /** 读取指定实例（或默认实例）的本机账号，并把账号落到当前目标分组。 */
+    const importCodexLocalAccount = async (
+      instanceId: string | null,
+    ): Promise<{ account: CodexAccount; apiServiceError: string | null }> => {
+      const account = await codexService.importCodexFromLocal(instanceId);
+      await fetchAccounts();
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      await fetchAccounts();
+      await assignCodexAccountsToTargetGroup([account]);
+      await emitAccountsChanged({
+        platformId: "codex",
+        reason: "import",
+      });
+      try {
+        await syncImportedAccountsToApiService([account.id]);
+      } catch (error) {
+        return {
+          account,
+          apiServiceError: String(error).replace(/^Error:\s*/, ""),
+        };
+      }
+      return { account, apiServiceError: null };
+    };
+
+    const reportCodexLocalImportSuccess = (account: CodexAccount) => {
+      page.setAddStatus("success");
+      page.setAddMessage(
+        t("codex.import.successMsg", "导入成功: {{email}}").replace(
+          "{{email}}",
+          maskAccountText(account.email),
+        ),
+      );
+      setTimeout(() => {
+        closeAddModal();
+      }, 1200);
+    };
+
+    /** 直接读取指定实例的本地账号，结果提示写在添加账号弹框内。 */
+    const importCodexLocalAccountDirectly = async (
+      instanceId: string | null,
+    ) => {
       page.setAddStatus("loading");
       page.setAddMessage(t("codex.import.importing", "正在导入本地账号..."));
       try {
-        const account = await codexService.importCodexFromLocal();
-        await fetchAccounts();
-        await new Promise((resolve) => setTimeout(resolve, 180));
-        await fetchAccounts();
-        await assignCodexAccountsToTargetGroup([account]);
-        await emitAccountsChanged({
-          platformId: "codex",
-          reason: "import",
-        });
-        try {
-          await syncImportedAccountsToApiService([account.id]);
-        } catch (error) {
+        const { account, apiServiceError } =
+          await importCodexLocalAccount(instanceId);
+        if (apiServiceError) {
           page.setAddStatus("error");
           page.setAddMessage(
             t(
               "codex.importApiService.syncFailed",
               "账号已导入，但加入 API 服务失败：{{error}}",
-            ).replace("{{error}}", String(error).replace(/^Error:\s*/, "")),
+            ).replace("{{error}}", apiServiceError),
           );
           return;
         }
-        page.setAddStatus("success");
-        page.setAddMessage(
-          t("codex.import.successMsg", "导入成功: {{email}}").replace(
-            "{{email}}",
-            maskAccountText(account.email),
-          ),
-        );
-        setTimeout(() => {
-          closeAddModal();
-        }, 1200);
+        reportCodexLocalImportSuccess(account);
       } catch (e) {
         page.setAddStatus("error");
         page.setAddMessage(
@@ -1478,6 +1515,63 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
           ),
         );
       }
+    };
+
+    /**
+     * 获取本地账号：只有一个实例时直接读取，多个实例时先在弹框内选择实例。
+     *
+     * 官方客户端按 `CODEX_HOME` 分别落盘凭据，多开实例的账号只存在于各自 profile
+     * 目录里，因此多实例必须由用户指定读取哪个实例。
+     */
+    const handleImportFromLocal = async () => {
+      page.setAddStatus("loading");
+      page.setAddMessage(t("codex.import.importing", "正在导入本地账号..."));
+      const instances = await codexInstanceStore.refreshInstances();
+      const options = buildCodexLocalImportInstanceOptions(instances);
+      if (options.length > 1) {
+        // 多实例：状态改由选择弹框展示，避免添加弹框停留在「正在导入」。
+        page.setAddStatus("idle");
+        page.setAddMessage("");
+        setLocalImportError(null);
+        setLocalImportInstances(options);
+        return;
+      }
+      await importCodexLocalAccountDirectly(options[0]?.id ?? null);
+    };
+
+    /** 在实例选择弹框内选中实例后，读取该实例的本地账号。 */
+    const handleSelectLocalImportInstance = async (instanceId: string) => {
+      setLocalImportBusy(true);
+      setLocalImportError(null);
+      try {
+        const { account, apiServiceError } =
+          await importCodexLocalAccount(instanceId);
+        if (apiServiceError) {
+          setLocalImportError(
+            t(
+              "codex.importApiService.syncFailed",
+              "账号已导入，但加入 API 服务失败：{{error}}",
+            ).replace("{{error}}", apiServiceError),
+          );
+          return;
+        }
+        setLocalImportInstances(null);
+        reportCodexLocalImportSuccess(account);
+      } catch (e) {
+        setLocalImportError(
+          t("common.shared.import.failedMsg", "导入失败: {{error}}").replace(
+            "{{error}}",
+            String(e).replace(/^Error:\s*/, ""),
+          ),
+        );
+      } finally {
+        setLocalImportBusy(false);
+      }
+    };
+
+    const handleCloseLocalImportInstancePicker = () => {
+      setLocalImportInstances(null);
+      setLocalImportError(null);
     };
   
     const startBatchImportFromPaths = async (
@@ -3599,6 +3693,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
     handleChooseCodexCliWorkingDir,
     handleClearOAuthBinding,
     handleCloseBatchImport,
+    handleCloseLocalImportInstancePicker,
     handleConfirmBatchImport,
     handleCopyCodexCliCommand,
     handleDismissBatchImportTask,
@@ -3620,6 +3715,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
     handleSelectEditingApiProviderPreset,
     handleSelectEditingManagedProvider,
     handleSelectEditingManagedProviderApiKey,
+    handleSelectLocalImportInstance,
     handleSelectManagedProvider,
     handleSelectManagedProviderApiKey,
     handleSelectQuickSwitchApiKey,
@@ -3634,6 +3730,9 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
     launchPreviewInstanceLabel,
     launchPreviewInstanceOptions,
     localAccessLaunchPreviewOpen,
+    localImportBusy,
+    localImportError,
+    localImportInstances,
     openApiKeyCredentialsModal,
     openLocalAccessOAuthBindingModal,
     openOAuthBindingModal,

@@ -2371,6 +2371,7 @@
       "apiKey": "Klíč",
       "statusRunning": "Běží",
       "statusStopped": "Zastaveno",
+      "internalSchedulerLabel": "Interní plánovač",
       "statusDisabled": "Vypnuto",
       "emptyMembers": "Ve skupině zatím nejsou žádné účty",
       "footerHint": "Rozsah přístupu: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Omezit Free účty",
         "sessionAffinityConfirmTitle": "Zapnout afinitu relace?",
         "sessionAffinityDescription": "Po zapnutí se stejná konverzace pokusí nadále používat stejný účet. Když účet není dostupný, směrování může přepnout na jiný; po vypršení se účet vybere znovu.",
-        "chatApiKeyUnsupported": "Chat Completions není podporováno",
-        "deepseekUnsupported": "DeepSeek zatím ne",
         "pendingOauthUnsupported": "Čekající vyloučeno",
         "freeNoticeRestricted": "Free účty jsou omezené. Vypněte tuto volbu, chcete-li je vybrat.",
         "freeNoticeUnstable": "Proxy pro Free účty může být nestabilní. Používejte opatrně.",
@@ -2726,8 +2725,41 @@
       "desc": "Importovat aktuální účet z ~/.codex/auth.json",
       "import": "Načíst lokální účet"
     },
+    "tempLogin": {
+      "tab": "Oficiální přihlášení",
+      "desc": "Přihlášení probíhá zcela v oficiálním desktopovém klientu: adresu autorizace vytváří oficiální klient a zpětné volání autorizace i výměnu tokenu zajišťuje také oficiální klient. Cockpit se zpětného volání autorizace neúčastní, pouze po uložení přihlašovacích údajů oficiálním klientem je načte a importuje.",
+      "note": "Dočasný profil je prázdná složka v datovém adresáři aplikace. Po načtení účtu se odstraní společně s běhovým adresářem klienta a záznamem v klíčence; výchozí instance ani vícenásobné instance nejsou dotčeny.",
+      "start": "Otevřít oficiálního klienta a přihlásit se",
+      "cancel": "Zrušit přihlášení",
+      "cancelling": "Rušení oficiálního přihlášení…",
+      "waitingHint": "Dokončete přihlášení v oficiálním klientu. Jakmile budou údaje rozpoznány, klient se sám zavře (nejvýše 10 minut).",
+      "cancelled": "Oficiální přihlášení zrušeno a dočasný profil odstraněn.",
+      "failed": "Oficiální přihlášení selhalo: {{error}}",
+      "success": "Účet získán: {{email}}",
+      "intercept": {
+        "toggle": "Zachytit otevírání prohlížeče a zobrazit adresu autorizace zde",
+        "hint": "Je-li zapnuto, kliknutí na „Pokračovat“ v oficiálním klientu už neotevře prohlížeč, ale pouze zde zobrazí adresu autorizace vytvořenou oficiálním klientem ke zkopírování. Po přihlášení z libovolného prohlížeče nadále zpětné volání autorizace a výměnu tokenu zajišťuje oficiální desktopový klient; Cockpit se autorizace neúčastní. Je-li vypnuto, oficiální postup se nemění."
+      },
+      "authUrl": {
+        "label": "Adresa URL pro autorizaci (vytváří oficiální klient)",
+        "open": "Otevřít ve výchozím prohlížeči",
+        "openFailed": "Adresu pro autorizaci se nepodařilo otevřít: {{error}}",
+        "hint": "Adresu vytváří oficiální klient a funguje jen v prohlížeči na tomto počítači. Nechte oficiální okno otevřené, dokud přihlášení neskončí.",
+        "unavailable": "Cockpit tentokrát adresu pro autorizaci nezachytil. Oficiální klient otevře prohlížeč jako obvykle, přihlaste se tam."
+      },
+      "phase": {
+        "prepare": "Připravit dočasný profil",
+        "launch": "Otevřít oficiálního klienta",
+        "wait": "Čekat na přihlášení",
+        "import": "Načíst přihlašovací údaje",
+        "close": "Zavřít oficiálního klienta",
+        "clean": "Odstranit dočasný profil"
+      }
+    },
     "import": {
       "localDesc": "Importovat účty Codex z místně přihlášených relací.",
+      "localInstanceTitle": "Vybrat instanci",
+      "localInstanceDesc": "Bylo nalezeno několik instancí Codex. Vyberte instanci, ze které se má místní účet importovat:",
       "importing": "Import lokálního účtu...",
       "successMsg": "Import proběhl úspěšně: {{email}}"
     },

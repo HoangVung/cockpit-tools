@@ -2089,6 +2089,18 @@ pub fn is_codex_running() -> bool {
 
 /// 启动 Codex 桌面实例（支持独立 CODEX_HOME、Electron user-data 与附加参数）。
 pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<u32, String> {
+    start_codex_with_args_and_env(codex_home, extra_args, &[])
+}
+
+/// 启动 Codex 桌面实例，并在 `CODEX_HOME` / Electron user-data 之外附加环境变量。
+///
+/// `extra_env` 用于官方客户端临时登录时的主进程注入（`NODE_OPTIONS=--require=<hook>`），
+/// 让官方实例把授权跳转交给我们展示而不是打开浏览器；其余调用方传空数组即可。
+pub fn start_codex_with_args_and_env(
+    codex_home: &str,
+    extra_args: &[String],
+    extra_env: &[(String, String)],
+) -> Result<u32, String> {
     #[cfg(target_os = "macos")]
     {
         let app_root = resolve_codex_launch_path()
@@ -2121,14 +2133,23 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
                 let app_user_data_dir_string = app_user_data_dir.to_string_lossy().to_string();
                 let mut launch_args = args.clone();
                 launch_args.push(format!("--user-data-dir={}", app_user_data_dir_string));
+                let mut env_pairs: Vec<(String, String)> = vec![
+                    ("CODEX_HOME".to_string(), codex_home_trimmed.to_string()),
+                    (
+                        "CODEX_ELECTRON_USER_DATA_PATH".to_string(),
+                        app_user_data_dir_string.clone(),
+                    ),
+                ];
+                env_pairs.extend(extra_env.iter().cloned());
+                let env_refs: Vec<(&str, &str)> = env_pairs
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+                    .collect();
                 let open_pid = spawn_open_app_with_options_and_env(
                     &app_root,
                     &launch_args,
                     true,
-                    &[
-                        ("CODEX_HOME", codex_home_trimmed),
-                        ("CODEX_ELECTRON_USER_DATA_PATH", &app_user_data_dir_string),
-                    ],
+                    &env_refs,
                 )
                 .map_err(|e| format!("启动 Codex 失败: {}", e))?;
                 crate::modules::logger::log_info(&format!(
@@ -2199,6 +2220,9 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
         apply_managed_proxy_env_to_command(&mut cmd);
         cmd.env("CODEX_HOME", codex_home_trimmed);
         cmd.env("CODEX_ELECTRON_USER_DATA_PATH", &app_user_data_dir);
+        for (key, value) in extra_env {
+            cmd.env(key, value);
+        }
         if should_detach_child() {
             cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
             cmd.stdin(Stdio::null())
@@ -2318,6 +2342,9 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
             .env("CODEX_HOME", codex_home_trimmed)
             .env("CODEX_ELECTRON_USER_DATA_PATH", &app_user_data_dir)
             .arg(format!("--user-data-dir={}", app_user_data_dir.display()));
+        for (key, value) in extra_env {
+            command.env(key, value);
+        }
         for arg in build_codex_app_launch_args(extra_args) {
             command.arg(arg);
         }
@@ -2357,7 +2384,7 @@ pub fn start_codex_with_args(codex_home: &str, extra_args: &[String]) -> Result<
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
-        let _ = (codex_home, extra_args);
+        let _ = (codex_home, extra_args, extra_env);
         Err("当前系统不支持 Codex 应用多开".to_string())
     }
 }

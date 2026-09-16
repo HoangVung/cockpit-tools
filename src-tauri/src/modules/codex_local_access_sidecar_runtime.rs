@@ -154,7 +154,7 @@ async fn gateway_sidecar_crash_recovery_is_allowed(expected_generation: u64) -> 
         runtime
             .collection
             .as_ref()
-            .map(|collection| collection.enabled)
+            .map(local_access_gateway_should_run)
             .unwrap_or(false),
         runtime.running,
         expected_generation,
@@ -1365,22 +1365,274 @@ fn profile_api_key_supports_websockets(
             .unwrap_or(true)
 }
 
+/// API 服务 profile 模型目录里的一个条目。
+///
+/// `template` 为该模型的官方模板（例如 DeepSeek 官方 models.json 条目）：存在时按模板补齐
+/// 上下文窗口、推理档位、识图声明等字段，与 DeepSeek 网关模式写出的目录保持一致。
+#[derive(Debug, Clone)]
+struct ProfileModelDefinition {
+    model_id: String,
+    display_name: String,
+    template: Option<Value>,
+    image_capable: bool,
+}
+
+impl ProfileModelDefinition {
+    fn plain(model_id: &str, display_name: &str) -> Self {
+        Self {
+            model_id: model_id.trim().to_string(),
+            display_name: display_name.trim().to_string(),
+            template: None,
+            image_capable: false,
+        }
+    }
+
+    /// 账号模型：命中官方模板时沿用模板字段，并保留「图片自动转识图模型」的可发送能力。
+    fn with_account_model(
+        model_id: &str,
+        display_name: &str,
+        accounts: &[CodexAccount],
+        image_capable: bool,
+    ) -> Self {
+        let mut definition = Self::plain(model_id, display_name);
+        definition.image_capable = image_capable;
+        definition.template = official_deepseek_template_for_model(accounts, &definition.model_id);
+        definition
+    }
+}
+
+/// 官方 DeepSeek 账号的模型模板（按账号的模型列表/别名解析），用于还原官方显示名与能力字段。
+fn official_deepseek_template_for_model(
+    accounts: &[CodexAccount],
+    model_id: &str,
+) -> Option<Value> {
+    let key = model_id.trim();
+    if key.is_empty() {
+        return None;
+    }
+    for account in accounts {
+        if !is_official_deepseek_account(account)
+            || !automatic_api_service_account_model_slots(account)
+                .iter()
+                .any(|(client, _)| client.eq_ignore_ascii_case(key))
+        {
+            continue;
+        }
+        if let Some(template) = account_model_template(account, key) {
+            return Some(template);
+        }
+    }
+    None
+}
+
 fn write_local_access_profile_model_catalog(
     profile_dir: &Path,
     supports_websockets: bool,
-    experimental_model_catalog_enabled: bool,
+    definitions: &[ProfileModelDefinition],
 ) -> Result<(), String> {
-    let definitions = experimental_model_catalog_enabled.then(|| {
+    let pairs = definitions
+        .iter()
+        .map(|definition| (definition.model_id.clone(), definition.display_name.clone()))
+        .collect::<Vec<_>>();
+    let mut client_models =
+        codex_protocol::build_codex_client_models_response_with_model_definitions(&pairs);
+    apply_profile_model_definition_overrides(&mut client_models, definitions);
+    write_local_access_profile_client_models(profile_dir, supports_websockets, client_models)
+}
+
+/// 客户端按 `priority` 升序展示模型，这里让 GPT 官方推荐集固定排在最前面，
+/// 其后是额度兜底模型，最后才是账号自带的第三方模型。
+fn apply_profile_model_ordering(client_models: &mut Value) {
+    let Some(models) = client_models.get_mut("models").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let reserve_priority = LOCAL_GATEWAY_VISIBLE_GPT_MODELS.len() as i64;
+    let account_priority_base = reserve_priority + 1;
+    let mut account_index = 0_i64;
+    for model in models.iter_mut() {
+        let slug = model
+            .get("slug")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_default();
+        let hidden = model
+            .get("visibility")
+            .and_then(Value::as_str)
+            .is_some_and(|visibility| visibility.eq_ignore_ascii_case("hide"));
+        let priority = if let Some(index) = LOCAL_GATEWAY_VISIBLE_GPT_MODELS
+            .iter()
+            .position(|(model_id, _)| model_id.eq_ignore_ascii_case(&slug))
+        {
+            index as i64
+        } else if slug.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID) {
+            reserve_priority
+        } else if hidden {
+            // 隐藏模型不参与选择器展示，放在最后避免影响可见顺序。
+            1000 + account_index
+        } else {
+            let priority = account_priority_base + account_index;
+            account_index += 1;
+            priority
+        };
+        if let Some(object) = model.as_object_mut() {
+            object.insert("priority".to_string(), json!(priority));
+        }
+    }
+}
+
+/// 按账号模型的定义补齐目录字段：官方模板（上下文窗口/推理档位等）与识图可发送能力。
+fn apply_profile_model_definition_overrides(
+    client_models: &mut Value,
+    definitions: &[ProfileModelDefinition],
+) {
+    let Some(models) = client_models.get_mut("models").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for model in models.iter_mut() {
+        let slug = model
+            .get("slug")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_default();
+        let Some(definition) = definitions
+            .iter()
+            .find(|definition| definition.model_id.eq_ignore_ascii_case(&slug))
+        else {
+            continue;
+        };
+        if let (Some(template), Some(object)) =
+            (definition.template.as_ref().and_then(Value::as_object), model.as_object_mut())
+        {
+            for (key, value) in template {
+                // slug / 展示字段由我们自己的定义决定，其余按官方模板补齐。
+                if matches!(
+                    key.as_str(),
+                    "slug" | "display_name" | "description" | "visibility"
+                ) {
+                    continue;
+                }
+                object.insert(key.clone(), value.clone());
+            }
+        }
+        if definition.image_capable {
+            if let Some(object) = model.as_object_mut() {
+                // 与 DeepSeek 网关模式一致：请求里的图片会由网关自动转到识图模型，
+                // 因此这里声明为可发送图片，否则客户端会直接剥离图片。
+                object.insert("input_modalities".to_string(), json!(["text", "image"]));
+                object.insert("supports_image_detail_original".to_string(), json!(true));
+            }
+        }
+    }
+}
+
+/// API 服务 profile 的客户端模型目录清单。
+///
+/// 基线沿用「模型管理」清单（已开启时）或官方模型清单，再补入当前 API Key 可路由的
+/// 账号模型（例如 DeepSeek 等 Chat / 第三方账号），这样客户端模型选择器才能显示并切换它们。
+///
+/// 客户端内部需要的隐藏模型（自动评审、生图）保留元数据，但不显示在选择器里。
+fn local_access_profile_hidden_model_definitions() -> Vec<(String, String)> {
+    codex_protocol::build_codex_client_models_response(&supported_codex_model_ids())
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|model| {
+            model
+                .get("visibility")
+                .and_then(Value::as_str)
+                .is_some_and(|visibility| visibility.eq_ignore_ascii_case("hide"))
+        })
+        .filter_map(|model| {
+            let slug = model.get("slug").and_then(Value::as_str)?.trim();
+            if slug.is_empty() {
+                return None;
+            }
+            let display_name = model
+                .get("display_name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(slug)
+                .to_string();
+            Some((slug.to_string(), display_name))
+        })
+        .collect()
+}
+
+fn local_access_profile_model_definitions(
+    profile_dir: &Path,
+    collection: &CodexLocalAccessCollection,
+    api_key: &str,
+    include_account_pool_models: bool,
+) -> Result<Vec<ProfileModelDefinition>, String> {
+    let experimental_model_catalog_enabled =
+        codex_account::read_quick_config_from_config_toml(profile_dir)?
+            .experimental_model_catalog_enabled;
+    let mut definitions: Vec<ProfileModelDefinition> = if experimental_model_catalog_enabled {
         codex_account::read_experimental_model_definitions(profile_dir)
             .iter()
-            .map(|model| (model.model_id.clone(), model.display_name.clone()))
-            .collect::<Vec<_>>()
-    });
-    write_local_access_profile_model_catalog_with_definitions(
-        profile_dir,
-        supports_websockets,
-        definitions,
-    )
+            .map(|model| ProfileModelDefinition::plain(&model.model_id, &model.display_name))
+            .collect()
+    } else {
+        // 只暴露官方推荐集里的 GPT 模型（显示名与官方客户端一致），外加客户端内部需要的隐藏条目。
+        let mut definitions = local_gateway_visible_gpt_model_definitions()
+            .into_iter()
+            .map(|(model_id, display_name)| {
+                ProfileModelDefinition::plain(&model_id, &display_name)
+            })
+            .collect::<Vec<_>>();
+        definitions.extend(
+            local_access_profile_hidden_model_definitions()
+                .into_iter()
+                .map(|(model_id, display_name)| {
+                    ProfileModelDefinition::plain(&model_id, &display_name)
+                }),
+        );
+        definitions
+    };
+    // GPT 官方推荐集的显示名始终跟随官方客户端（带 `GPT-` 前缀），
+    // 即使用户在「模型管理」里用了别的名字，API 服务 profile 也保持官方命名。
+    for definition in definitions.iter_mut() {
+        if let Some((_, official_name)) = LOCAL_GATEWAY_VISIBLE_GPT_MODELS
+            .iter()
+            .find(|(model_id, _)| model_id.eq_ignore_ascii_case(&definition.model_id))
+        {
+            definition.display_name = (*official_name).to_string();
+        }
+        if definition
+            .model_id
+            .eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID)
+        {
+            definition.display_name = codex_protocol::CODEX_RESERVE_DISPLAY_NAME.to_string();
+        }
+    }
+    if !include_account_pool_models {
+        return Ok(definitions);
+    }
+    let Some(resolved_key) = resolve_collection_api_key(collection, api_key) else {
+        return Ok(definitions);
+    };
+    let accounts = codex_account::list_accounts_checked().unwrap_or_default();
+    let mut seen = definitions
+        .iter()
+        .map(|definition| definition.model_id.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    for (model_id, image_capable) in
+        automatic_api_service_profile_extra_models(collection, &resolved_key, &accounts)
+    {
+        if !seen.insert(model_id.to_ascii_lowercase()) {
+            continue;
+        }
+        let display_name = codex_account::provider_model_display_name(&model_id);
+        definitions.push(ProfileModelDefinition::with_account_model(
+            &model_id,
+            &display_name,
+            &accounts,
+            image_capable,
+        ));
+    }
+    Ok(definitions)
 }
 
 /// 写入 profile 的 Codex 模型目录。
@@ -1392,13 +1644,22 @@ fn write_local_access_profile_model_catalog_with_definitions(
     supports_websockets: bool,
     definitions: Option<Vec<(String, String)>>,
 ) -> Result<(), String> {
-    let mut client_models = match definitions.as_deref() {
+    let client_models = match definitions.as_deref() {
         Some(definitions) => {
             codex_protocol::build_codex_client_models_response_with_model_definitions(definitions)
         }
         None => codex_protocol::build_codex_client_models_response(&supported_codex_model_ids()),
     };
+    write_local_access_profile_client_models(profile_dir, supports_websockets, client_models)
+}
+
+fn write_local_access_profile_client_models(
+    profile_dir: &Path,
+    supports_websockets: bool,
+    mut client_models: Value,
+) -> Result<(), String> {
     codex_protocol::ensure_codex_reserve_fallback(&mut client_models);
+    apply_profile_model_ordering(&mut client_models);
     if let Some(models) = client_models
         .get_mut("models")
         .and_then(Value::as_array_mut)
@@ -1474,10 +1735,8 @@ async fn write_local_access_profile_takeover(
     profile_dir: &Path,
     collection: &CodexLocalAccessCollection,
     api_key: Option<&str>,
+    include_account_pool_models: bool,
 ) -> Result<(), String> {
-    let experimental_model_catalog_enabled =
-        codex_account::read_quick_config_from_config_toml(profile_dir)?
-            .experimental_model_catalog_enabled;
     let bound_oauth_account_id =
         normalize_optional_account_ref(collection.bound_oauth_account_id.as_deref());
     if let Some(bound_id) = bound_oauth_account_id.as_deref() {
@@ -1498,11 +1757,84 @@ async fn write_local_access_profile_takeover(
     );
     codex_account::write_account_bundle_to_dir(profile_dir, &runtime_account)?;
     write_mixed_model_realtime_sideband_override(profile_dir, collection, &runtime_api_key)?;
+    let definitions = local_access_profile_model_definitions(
+        profile_dir,
+        collection,
+        &runtime_api_key,
+        include_account_pool_models,
+    )?;
     write_local_access_profile_model_catalog(
         profile_dir,
         supports_websockets,
-        experimental_model_catalog_enabled,
-    )
+        &definitions,
+    )?;
+    if include_account_pool_models {
+        // API 服务接管：客户端「可用推理强度」默认不含 max，而账号模型（例如 DeepSeek）
+        // 只声明 low/high/max；这里补齐最高档，保证选择器里的档位与 DeepSeek 网关模式一致。
+        ensure_profile_max_reasoning_effort(profile_dir)?;
+        // 账号池里含 DeepSeek 时压缩不能走远程：DeepSeek 没有服务端压缩，请求一旦被路由过去
+        // 必然失败（详见 ensure_local_compaction_for_account_pool 的说明）。
+        ensure_local_compaction_for_account_pool(profile_dir, collection)?;
+    }
+    Ok(())
+}
+
+/// 确保 profile 的客户端「可用推理强度」包含 `max`。
+///
+/// 只做增量补充：已有档位与其顺序保持不变，仅在配置缺失时以客户端默认集合为底，
+/// 避免缩小用户已经开放的推理档位。
+fn ensure_profile_max_reasoning_effort(profile_dir: &Path) -> Result<(), String> {
+    const DESKTOP_TABLE: &str = "desktop";
+    const EFFORT_KEY: &str = "enabled-reasoning-efforts";
+    const MAX_EFFORT: &str = "max";
+    /// Codex 桌面端「可用推理强度」的内置默认值，仅在配置缺失时作为兜底写入。
+    const CLIENT_DEFAULT_EFFORTS: [&str; 6] =
+        ["low", "medium", "high", "xhigh", "ultra", "persistent"];
+
+    let config_path = profile_config_path(profile_dir);
+    if !config_path.exists() {
+        return Ok(());
+    }
+    let mut doc = crate::modules::codex_config_format::load_codex_config_doc(&config_path)?;
+    if doc.get(DESKTOP_TABLE).is_none() {
+        doc[DESKTOP_TABLE] = toml_edit::table();
+    }
+    let Some(desktop) = doc[DESKTOP_TABLE].as_table_mut() else {
+        // `desktop` 不是表结构说明是用户自定义内容，保持原样，不做覆盖。
+        return Ok(());
+    };
+    let mut changed = false;
+    match desktop.get_mut(EFFORT_KEY) {
+        Some(item) => {
+            let Some(efforts) = item.as_array_mut() else {
+                // 配置项不是数组时说明不是客户端写入的结构，保持原样。
+                return Ok(());
+            };
+            let has_max = efforts.iter().any(|effort| {
+                effort
+                    .as_str()
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case(MAX_EFFORT))
+            });
+            if !has_max {
+                efforts.push(MAX_EFFORT);
+                changed = true;
+            }
+        }
+        None => {
+            let mut efforts = toml_edit::Array::new();
+            for effort in CLIENT_DEFAULT_EFFORTS {
+                efforts.push(effort);
+            }
+            efforts.push(MAX_EFFORT);
+            desktop[EFFORT_KEY] = toml_edit::value(efforts);
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+    let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+    crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
 }
 
 fn push_local_access_takeover_dir(
@@ -1618,12 +1950,12 @@ async fn ensure_profile_takeover(
 
     let current = inspect_local_access_profile_attachment(profile_dir, Some(collection));
     if current.attached && current.error.is_none() {
-        write_local_access_profile_takeover(profile_dir, collection, None).await?;
+        write_local_access_profile_takeover(profile_dir, collection, None, true).await?;
         return Ok(());
     }
 
     save_profile_takeover_backup(profile_dir, &collection.api_key)?;
-    write_local_access_profile_takeover(profile_dir, collection, None).await?;
+    write_local_access_profile_takeover(profile_dir, collection, None, true).await?;
 
     let next = inspect_local_access_profile_attachment(profile_dir, Some(collection));
     if !next.attached {

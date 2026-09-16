@@ -1488,7 +1488,10 @@ supports_websockets = false
             &fs::read_to_string(profile_dir.join("auth.json")).expect("read auth file"),
         )
         .expect("parse auth file");
-        assert!(auth_file.get("auth_mode").is_none());
+        assert_eq!(
+            auth_file.get("auth_mode").and_then(|value| value.as_str()),
+            Some("chatgpt")
+        );
         assert_eq!(
             auth_file.get("OPENAI_API_KEY"),
             Some(&serde_json::Value::Null)
@@ -1917,7 +1920,10 @@ supports_websockets = false
             auth_file.get("tokens").is_some(),
             "auth.json should keep bound OAuth tokens"
         );
-        assert!(auth_file.get("auth_mode").is_none());
+        assert_eq!(
+            auth_file.get("auth_mode").and_then(|value| value.as_str()),
+            Some("chatgpt")
+        );
 
         let _ = remove_accounts(&[oauth_account.id]);
     }

@@ -103,9 +103,9 @@ fn parses_and_projects_agent_identity_auth_json() {
             .and_then(serde_json::Value::as_str),
         Some("agentIdentity")
     );
-    assert_eq!(
-        projected.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
+    assert!(
+        projected.get("type").is_none(),
+        "官方 auth.json 没有 type 字段: {projected}"
     );
     assert_eq!(
         projected
@@ -1017,9 +1017,12 @@ fn build_auth_file_value_writes_empty_refresh_token_when_account_has_none() {
         Some("")
     );
     assert_eq!(
-        auth_file.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
+        auth_file
+            .get("auth_mode")
+            .and_then(serde_json::Value::as_str),
+        Some("chatgpt")
     );
+    assert!(auth_file.get("type").is_none());
 }
 
 #[test]
@@ -1041,15 +1044,16 @@ fn build_auth_file_value_uses_real_token_update_time() {
         auth_file
             .get("last_refresh")
             .and_then(serde_json::Value::as_str),
-        Some("2023-11-14T22:13:20.000000Z")
+        Some("2023-11-14T22:13:20Z")
     );
 
     account.token_updated_at = None;
     let auth_file_without_refresh =
         build_auth_file_value(&account).expect("build auth file without refresh time");
-    assert_eq!(
-        auth_file_without_refresh.get("last_refresh"),
-        Some(&serde_json::Value::Null)
+    // 官方 `AuthDotJson` 对 None 的 last_refresh 直接省略该键，不写 null。
+    assert!(
+        auth_file_without_refresh.get("last_refresh").is_none(),
+        "缺少更新时间时不应写入 last_refresh: {auth_file_without_refresh}"
     );
 }
 
@@ -1551,7 +1555,7 @@ fn instance_launch_preflight_uses_local_credentials_without_internal_config_requ
 }
 
 #[test]
-fn build_auth_file_value_marks_oauth_and_pat_as_codex_type() {
+fn build_auth_file_value_matches_official_auth_shapes() {
     let mut oauth = CodexAccount::new(
         "codex-oauth-type".to_string(),
         "oauth@type.example".to_string(),
@@ -1564,9 +1568,12 @@ fn build_auth_file_value_marks_oauth_and_pat_as_codex_type() {
     oauth.account_id = Some("acc-oauth".to_string());
     let oauth_file = build_auth_file_value(&oauth).expect("build oauth auth file");
     assert_eq!(
-        oauth_file.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
+        oauth_file
+            .get("auth_mode")
+            .and_then(serde_json::Value::as_str),
+        Some("chatgpt")
     );
+    assert!(oauth_file.get("type").is_none());
     assert!(oauth_file.get("personal_access_token").is_none());
 
     let pat = CodexAccount::new(
@@ -1579,10 +1586,9 @@ fn build_auth_file_value_marks_oauth_and_pat_as_codex_type() {
         },
     );
     let pat_file = build_auth_file_value(&pat).expect("build pat auth file");
-    assert_eq!(
-        pat_file.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
-    );
+    // 官方 personal access token 形态刻意不写 auth_mode，兼容旧版 Codex 反序列化。
+    assert!(pat_file.get("auth_mode").is_none());
+    assert!(pat_file.get("type").is_none());
     assert_eq!(
         pat_file
             .get("personal_access_token")
@@ -1639,12 +1645,15 @@ fn merge_existing_auth_file_keeps_extra_fields_and_strips_previous_faces() {
     let next = build_auth_file_value(&account).expect("build next auth file");
     let merged = merge_existing_auth_file_value(existing, next);
 
-    assert_eq!(
-        merged.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
+    assert!(
+        merged.get("type").is_none(),
+        "官方 auth.json 不写 type，合并时必须丢弃旧值: {merged}"
     );
     assert!(merged.get("email").is_none());
-    assert!(merged.get("auth_mode").is_none());
+    assert_eq!(
+        merged.get("auth_mode").and_then(serde_json::Value::as_str),
+        Some("chatgpt")
+    );
     assert!(merged.get("personal_access_token").is_none());
     assert_eq!(merged.get("OPENAI_API_KEY"), Some(&serde_json::Value::Null));
     assert_eq!(
@@ -1699,9 +1708,13 @@ fn write_auth_file_to_dir_merges_existing_official_fields() {
         Some("keep-me")
     );
     assert!(auth.get("email").is_none());
+    assert!(
+        auth.get("type").is_none(),
+        "切号写入的 auth.json 必须与官方一致，不写 type: {auth}"
+    );
     assert_eq!(
-        auth.get("type").and_then(serde_json::Value::as_str),
-        Some("codex")
+        auth.get("auth_mode").and_then(serde_json::Value::as_str),
+        Some("chatgpt")
     );
     assert_eq!(auth.get("OPENAI_API_KEY"), Some(&serde_json::Value::Null));
     assert_eq!(
@@ -1709,6 +1722,49 @@ fn write_auth_file_to_dir_merges_existing_official_fields() {
             .and_then(serde_json::Value::as_str),
         Some("access.next.token")
     );
+
+    fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+}
+
+/// 官方 codex 以 0600 创建 auth.json，切号写入必须收敛到同等权限（含备份文件）。
+#[cfg(unix)]
+#[test]
+fn write_auth_file_to_dir_restricts_credential_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base_dir = make_temp_dir("codex-auth-permissions-test");
+    fs::write(
+        base_dir.join("auth.json"),
+        serde_json::json!({ "OPENAI_API_KEY": null }).to_string(),
+    )
+    .expect("seed existing auth.json");
+    fs::set_permissions(
+        base_dir.join("auth.json"),
+        fs::Permissions::from_mode(0o644),
+    )
+    .expect("loosen seeded auth.json permissions");
+
+    let mut account = CodexAccount::new(
+        "codex-permissions".to_string(),
+        "permissions@example.com".to_string(),
+        CodexTokens {
+            id_token: "id.jwt.token".to_string(),
+            access_token: "access.jwt.token".to_string(),
+            refresh_token: Some("rt-permissions".to_string()),
+        },
+    );
+    account.account_id = Some("acc-permissions".to_string());
+    write_auth_file_to_dir(&base_dir, &account).expect("write auth.json");
+
+    for name in ["auth.json", "auth.json.bak"] {
+        let path = base_dir.join(name);
+        let mode = fs::metadata(&path)
+            .expect("stat credential file")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "{name} 必须收敛为 0600，实际 {:o}", mode);
+    }
 
     fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
 }

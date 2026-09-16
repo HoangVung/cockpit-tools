@@ -128,7 +128,7 @@ interface CodexAccountState {
   refreshSubscriptionInfo: (accountId: string) => Promise<CodexAccount>;
   refreshAllQuotas: () => Promise<number>;
   hydrateAccountProfilesIfNeeded: (accountIds?: string[]) => Promise<void>;
-  importFromLocal: () => Promise<CodexAccount>;
+  importFromLocal: (instanceId?: string | null) => Promise<CodexAccount>;
   importFromJson: (jsonContent: string) => Promise<CodexAccount[]>;
   updateAccountName: (accountId: string, name: string) => Promise<CodexAccount>;
   updateApiKeyCredentials: (
@@ -460,8 +460,8 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     }
   },
 
-  importFromLocal: async () => {
-    const account = await codexService.importCodexFromLocal();
+  importFromLocal: async (instanceId?: string | null) => {
+    const account = await codexService.importCodexFromLocal(instanceId);
     await get().fetchAccounts();
     await emitAccountsChanged({
       platformId: 'codex',

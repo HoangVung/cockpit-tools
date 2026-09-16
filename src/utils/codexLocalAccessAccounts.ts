@@ -42,8 +42,6 @@ const CHAT_COMPLETIONS_PROVIDER_HOSTS = [
 ];
 
 export type CodexLocalAccessAccountIneligibleReason =
-  | "chat_completions_api_key"
-  | "deepseek_unsupported"
   | "free_restricted"
   | "pending_oauth"
   | "web_session_quota_only";

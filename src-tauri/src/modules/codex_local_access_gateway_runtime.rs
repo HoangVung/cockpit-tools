@@ -28,7 +28,7 @@ async fn ensure_gateway_matches_runtime_once_locked() -> Result<(), String> {
         return Ok(());
     };
 
-    if !collection.enabled {
+    if !local_access_gateway_should_run(&collection) {
         stop_gateway_locked().await;
         return Ok(());
     }
@@ -1247,7 +1247,7 @@ pub async fn activate_local_access_for_dir(
         .collection
         .clone()
         .ok_or_else(|| "API 服务集合尚未创建".to_string())?;
-    write_local_access_profile_takeover(profile_dir, &collection, None).await?;
+    write_local_access_profile_takeover(profile_dir, &collection, None, true).await?;
     Ok(state)
 }
 

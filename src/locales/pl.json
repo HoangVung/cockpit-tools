@@ -2371,6 +2371,7 @@
       "apiKey": "Klucz",
       "statusRunning": "Uruchomiono",
       "statusStopped": "Zatrzymano",
+      "internalSchedulerLabel": "Harmonogram wewnętrzny",
       "statusDisabled": "Wyłączono",
       "emptyMembers": "W tej kolekcji nie ma jeszcze kont",
       "footerHint": "Zakres dostępu: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Ogranicz konta Free",
         "sessionAffinityConfirmTitle": "Włączyć przywiązanie sesji?",
         "sessionAffinityDescription": "Po włączeniu ta sama rozmowa będzie próbowała nadal używać tego samego konta. Gdy konto jest niedostępne, routing może je zmienić; po wygaśnięciu konto zostanie wybrane ponownie.",
-        "chatApiKeyUnsupported": "Chat Completions nieobsługiwane",
-        "deepseekUnsupported": "DeepSeek jeszcze nie",
         "pendingOauthUnsupported": "Oczekujące wykluczone",
         "freeNoticeRestricted": "Konta Free są ograniczone. Wyłącz tę opcję, aby je wybrać.",
         "freeNoticeUnstable": "Proxy kont Free może być niestabilne. Używaj ostrożnie.",
@@ -2726,8 +2725,41 @@
       "desc": "Importuj bieżące konto z ~/.codex/auth.json",
       "import": "Pobierz konto lokalne"
     },
+    "tempLogin": {
+      "tab": "Logowanie oficjalne",
+      "desc": "Logowanie odbywa się w całości w oficjalnym kliencie desktopowym: adres autoryzacji tworzy oficjalny klient, a wywołanie zwrotne autoryzacji i wymiana tokenu również są obsługiwane przez oficjalny klient. Cockpit nie uczestniczy w wywołaniu zwrotnym autoryzacji — jedynie odczytuje i importuje dane logowania po ich zapisaniu przez oficjalny klient.",
+      "note": "Profil tymczasowy to pusty folder w katalogu danych aplikacji. Po odczytaniu konta jest usuwany razem z katalogiem roboczym klienta i wpisem w pęku kluczy; instancja domyślna i instancje wielokrotne pozostają nietknięte.",
+      "start": "Otwórz oficjalny klient i zaloguj się",
+      "cancel": "Anuluj logowanie",
+      "cancelling": "Anulowanie oficjalnego logowania…",
+      "waitingHint": "Dokończ logowanie w oficjalnym kliencie. Zamknie się automatycznie po wykryciu danych logowania (maksymalnie 10 minut).",
+      "cancelled": "Oficjalne logowanie anulowane, profil tymczasowy usunięty.",
+      "failed": "Oficjalne logowanie nie powiodło się: {{error}}",
+      "success": "Konto pobrane: {{email}}",
+      "intercept": {
+        "toggle": "Przechwyć otwieranie przeglądarki i pokaż tutaj adres autoryzacji",
+        "hint": "Po włączeniu kliknięcie „Kontynuuj” w oficjalnym kliencie nie otwiera już przeglądarki — pokazuje tutaj utworzony przez niego adres autoryzacji do skopiowania. Po zalogowaniu w dowolnej przeglądarce wywołanie zwrotne autoryzacji i wymiana tokenu nadal odbywają się w oficjalnym kliencie desktopowym; Cockpit nie uczestniczy w autoryzacji. Po wyłączeniu oficjalny przebieg pozostaje bez zmian."
+      },
+      "authUrl": {
+        "label": "Adres URL autoryzacji (tworzony przez oficjalnego klienta)",
+        "open": "Otwórz w domyślnej przeglądarce",
+        "openFailed": "Nie udało się otworzyć adresu autoryzacji: {{error}}",
+        "hint": "Adres pochodzi z oficjalnego klienta i działa tylko w przeglądarce na tym komputerze. Nie zamykaj oficjalnego okna do końca logowania.",
+        "unavailable": "Tym razem nie udało się przechwycić adresu autoryzacji. Oficjalny klient otworzy przeglądarkę jak zwykle — zaloguj się tam."
+      },
+      "phase": {
+        "prepare": "Przygotuj profil tymczasowy",
+        "launch": "Otwórz oficjalny klient",
+        "wait": "Czekaj na logowanie",
+        "import": "Odczytaj dane logowania",
+        "close": "Zamknij oficjalny klient",
+        "clean": "Usuń profil tymczasowy"
+      }
+    },
     "import": {
       "localDesc": "Importuj konta Codex z lokalnie zalogowanych sesji.",
+      "localInstanceTitle": "Wybierz instancję",
+      "localInstanceDesc": "Wykryto wiele instancji Codex. Wybierz instancję, z której ma zostać zaimportowane lokalne konto:",
       "importing": "Importowanie lokalnego konta...",
       "successMsg": "Import zakończony sukcesem: {{email}}"
     },

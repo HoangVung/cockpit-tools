@@ -2421,6 +2421,7 @@
       "apiKey": "Kunci",
       "statusRunning": "Berjalan",
       "statusStopped": "Berhenti",
+      "internalSchedulerLabel": "Penjadwal internal",
       "statusDisabled": "Dinonaktifkan",
       "emptyMembers": "Belum ada akun di koleksi ini",
       "footerHint": "Cakupan akses: {{scope}}",
@@ -2451,8 +2452,6 @@
         "restrictFreeToggle": "Batasi akun Free",
         "sessionAffinityConfirmTitle": "Aktifkan afinitas sesi?",
         "sessionAffinityDescription": "Setelah diaktifkan, percakapan yang sama akan berusaha tetap memakai akun yang sama. Jika akun tidak tersedia, perutean dapat beralih; setelah kedaluwarsa akun akan dipilih ulang.",
-        "chatApiKeyUnsupported": "Chat Completions tidak didukung",
-        "deepseekUnsupported": "DeepSeek belum didukung",
         "pendingOauthUnsupported": "Auth tertunda: tidak",
         "freeNoticeRestricted": "Akun Free dibatasi. Nonaktifkan ini untuk memilihnya.",
         "freeNoticeUnstable": "Proxy akun Free bisa tidak stabil. Gunakan dengan hati-hati.",
@@ -2907,8 +2906,41 @@
       "desc": "Impor akun yang sedang masuk dari ~/.codex/auth.json",
       "import": "Dapatkan Akun Lokal"
     },
+    "tempLogin": {
+      "tab": "Login resmi",
+      "desc": "Proses masuk sepenuhnya terjadi di klien desktop resmi: URL otorisasi dibuat oleh klien resmi, dan callback otorisasi serta penukaran token juga ditangani klien resmi. Cockpit tidak ikut serta dalam callback otorisasi; Cockpit hanya membaca dan mengimpor kredensial setelah klien resmi menyimpannya ke disk.",
+      "note": "Profil sementara adalah folder kosong di direktori data aplikasi. Setelah akun dibaca, profil dihapus bersama direktori runtime klien dan entri keychain; instans bawaan dan instans ganda tidak terpengaruh.",
+      "start": "Buka klien resmi dan masuk",
+      "cancel": "Batalkan login",
+      "cancelling": "Membatalkan login resmi…",
+      "waitingHint": "Selesaikan login di klien resmi. Klien ditutup otomatis setelah kredensial terdeteksi (maksimal 10 menit).",
+      "cancelled": "Login resmi dibatalkan dan profil sementara dihapus.",
+      "failed": "Login resmi gagal: {{error}}",
+      "success": "Akun diperoleh: {{email}}",
+      "intercept": {
+        "toggle": "Cegat pembukaan browser dan tampilkan URL otorisasi di sini",
+        "hint": "Saat aktif, mengeklik “Lanjutkan” di aplikasi resmi tidak lagi membuka browser, melainkan hanya menampilkan URL otorisasi yang dibuat aplikasi resmi di sini untuk disalin. Setelah masuk dari browser mana pun, callback otorisasi dan penukaran token tetap ditangani aplikasi desktop resmi; Cockpit tidak ikut serta dalam otorisasi. Saat nonaktif, alur resmi berjalan tanpa perubahan."
+      },
+      "authUrl": {
+        "label": "URL otorisasi (dibuat klien resmi)",
+        "open": "Buka di browser default",
+        "openFailed": "Gagal membuka URL otorisasi: {{error}}",
+        "hint": "URL berasal dari klien resmi dan hanya bisa dibuka di browser pada komputer ini. Biarkan jendela resmi tetap terbuka sampai proses masuk selesai.",
+        "unavailable": "Kali ini Cockpit tidak dapat menangkap URL otorisasi. Klien resmi akan membuka browser seperti biasa; Anda bisa masuk di sana."
+      },
+      "phase": {
+        "prepare": "Siapkan profil sementara",
+        "launch": "Buka klien resmi",
+        "wait": "Tunggu login selesai",
+        "import": "Baca kredensial",
+        "close": "Tutup klien resmi",
+        "clean": "Hapus profil sementara"
+      }
+    },
     "import": {
       "localDesc": "Impor akun Codex dari sesi yang masuk secara lokal.",
+      "localInstanceTitle": "Pilih instans",
+      "localInstanceDesc": "Ditemukan beberapa instans Codex. Pilih instans untuk mengambil akun lokal:",
       "importing": "Mengimpor akun lokal...",
       "successMsg": "Impor berhasil: {{email}}"
     },

@@ -2371,6 +2371,7 @@
       "apiKey": "Chiave",
       "statusRunning": "In esecuzione",
       "statusStopped": "Arrestato",
+      "internalSchedulerLabel": "Scheduler interno",
       "statusDisabled": "Disattivato",
       "emptyMembers": "Nessun account nella raccolta",
       "footerHint": "Ambito accesso: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Limita account Free",
         "sessionAffinityConfirmTitle": "Attivare l’affinità di sessione?",
         "sessionAffinityDescription": "Una volta attivata, la stessa conversazione proverà a mantenere lo stesso account. Se non è disponibile, il routing può cambiarlo; dopo la scadenza verrà scelto di nuovo un account.",
-        "chatApiKeyUnsupported": "Chat Completions non supportato",
-        "deepseekUnsupported": "DeepSeek non ancora",
         "pendingOauthUnsupported": "Auth in sospeso esclusa",
         "freeNoticeRestricted": "Gli account Free sono limitati. Disattiva questa opzione per selezionarli.",
         "freeNoticeUnstable": "Il proxy degli account Free può essere instabile. Usalo con cautela.",
@@ -2726,8 +2725,41 @@
       "desc": "Importa l'account attuale da ~/.codex/auth.json",
       "import": "Ottieni account locale"
     },
+    "tempLogin": {
+      "tab": "Accesso ufficiale",
+      "desc": "L'accesso avviene interamente nel client desktop ufficiale: l'URL di autorizzazione è generato dal client ufficiale, e anche il callback di autorizzazione e lo scambio del token sono gestiti dal client ufficiale. Cockpit non partecipa al callback di autorizzazione: legge e importa le credenziali solo dopo che il client ufficiale le ha salvate su disco.",
+      "note": "Il profilo temporaneo è una cartella vuota nella directory dati dell'app. Dopo la lettura dell'account viene eliminato insieme alla directory di esecuzione del client e alla voce del portachiavi; l'istanza predefinita e le istanze multiple non vengono toccate.",
+      "start": "Apri il client ufficiale e accedi",
+      "cancel": "Annulla accesso",
+      "cancelling": "Annullamento dell'accesso ufficiale…",
+      "waitingHint": "Completa l'accesso nel client ufficiale. Si chiude automaticamente quando rileva le credenziali (massimo 10 minuti).",
+      "cancelled": "Accesso ufficiale annullato e profilo temporaneo eliminato.",
+      "failed": "Accesso ufficiale non riuscito: {{error}}",
+      "success": "Account acquisito: {{email}}",
+      "intercept": {
+        "toggle": "Intercetta l'apertura del browser e mostra qui l'URL di autorizzazione",
+        "hint": "Se attivo, fare clic su «Continua» nel client ufficiale non apre più il browser: mostra qui l'URL di autorizzazione generato dal client ufficiale per copiarla. Dopo l'accesso da qualsiasi browser, il callback di autorizzazione e lo scambio del token restano a carico del client desktop ufficiale; Cockpit non partecipa all'autorizzazione. Se disattivo, il flusso ufficiale resta invariato."
+      },
+      "authUrl": {
+        "label": "URL di autorizzazione (generato dal client ufficiale)",
+        "open": "Apri nel browser predefinito",
+        "openFailed": "Impossibile aprire l'URL di autorizzazione: {{error}}",
+        "hint": "L'URL è generato dal client ufficiale e funziona solo in un browser di questo computer. Lascia aperta la finestra ufficiale fino al termine dell'accesso.",
+        "unavailable": "Questa volta Cockpit non ha intercettato l'URL di autorizzazione. Il client ufficiale aprirà il browser come al solito: accedi da lì."
+      },
+      "phase": {
+        "prepare": "Prepara il profilo temporaneo",
+        "launch": "Apri il client ufficiale",
+        "wait": "Attendi l'accesso",
+        "import": "Leggi le credenziali",
+        "close": "Chiudi il client ufficiale",
+        "clean": "Elimina il profilo temporaneo"
+      }
+    },
     "import": {
       "localDesc": "Importa account Codex da sessioni locali con accesso.",
+      "localInstanceTitle": "Seleziona istanza",
+      "localInstanceDesc": "Sono state rilevate più istanze Codex. Scegli da quale istanza importare l'account locale:",
       "importing": "Importazione dell'account locale...",
       "successMsg": "Importazione riuscita: {{email}}"
     },

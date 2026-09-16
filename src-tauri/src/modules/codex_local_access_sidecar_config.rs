@@ -571,10 +571,17 @@ fn legacy_api_key_is_active(collection: &CodexLocalAccessCollection) -> bool {
 }
 
 fn sidecar_api_key_manifest_values(collection: &CodexLocalAccessCollection) -> Vec<Value> {
+    sidecar_api_key_manifest_values_with_internal(collection, false)
+}
+
+fn sidecar_api_key_manifest_values_with_internal(
+    collection: &CodexLocalAccessCollection,
+    include_internal: bool,
+) -> Vec<Value> {
     let mut values = Vec::new();
     let bound_oauth =
         normalize_optional_account_ref(collection.bound_oauth_account_id.as_deref()).is_some();
-    if legacy_api_key_is_active(collection) {
+    if collection.enabled && legacy_api_key_is_active(collection) {
         values.push(json!({
             "id": "legacy",
             "label": default_local_api_key_label(),
@@ -589,7 +596,7 @@ fn sidecar_api_key_manifest_values(collection: &CodexLocalAccessCollection) -> V
             "tokenUsed": 0,
         }));
     }
-    for item in &collection.api_keys {
+    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
         if !item.enabled || item.key.trim().is_empty() {
             continue;
         }
@@ -617,6 +624,21 @@ fn sidecar_api_key_manifest_values(collection: &CodexLocalAccessCollection) -> V
             "tokenLimit": item.token_limit,
             "tokenUsed": item.token_used,
             "enabled": item.enabled,
+        }));
+    }
+    let internal_account_ids = internal_api_account_ids();
+    if include_internal && !internal_account_ids.is_empty() {
+        values.push(json!({
+            "id": "__cockpit_internal__",
+            "label": "Cockpit internal",
+            "key": internal_api_service_key(),
+            "internal": true,
+            "enabled": true,
+            "accountIds": internal_account_ids,
+            "allowedModels": [],
+            "excludedModels": [],
+            "tokenLimit": null,
+            "tokenUsed": 0,
         }));
     }
     values
@@ -767,8 +789,22 @@ fn effective_api_key_account_ids(
 }
 
 fn effective_sidecar_account_ids(collection: &CodexLocalAccessCollection) -> Vec<String> {
+    effective_sidecar_account_ids_with_internal(collection, false)
+}
+
+fn effective_sidecar_account_ids_with_internal(
+    collection: &CodexLocalAccessCollection,
+    include_internal: bool,
+) -> Vec<String> {
     let mut account_ids = collection.account_ids.clone();
     let mut seen: HashSet<String> = account_ids.iter().cloned().collect();
+    if include_internal {
+        for account_id in internal_api_account_ids() {
+            if seen.insert(account_id.clone()) {
+                account_ids.push(account_id);
+            }
+        }
+    }
     // 生图转发账号不参与对话路由，但必须进入 sidecar 账号清单才能拿到凭据。
     for account_id in &collection.image_generation_account_ids {
         if seen.insert(account_id.clone()) {
@@ -1025,9 +1061,17 @@ fn sidecar_client_api_keys(
     collection: &CodexLocalAccessCollection,
     account_overrides: &HashMap<String, CodexAccount>,
 ) -> Vec<String> {
+    sidecar_client_api_keys_with_internal(collection, account_overrides, false)
+}
+
+fn sidecar_client_api_keys_with_internal(
+    collection: &CodexLocalAccessCollection,
+    account_overrides: &HashMap<String, CodexAccount>,
+    include_internal: bool,
+) -> Vec<String> {
     let mut keys = Vec::new();
     let mut seen = HashSet::new();
-    if legacy_api_key_is_active(collection)
+    if collection.enabled && legacy_api_key_is_active(collection)
         && !sidecar_auth_ids_for_account_ids_with_overrides(
             collection.account_ids.clone(),
             account_overrides,
@@ -1037,7 +1081,7 @@ fn sidecar_client_api_keys(
     {
         keys.push(collection.api_key.trim().to_string());
     }
-    for item in &collection.api_keys {
+    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
         let key = item.key.trim();
         let has_resolvable_scope = item.provider_gateway.is_some()
             || !sidecar_auth_ids_for_account_ids_with_overrides(
@@ -1049,6 +1093,17 @@ fn sidecar_client_api_keys(
             keys.push(key.to_string());
         }
     }
+    let internal_account_ids = internal_api_account_ids();
+    if include_internal
+        && !internal_account_ids.is_empty()
+        && !sidecar_auth_ids_for_account_ids_with_overrides(
+            internal_account_ids,
+            account_overrides,
+        )
+        .is_empty()
+    {
+        keys.push(internal_api_service_key().to_string());
+    }
     keys
 }
 
@@ -1056,8 +1111,16 @@ fn sidecar_api_key_account_scope_values(
     collection: &CodexLocalAccessCollection,
     account_overrides: &HashMap<String, CodexAccount>,
 ) -> Value {
+    sidecar_api_key_account_scope_values_with_internal(collection, account_overrides, false)
+}
+
+fn sidecar_api_key_account_scope_values_with_internal(
+    collection: &CodexLocalAccessCollection,
+    account_overrides: &HashMap<String, CodexAccount>,
+    include_internal: bool,
+) -> Value {
     let mut values = Map::new();
-    if legacy_api_key_is_active(collection) {
+    if collection.enabled && legacy_api_key_is_active(collection) {
         let auth_ids = sidecar_auth_ids_for_account_ids_with_overrides(
             collection.account_ids.clone(),
             account_overrides,
@@ -1066,7 +1129,7 @@ fn sidecar_api_key_account_scope_values(
             values.insert(collection.api_key.trim().to_string(), json!(auth_ids));
         }
     }
-    for item in &collection.api_keys {
+    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
         let key = item.key.trim();
         if !item.enabled || key.is_empty() {
             continue;
@@ -1082,6 +1145,19 @@ fn sidecar_api_key_account_scope_values(
             continue;
         }
         values.insert(key.to_string(), json!(auth_ids));
+    }
+    if include_internal {
+        let internal_account_ids = internal_api_account_ids();
+        let internal_auth_ids = sidecar_auth_ids_for_account_ids_with_overrides(
+            internal_account_ids,
+            account_overrides,
+        );
+        if !internal_auth_ids.is_empty() {
+            values.insert(
+                internal_api_service_key().to_string(),
+                json!(internal_auth_ids),
+            );
+        }
     }
     Value::Object(values)
 }
@@ -2008,9 +2084,10 @@ fn prepare_sidecar_launch_config_in_dir_sync(
     let mut manifest_accounts = Vec::new();
     let mut codex_keys = Vec::new();
     let mut expected_auth_files = HashSet::new();
+    let mut routing_accounts = HashMap::new();
     let metered_feature_patterns =
         metered_feature_model_patterns_for_pool(collection, &account_overrides);
-    for (index, account_id) in effective_sidecar_account_ids(collection)
+    for (index, account_id) in effective_sidecar_account_ids_with_internal(collection, api_service)
         .into_iter()
         .enumerate()
     {
@@ -2049,7 +2126,12 @@ fn prepare_sidecar_launch_config_in_dir_sync(
             ));
             continue;
         }
-        let eligible = if collection_uses_provider_gateway_account(collection, &account.id) {
+        let internal_account = internal_api_account_ids()
+            .iter()
+            .any(|internal_id| internal_id == &account.id);
+        let eligible = if internal_account {
+            sidecar_local_account_usable_for_start(&account)
+        } else if collection_uses_provider_gateway_account(collection, &account.id) {
             is_override_account || is_provider_gateway_eligible_account(&account)
         } else {
             is_local_access_eligible_account(&account, collection.restrict_free_accounts)
@@ -2057,14 +2139,43 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         if !eligible {
             continue;
         }
+        routing_accounts.insert(account.id.clone(), account.clone());
 
         if account.is_api_key_auth() {
-            if let Some(config_value) = sidecar_codex_key_config_value_with_metered_feature_patterns(
+            // 与自动混合路由的判定保持一致：Chat 协议账号、以及具备逐模型识图能力的账号
+            // （例如 DeepSeek）走 provider 路由，这样带图片的请求才能自动转到识图模型。
+            let provider_route_models = if api_service
+                && automatic_api_service_provider_route_eligible(&account)
+            {
+                automatic_api_service_route_models(
+                    collection,
+                    &account,
+                    &api_service_supported_codex_model_ids(),
+                )
+            } else {
+                Vec::new()
+            };
+            if !provider_route_models.is_empty() {
+                manifest_accounts.push(sidecar_account_manifest_value(
+                    &account,
+                    None,
+                    collection,
+                ));
+                continue;
+            }
+            if let Some(mut config_value) = sidecar_codex_key_config_value_with_metered_feature_patterns(
                 &account,
                 collection,
                 effective_proxy_url_ref,
                 &metered_feature_patterns,
             ) {
+                if api_service && (!account.api_model_catalog.is_empty() || !account.api_model_mappings.is_empty()) {
+                    config_value["models"] = Value::Array(automatic_api_service_route_models(
+                        collection, &account, &api_service_supported_codex_model_ids(),
+                    ).into_iter().map(|model| json!({
+                        "name": model["upstreamModel"], "alias": model["clientModel"],
+                    })).collect());
+                }
                 codex_keys.push(config_value);
                 manifest_accounts.push(sidecar_account_manifest_value(&account, None, collection));
             } else {
@@ -2129,9 +2240,18 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         }
     }
     let app_locale = crate::modules::config::get_user_config().language;
+    let mut api_key_manifest_values =
+        sidecar_api_key_manifest_values_with_internal(collection, api_service);
+    if api_service {
+        apply_automatic_api_service_model_routing(
+            &mut api_key_manifest_values,
+            collection,
+            &routing_accounts,
+        );
+    }
     let manifest = json!({
         "locale": app_locale,
-        "apiKeys": sidecar_api_key_manifest_values(collection),
+        "apiKeys": api_key_manifest_values,
         "accounts": manifest_accounts,
         "modelIds": model_ids,
         "imageGenerationModel": collection.image_generation_model.clone(),
@@ -2173,11 +2293,19 @@ fn prepare_sidecar_launch_config_in_dir_sync(
     config.insert("debug".to_string(), json!(collection.debug_logs));
     config.insert(
         "api-keys".to_string(),
-        json!(sidecar_client_api_keys(collection, &account_overrides)),
+        json!(sidecar_client_api_keys_with_internal(
+            collection,
+            &account_overrides,
+            api_service,
+        )),
     );
     config.insert(
         "api-key-account-ids".to_string(),
-        sidecar_api_key_account_scope_values(collection, &account_overrides),
+        sidecar_api_key_account_scope_values_with_internal(
+            collection,
+            &account_overrides,
+            api_service,
+        ),
     );
     config.insert(
         "auth-error-localization".to_string(),

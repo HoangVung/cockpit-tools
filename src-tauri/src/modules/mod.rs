@@ -36,6 +36,7 @@ pub mod codex_pelican_preview;
 pub mod codex_official_app_server;
 pub mod codex_protocol;
 pub mod codex_quota;
+pub mod codex_temp_login;
 pub(crate) mod codex_quota_refresh_scheduler;
 pub(crate) mod codex_session_display;
 pub mod codex_session_file_time;

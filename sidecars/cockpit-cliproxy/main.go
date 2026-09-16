@@ -207,6 +207,7 @@ func main() {
 	liveHandler := codexlive.NewHandler(coreManager, cfg)
 	defer liveHandler.Close()
 	relay := &relayServer{
+		automaticSelector:  buildCoreAuthSelectorWithConcurrency(nil, selector, m, quotaState, usageTracker),
 		runtime:            runtime,
 		cfg:                cfg,
 		manifest:           m,

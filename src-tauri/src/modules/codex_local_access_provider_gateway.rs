@@ -1127,6 +1127,95 @@ fn is_official_deepseek_account(account: &CodexAccount) -> bool {
             .is_some_and(|host| host.eq_ignore_ascii_case("api.deepseek.com"))
 }
 
+/// 供应商网关上游是否是 DeepSeek 官方。
+///
+/// 以 collection 里记录的上游地址为准：账号文件是加密存储的，网关配置是运行态直接可读的
+/// 权威来源，且对 Responses 与 Chat Completions 两种 DeepSeek 接入都成立。
+fn provider_gateway_points_at_official_deepseek(gateway: &CodexLocalAccessProviderGateway) -> bool {
+    Url::parse(gateway.base_url.trim())
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host.eq_ignore_ascii_case("api.deepseek.com"))
+}
+
+/// 账号池里是否包含 DeepSeek 账号（含混合模型路由的渠道）。
+fn collection_pool_contains_official_deepseek_account(
+    collection: &CodexLocalAccessCollection,
+) -> bool {
+    let gateway_is_deepseek = |gateway: &Option<CodexLocalAccessProviderGateway>| {
+        gateway
+            .as_ref()
+            .is_some_and(provider_gateway_points_at_official_deepseek)
+    };
+    if collection
+        .api_keys
+        .iter()
+        .any(|api_key| gateway_is_deepseek(&api_key.provider_gateway))
+    {
+        return true;
+    }
+    if collection.api_keys.iter().any(|api_key| {
+        api_key.model_routing.as_ref().is_some_and(|routing| {
+            routing
+                .routes
+                .iter()
+                .any(|route| provider_gateway_points_at_official_deepseek(&route.provider_gateway))
+        })
+    }) {
+        return true;
+    }
+    collection.account_ids.iter().any(|account_id| {
+        codex_account::load_account(account_id.trim())
+            .is_some_and(|account| is_official_deepseek_account(&account))
+    })
+}
+
+/// 账号池里只要有 DeepSeek 账号，转发 profile 的压缩就必须回到本地流程。
+///
+/// DeepSeek 没有服务端压缩：`/responses/compact` 返回 404，`compaction_trigger` 只会返回普通
+/// message；Codex 的远程压缩 v2 要求响应里恰好有一个 compaction 输出项，所以请求一旦被路由到
+/// DeepSeek 账号就必然失败，并且会先撞上
+/// `The reasoning_text in the thinking mode must be passed back to the API`。
+/// 这里只关闭该 profile 的远程压缩并启用 `token_budget`（本地上下文窗口重置），不写其它
+/// DeepSeek 专属覆盖，避免影响同一账号池里的官方账号。
+pub(crate) fn ensure_local_compaction_for_account_pool(
+    profile_dir: &Path,
+    collection: &CodexLocalAccessCollection,
+) -> Result<(), String> {
+    if !collection_pool_contains_official_deepseek_account(collection) {
+        return Ok(());
+    }
+    if crate::modules::codex_account::ensure_local_compaction_fallback_for_dir(profile_dir)? {
+        logger::log_codex_api_info(&format!(
+            "[CodexLocalAccess][local-compaction] 账号池含 DeepSeek 账号，已为该 profile 启用本地压缩: profile={}",
+            profile_dir.display()
+        ));
+    }
+    Ok(())
+}
+
+/// 实例网关接管 profile 后补回 DeepSeek 压缩兜底。
+///
+/// 接管流程会把 profile 当成「非 DeepSeek 账号」清掉切号时写入的兜底，但 profile 的上游仍是
+/// DeepSeek：本地网关出口已经把第三方推理正文改写成官方形状，远程压缩会把整段历史交给上游
+/// 校验，上游会以 `The reasoning_text in the thinking mode must be passed back to the API`
+/// 拒绝压缩。只有上游确实是 DeepSeek 官方账号时才补写，其它供应商不受影响。
+fn reapply_deepseek_profile_compaction_fallback(
+    profile_dir: &Path,
+    account: &CodexAccount,
+) -> Result<(), String> {
+    if !is_official_deepseek_account(account) {
+        return Ok(());
+    }
+    if crate::modules::codex_account::reapply_deepseek_config_overrides_for_dir(profile_dir)? {
+        logger::log_codex_api_info(&format!(
+            "[CodexLocalAccess][provider-gateway] 已写回 DeepSeek 压缩兜底: profile={}",
+            profile_dir.display()
+        ));
+    }
+    Ok(())
+}
+
 fn account_uses_synced_model_shell_gateway(account: &CodexAccount) -> bool {
     if !account.is_api_key_auth() {
         return false;
@@ -1195,7 +1284,11 @@ pub fn is_local_access_runtime_account_id(account_id: &str) -> bool {
 }
 
 fn is_provider_gateway_eligible_account(account: &CodexAccount) -> bool {
-    account_requires_provider_gateway(account)
+    account.is_api_key_auth()
+        && account
+            .openai_api_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
 }
 
 fn collection_uses_provider_gateway_account(
@@ -2531,7 +2624,7 @@ pub async fn activate_provider_gateway_for_dir(
         build_provider_gateway_collection_for_profile(profile_dir, &account)?;
     let model_slots = provider_gateway_model_slots(&provider_gateway.upstream_models);
     save_profile_takeover_backup(profile_dir, &key)?;
-    write_local_access_profile_takeover(profile_dir, &collection, Some(&key)).await?;
+    write_local_access_profile_takeover(profile_dir, &collection, Some(&key), false).await?;
     cleanup_provider_gateway_profile_model_overrides(profile_dir)?;
     backup_current_profile_model_before_provider_gateway(
         profile_dir,
@@ -2552,6 +2645,7 @@ pub async fn activate_provider_gateway_for_dir(
         )?;
     }
     codex_account::reapply_experimental_model_policy_if_enabled(profile_dir)?;
+    reapply_deepseek_profile_compaction_fallback(profile_dir, &account)?;
     ensure_runtime_loaded_without_start().await?;
     let runtime = gateway_runtime().lock().await;
     Ok(build_state_snapshot(&runtime))
@@ -3006,7 +3100,7 @@ pub async fn ensure_provider_gateway_for_dir(
         build_provider_gateway_collection_for_profile(profile_dir, &account)?;
     let model_slots = provider_gateway_model_slots(&provider_gateway.upstream_models);
     save_profile_takeover_backup(profile_dir, &key)?;
-    write_local_access_profile_takeover(profile_dir, &collection, Some(&key)).await?;
+    write_local_access_profile_takeover(profile_dir, &collection, Some(&key), false).await?;
     cleanup_provider_gateway_profile_model_overrides(profile_dir)?;
     backup_current_profile_model_before_provider_gateway(
         profile_dir,
@@ -3027,6 +3121,7 @@ pub async fn ensure_provider_gateway_for_dir(
         )?;
     }
     codex_account::reapply_experimental_model_policy_if_enabled(profile_dir)?;
+    reapply_deepseek_profile_compaction_fallback(profile_dir, &account)?;
 
     let runtime_key = provider_gateway_runtime_key(profile_dir, account_id);
     if let Some(endpoint) = stop_provider_gateway_runtime(&runtime_key).await {
@@ -3210,7 +3305,7 @@ pub(crate) async fn ensure_mixed_model_gateway_for_dir_if_current(
         if !catalog_model_ids.is_empty() {
             backup_current_profile_model_before_provider_gateway(profile_dir, &catalog_model_ids)?;
         }
-        write_local_access_profile_takeover(profile_dir, &collection, Some(&key)).await?;
+        write_local_access_profile_takeover(profile_dir, &collection, Some(&key), false).await?;
         if !catalog_definitions.is_empty() {
             write_local_access_profile_model_catalog_with_definitions(
                 profile_dir,
@@ -3270,7 +3365,7 @@ pub async fn ensure_bound_oauth_local_gateway_for_dir(
     let (collection, key) =
         build_bound_oauth_local_gateway_collection_for_profile(profile_dir, &account)?;
     save_profile_takeover_backup(profile_dir, &key)?;
-    write_local_access_profile_takeover(profile_dir, &collection, Some(&key)).await?;
+    write_local_access_profile_takeover(profile_dir, &collection, Some(&key), false).await?;
     cleanup_provider_gateway_profile_model_overrides(profile_dir)?;
     codex_account::reapply_experimental_model_policy_if_enabled(profile_dir)?;
 

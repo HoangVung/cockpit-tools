@@ -801,7 +801,7 @@ pub(crate) fn read_experimental_model_definitions(
     if !models.iter().any(|model| model.model_id.eq_ignore_ascii_case("gpt-reserve")) {
         models.push(CodexExperimentalModelDefinition {
             model_id: "gpt-reserve".to_string(),
-            display_name: "Luna Reserve".to_string(),
+            display_name: crate::modules::codex_protocol::CODEX_RESERVE_DISPLAY_NAME.to_string(),
             reasoning_efforts: None,
         });
     }

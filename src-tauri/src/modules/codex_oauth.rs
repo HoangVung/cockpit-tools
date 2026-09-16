@@ -22,6 +22,8 @@ const SCOPES: &str =
     "openid profile email offline_access api.connectors.read api.connectors.invoke";
 const ORIGINATOR: &str = "Codex Desktop";
 const OAUTH_CALLBACK_PORT: u16 = 1455;
+/// 官方 Codex 登录服务在 1455 被占用时会回退到 1457，这里保持一致。
+const OAUTH_FALLBACK_CALLBACK_PORT: u16 = 1457;
 const OAUTH_PORT_IN_USE_CODE: &str = "CODEX_OAUTH_PORT_IN_USE";
 const OAUTH_STATE_FILE: &str = "codex_oauth_pending.json";
 const OAUTH_WINDOW_LABEL: &str = "codex-oauth-incognito";
@@ -255,16 +257,33 @@ fn ensure_callback_listener_for_state(app_handle: &AppHandle, state: &OAuthState
 }
 
 fn find_available_port() -> Result<u16, String> {
-    match TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)) {
-        Ok(listener) => {
-            drop(listener);
-            Ok(OAUTH_CALLBACK_PORT)
+    let mut last_error: Option<String> = None;
+
+    for port in [OAUTH_CALLBACK_PORT, OAUTH_FALLBACK_CALLBACK_PORT] {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => {
+                drop(listener);
+                return Ok(port);
+            }
+            Err(error) if error.kind() == ErrorKind::AddrInUse => {
+                logger::log_warn(&format!(
+                    "Codex OAuth 回调端口被占用，尝试下一个端口: port={}",
+                    port
+                ));
+                last_error = None;
+            }
+            Err(error) => {
+                last_error = Some(format!("无法绑定端口 {}: {}", port, error));
+            }
         }
-        Err(e) if e.kind() == ErrorKind::AddrInUse => Err(format!(
+    }
+
+    match last_error {
+        Some(error) => Err(error),
+        None => Err(format!(
             "{}:{}",
             OAUTH_PORT_IN_USE_CODE, OAUTH_CALLBACK_PORT
         )),
-        Err(e) => Err(format!("无法绑定端口 {}: {}", OAUTH_CALLBACK_PORT, e)),
     }
 }
 
@@ -582,7 +601,7 @@ fn build_auth_url(redirect_uri: &str, code_challenge: &str, state: &str) -> Stri
 }
 
 /// 用户设置优先；留空时使用远端配置缓存，并在无缓存时回退内置默认值。
-fn official_client_version() -> String {
+pub(crate) fn official_client_version() -> String {
     let configured = crate::modules::config::get_user_config().codex_oauth_app_version;
     if let Some(version) =
         crate::modules::remote_config::normalize_codex_oauth_app_version(&configured)
@@ -1514,13 +1533,15 @@ pub async fn refresh_access_token_with_fallback(
 #[cfg(test)]
 mod tests {
     use super::{
-        authorize_url_matches_pending, build_auth_url, is_callback_navigation, is_id_token_expired,
-        is_id_token_refresh_due, is_token_expired, parse_device_poll_interval,
+        authorize_url_matches_pending, build_auth_url, find_available_port, is_callback_navigation,
+        is_id_token_expired, is_id_token_refresh_due, is_token_expired, parse_device_poll_interval,
         resolve_exchange_redirect_uri, resolve_refreshed_id_token, OAuthState,
         DEVICE_DEFAULT_POLL_SECONDS, DEVICE_EXCHANGE_REDIRECT_URI, ID_TOKEN_REFRESH_LEAD_SECONDS,
-        ORIGINATOR, TOKEN_REFRESH_SKEW_SECONDS,
+        OAUTH_CALLBACK_PORT, OAUTH_FALLBACK_CALLBACK_PORT, OAUTH_PORT_IN_USE_CODE, ORIGINATOR,
+        TOKEN_REFRESH_SKEW_SECONDS,
     };
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use std::net::TcpListener;
 
     fn make_jwt(exp: i64) -> String {
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#);
@@ -1531,6 +1552,29 @@ mod tests {
     #[test]
     fn oauth_originator_matches_current_desktop_client() {
         assert_eq!(ORIGINATOR, "Codex Desktop");
+    }
+
+    /// 官方 codex 登录服务在 1455 被占用时回退 1457；两个端口都不可用时才报端口占用。
+    #[test]
+    fn oauth_callback_port_falls_back_when_primary_port_is_taken() {
+        let Ok(occupied) = TcpListener::bind(("127.0.0.1", OAUTH_CALLBACK_PORT)) else {
+            // 本机 1455 已被其它进程占用，说明前置条件不成立，跳过该用例。
+            return;
+        };
+        let result = find_available_port();
+        drop(occupied);
+
+        match result {
+            Ok(port) => assert_eq!(
+                port, OAUTH_FALLBACK_CALLBACK_PORT,
+                "1455 被占用时必须回退到 {}",
+                OAUTH_FALLBACK_CALLBACK_PORT
+            ),
+            Err(error) => assert!(
+                error.contains(OAUTH_PORT_IN_USE_CODE),
+                "1455/1457 都不可用时必须返回端口占用错误，实际: {error}"
+            ),
+        }
     }
 
     #[test]

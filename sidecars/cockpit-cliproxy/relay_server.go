@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"strings"
+	"sync"
 
 	"time"
 
@@ -29,15 +30,17 @@ import (
 )
 
 type relayServer struct {
-	runtime            executorRuntime
-	cfg                *config.Config
-	manifest           *manifest
-	authManager        *coreauth.Manager
-	emitter            *eventEmitter
-	policy             *requestPolicy
-	responsesWebsocket gin.HandlerFunc
-	codexLive          *codexlive.Handler
-	quotaPoolStatePath string
+	automaticSelector     coreauth.Selector
+	automaticSelectorOnce sync.Once
+	runtime               executorRuntime
+	cfg                   *config.Config
+	manifest              *manifest
+	authManager           *coreauth.Manager
+	emitter               *eventEmitter
+	policy                *requestPolicy
+	responsesWebsocket    gin.HandlerFunc
+	codexLive             *codexlive.Handler
+	quotaPoolStatePath    string
 }
 
 func (s *relayServer) router() *gin.Engine {

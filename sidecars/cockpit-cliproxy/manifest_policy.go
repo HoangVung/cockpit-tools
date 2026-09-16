@@ -43,7 +43,9 @@ const (
 	requestKindContextKey      contextKey = "cockpitRequestKind"
 	requestModelContextKey     contextKey = "cockpitRequestModel"
 	clientInstanceIDContextKey contextKey = "cockpitClientInstanceId"
+	targetAccountIDContextKey  contextKey = "cockpitTargetAccountId"
 	clientInstanceIDHeaderName            = "X-Cockpit-Instance-Id"
+	targetAccountIDHeaderName             = "X-Cockpit-Target-Account-Id"
 )
 
 const ginUserAPIKeyKey = "userApiKey"
@@ -136,19 +138,33 @@ type apiKeySpec struct {
 	TokenLimit                uint64   `json:"tokenLimit,omitempty"`
 	TokenUsed                 uint64   `json:"tokenUsed,omitempty"`
 	Enabled                   bool     `json:"enabled"`
+	Internal                  bool     `json:"internal,omitempty"`
 }
 
 type modelRoutingSpec struct {
 	DefaultRoute  string           `json:"defaultRoute"`
 	FailurePolicy string           `json:"failurePolicy"`
 	Routes        []modelRouteSpec `json:"routes"`
+	Automatic     bool             `json:"automatic,omitempty"`
+	NativeModels  []string         `json:"nativeModels,omitempty"`
+	// RoutableModels 只参与路由与校验，不出现在客户端模型列表里（唤醒预设、历史兼容模型）。
+	RoutableModels []string `json:"routableModels,omitempty"`
 }
 
 type modelRouteSpec struct {
-	ID                string               `json:"id"`
-	Namespace         string               `json:"namespace"`
-	ProviderAccountID string               `json:"providerAccountId"`
-	ProviderGateway   *providerGatewaySpec `json:"providerGateway"`
+	ID                string                `json:"id"`
+	Namespace         string                `json:"namespace"`
+	ProviderAccountID string                `json:"providerAccountId"`
+	ProviderGateway   *providerGatewaySpec  `json:"providerGateway"`
+	Models            []modelRouteModelSpec `json:"models,omitempty"`
+}
+
+type modelRouteModelSpec struct {
+	ClientModel           string `json:"clientModel"`
+	UpstreamModel         string `json:"upstreamModel"`
+	DisplayName           string `json:"displayName,omitempty"`
+	ReasoningLevels       []any  `json:"reasoningLevels,omitempty"`
+	DefaultReasoningLevel string `json:"defaultReasoningLevel,omitempty"`
 }
 
 type apiKeyTokenState struct {
@@ -939,6 +955,8 @@ func loadManifest(path string) (*manifest, error) {
 			}
 		}
 		if routing := m.APIKeys[i].ModelRouting; routing != nil {
+			routing.NativeModels = normalizeStringList(routing.NativeModels)
+			routing.RoutableModels = normalizeStringList(routing.RoutableModels)
 			routing.DefaultRoute = strings.ToLower(strings.TrimSpace(routing.DefaultRoute))
 			routing.FailurePolicy = strings.ToLower(strings.TrimSpace(routing.FailurePolicy))
 			seenNamespaces := make(map[string]struct{}, len(routing.Routes))
@@ -956,11 +974,27 @@ func loadManifest(path string) (*manifest, error) {
 				if route.ProviderGateway == nil || !normalizeProviderGatewaySpec(route.ProviderGateway) {
 					continue
 				}
+				seenModels := make(map[string]struct{}, len(route.Models))
+				models := make([]modelRouteModelSpec, 0, len(route.Models))
+				for _, model := range route.Models {
+					model.ClientModel = strings.TrimSpace(model.ClientModel)
+					model.UpstreamModel = strings.TrimSpace(model.UpstreamModel)
+					key := strings.ToLower(model.ClientModel)
+					if key == "" || model.UpstreamModel == "" {
+						continue
+					}
+					if _, exists := seenModels[key]; exists {
+						continue
+					}
+					seenModels[key] = struct{}{}
+					models = append(models, model)
+				}
+				route.Models = models
 				seenNamespaces[route.Namespace] = struct{}{}
 				routes = append(routes, route)
 			}
 			routing.Routes = routes
-			if routing.DefaultRoute != "oauth" || routing.FailurePolicy != "strict" || len(routes) == 0 {
+			if routing.DefaultRoute != "oauth" || routing.FailurePolicy != "strict" || (len(routes) == 0 && !routing.Automatic) {
 				m.APIKeys[i].ModelRouting = nil
 			}
 		}
@@ -1232,6 +1266,7 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 		if clientInstanceID != "" {
 			c.Request = c.Request.WithContext(withClientInstanceID(c.Request.Context(), clientInstanceID))
 		}
+		targetAccountID := strings.TrimSpace(c.Request.Header.Get(targetAccountIDHeaderName))
 		model := ""
 		startLogged := false
 		emitStart := func() {
@@ -1258,6 +1293,9 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 			ctx = context.WithValue(ctx, requestKindContextKey, requestKind)
 			if clientInstanceID != "" {
 				ctx = withClientInstanceID(ctx, clientInstanceID)
+			}
+			if targetAccountID != "" && spec.Internal {
+				ctx = context.WithValue(ctx, targetAccountIDContextKey, targetAccountID)
 			}
 			c.Request = c.Request.WithContext(ctx)
 		}
@@ -1823,6 +1861,16 @@ func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows m
 			if spec != nil && spec.ProviderGateway != nil {
 				applyProviderGatewayCodexInputModalities(model, spec.ProviderGateway)
 			}
+			// 自动混合路由：路由模型的可发送图片能力取自路由的 provider 网关，
+			// 与 DeepSeek 网关模式一致（存在识图兜底模型时即可发送图片）。
+			if spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic {
+				if slug, _ := model["slug"].(string); slug != "" {
+					if route, _, status := resolveModelRoutingRoute(spec, slug); status == "matched" && route != nil {
+						applyProviderGatewayCodexInputModalities(model, route.ProviderGateway)
+					}
+					applyAutomaticRouteModelMetadata(spec, model, slug)
+				}
+			}
 			slug, _ := model["slug"].(string)
 			if isHiddenCodexClientModel(slug) {
 				model["visibility"] = "hide"
@@ -1872,6 +1920,75 @@ func applyProviderGatewayCodexInputModalities(model map[string]any, gateway *pro
 	delete(model, "supports_image_detail_original")
 }
 
+// applyAutomaticRouteModelMetadata 用路由模型自带的元数据覆盖目录条目，
+// 让客户端看到的显示名与推理档位和 DeepSeek 网关模式保持一致。
+//
+// 官方注册表会给已知 slug 填自己的显示名与档位，这里必须显式覆盖，
+// 否则带前缀的官方名称（例如 `GPT-6 Astra`）和账号模型档位都会被替换掉。
+func applyAutomaticRouteModelMetadata(spec *apiKeySpec, model map[string]any, slug string) {
+	if spec == nil || spec.ModelRouting == nil {
+		return
+	}
+	if name := officialAutomaticModelDisplayName(slug); name != "" {
+		model["display_name"] = name
+		model["description"] = name
+	}
+	for _, route := range spec.ModelRouting.Routes {
+		for _, candidate := range route.Models {
+			if !strings.EqualFold(candidate.ClientModel, slug) {
+				continue
+			}
+			if name := strings.TrimSpace(candidate.DisplayName); name != "" {
+				model["display_name"] = name
+				model["description"] = name
+			}
+			if len(candidate.ReasoningLevels) > 0 {
+				model["supported_reasoning_levels"] = cloneAnyList(candidate.ReasoningLevels)
+				if level := strings.ToLower(strings.TrimSpace(candidate.DefaultReasoningLevel)); level != "" {
+					model["default_reasoning_level"] = level
+				}
+			}
+			return
+		}
+	}
+}
+
+// officialAutomaticModelDisplayName 返回 Cockpit 对官方命名空间模型的展示名。
+func officialAutomaticModelDisplayName(slug string) string {
+	switch strings.ToLower(strings.TrimSpace(slug)) {
+	case "gpt-6-astra":
+		return "GPT-6 Astra"
+	case "gpt-5.6-sol":
+		return "GPT-5.6 Sol"
+	case "gpt-5.6-terra":
+		return "GPT-5.6 Terra"
+	case "gpt-5.6-luna":
+		return "GPT-5.6 Luna"
+	case "gpt-5.5":
+		return "GPT-5.5"
+	case codexReserveModel:
+		return "GPT-5.6 Reserve"
+	default:
+		return ""
+	}
+}
+
+func cloneAnyList(values []any) []any {
+	cloned := make([]any, 0, len(values))
+	for _, value := range values {
+		if object, ok := value.(map[string]any); ok {
+			copyObject := make(map[string]any, len(object))
+			for key, item := range object {
+				copyObject[key] = item
+			}
+			cloned = append(cloned, copyObject)
+			continue
+		}
+		cloned = append(cloned, value)
+	}
+	return cloned
+}
+
 func intModelValueAny(value any) int {
 	switch v := value.(type) {
 	case int:
@@ -1919,15 +2036,15 @@ func displayNameForModel(model string) string {
 	case "gpt-5-codex-mini":
 		return "GPT-5 Codex Mini"
 	case "gpt-5.6-sol":
-		return "GPT-5.6-Sol"
+		return "GPT-5.6 Sol"
 	case "gpt-5.6-terra":
-		return "GPT-5.6-Terra"
+		return "GPT-5.6 Terra"
 	case "gpt-5.6-luna":
-		return "GPT-5.6-Luna"
+		return "GPT-5.6 Luna"
 	case "gpt-6-astra":
-		return "6 Astra"
+		return "GPT-6 Astra"
 	case codexReserveModel:
-		return "Luna Reserve"
+		return "GPT-5.6 Reserve"
 	case "gpt-5.5":
 		return "GPT-5.5"
 	case "gpt-5.4":
@@ -2095,9 +2212,23 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []
 	if isImageRequestKind(requestKind) {
 		return nil, model, nil
 	}
+	// 宿主内部请求（唤醒、鹈鹕测试）的模型由 Cockpit 自己选定，
+	// 必须绕过对外 API 的模型可见性与排除规则，否则关闭某个模型会连带打断唤醒任务。
+	if spec != nil && spec.Internal {
+		return nil, model, nil
+	}
+	if spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic {
+		if !automaticClientModelVisible(m, spec, model) {
+			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+		}
+		// Preserve client aliases for candidate lookup; canonicalization belongs
+		// to the selected native executor or provider route.
+		return nil, model, nil
+	}
 	if _, _, status := resolveModelRouting(spec, model); status != "none" {
-		// Keep the namespaced client model intact so the executor can route
-		// before OAuth catalog canonicalization strips the namespace.
+		if !routedClientModelAllowed(m, spec, model) {
+			return nil, model, fmt.Errorf("model %s is not available for this API key", model)
+		}
 		return nil, model, nil
 	}
 	canonical := canonicalModelForClientModel(m, spec, model)
@@ -2138,7 +2269,11 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 		return normalizeStringList(models)
 	}
 	baseModels := append([]string(nil), m.ModelIDs...)
-	hasReserve := false
+	automatic := spec != nil && spec.ModelRouting != nil && spec.ModelRouting.Automatic
+	if automatic {
+		baseModels = append([]string(nil), spec.ModelRouting.NativeModels...)
+	}
+	hasReserve := automatic
 	for _, model := range baseModels {
 		if isCodexReserveModel(model) {
 			hasReserve = true
@@ -2154,12 +2289,25 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 			if route.ProviderGateway == nil {
 				continue
 			}
+			if len(route.Models) > 0 {
+				for _, model := range route.Models {
+					// 自动混合路由下，GPT / Codex 命名空间只展示官方推荐集；
+					// 账号映射里的 shell 别名仍然可以路由，但不出现在模型列表里。
+					if automatic && isGptFamilyModelName(model.ClientModel) &&
+						!automaticListedModel(spec, model.ClientModel) {
+						continue
+					}
+					models = append(models, model.ClientModel)
+				}
+				continue
+			}
 			for _, upstreamModel := range route.ProviderGateway.UpstreamModels {
 				models = append(models, route.Namespace+"/"+upstreamModel)
 			}
 		}
 		models = normalizeStringList(models)
 	}
+	models = applyModelFilters(models, nil, m.ExcludedModels)
 	if spec != nil {
 		models = applyModelFilters(models, spec.AllowedModels, spec.ExcludedModels)
 		if strings.TrimSpace(spec.ModelPrefix) != "" {
@@ -2174,6 +2322,13 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 
 func isCodexReserveModel(model string) bool {
 	return strings.EqualFold(strings.TrimSpace(model), codexReserveModel)
+}
+
+// isGptFamilyModelName 判断模型名是否属于 GPT / Codex 官方命名空间。
+// 自动混合路由只用它收敛「展示清单」，不影响路由与请求校验。
+func isGptFamilyModelName(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "codex-")
 }
 
 func clientCatalogModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {

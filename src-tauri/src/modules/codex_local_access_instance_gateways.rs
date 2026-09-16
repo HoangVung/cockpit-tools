@@ -250,6 +250,27 @@ pub async fn restart_instance_gateway_for(instance_id: &str, kind: &str) -> Resu
     result
 }
 
+/// 网关已健康（本次不重新走接管流程）时补写 profile 级兜底。
+///
+/// 升级场景下实例可能仍在运行、网关也一直健康，此时启动自愈不会重新接管 profile，
+/// 但 DeepSeek 压缩兜底可能仍是被旧版本清掉的状态。这里按 profile 幂等补写一次；
+/// 失败只记日志，不影响网关可用性。
+fn ensure_instance_gateway_profile_overrides(target: &InstanceGatewayTarget) {
+    if target.kind != INSTANCE_GATEWAY_KIND_PROVIDER {
+        return;
+    }
+    if let Err(error) =
+        reapply_deepseek_profile_compaction_fallback(&target.profile_dir, &target.account)
+    {
+        logger::log_codex_api_warn(&format!(
+            "[CodexLocalAccess][instance-gateway] 补写 DeepSeek 压缩兜底失败: instance_id={}, profile={}, error={}",
+            target.instance_id,
+            target.profile_dir.display(),
+            error
+        ));
+    }
+}
+
 /// 取当前由本进程托管且仍然存活的 sidecar 端点（端口 + 客户端密钥）。
 ///
 /// provider gateway / 绑定 OAuth 网关的端口是每次启动随机分配的，且不写入 state.json，
@@ -418,6 +439,7 @@ pub async fn restore_instance_gateways_on_startup() {
         }
         if instance_gateway_runtime_is_healthy(&target.profile_dir, &target.runtime_id).await {
             set_instance_gateway_recovery_error(&runtime_key, None);
+            ensure_instance_gateway_profile_overrides(&target);
             continue;
         }
 

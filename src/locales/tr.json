@@ -2371,6 +2371,7 @@
       "apiKey": "Anahtar",
       "statusRunning": "Çalışıyor",
       "statusStopped": "Durduruldu",
+      "internalSchedulerLabel": "Dahili zamanlayıcı",
       "statusDisabled": "Devre dışı",
       "emptyMembers": "Koleksiyonda henüz hesap yok",
       "footerHint": "Erişim kapsamı: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Free hesapları sınırla",
         "sessionAffinityConfirmTitle": "Oturum bağlılığını aç?",
         "sessionAffinityDescription": "Açıldığında aynı konuşma mümkün olduğunca aynı hesabı kullanır. Hesap kullanılamazsa yönlendirme başka hesaba geçebilir; süre dolunca hesap yeniden seçilir.",
-        "chatApiKeyUnsupported": "Chat Completions desteklenmez",
-        "deepseekUnsupported": "DeepSeek henüz yok",
         "pendingOauthUnsupported": "Bekleyen eklenemez",
         "freeNoticeRestricted": "Free hesaplar sınırlıdır. Seçmek için bunu kapatın.",
         "freeNoticeUnstable": "Free hesap proxy'si kararsız olabilir. Dikkatli kullanın.",
@@ -2726,8 +2725,41 @@
       "desc": "~/.codex/auth.json'dan mevcut hesabı içe aktar",
       "import": "Yerel hesabı al"
     },
+    "tempLogin": {
+      "tab": "Resmî oturum",
+      "desc": "Giriş tamamen resmî masaüstü istemcide gerçekleşir: yetkilendirme adresini resmî istemci üretir, yetkilendirme geri çağrısı ve token değişimi de resmî istemci tarafından yürütülür. Cockpit yetkilendirme geri çağrısına katılmaz; yalnızca resmî istemci kimlik bilgilerini diske yazdıktan sonra okuyup içe aktarır.",
+      "note": "Geçici profil, uygulama veri dizinindeki boş bir klasördür. Hesap okunduktan sonra istemcinin çalışma dizini ve anahtarlık kaydıyla birlikte silinir; varsayılan oturum ve çoklu oturumlar etkilenmez.",
+      "start": "Resmî istemciyi aç ve oturum aç",
+      "cancel": "Oturumu iptal et",
+      "cancelling": "Resmî oturum iptal ediliyor…",
+      "waitingHint": "Oturum açmayı resmî istemcide tamamlayın. Kimlik bilgileri algılandığında istemci otomatik kapanır (en fazla 10 dakika).",
+      "cancelled": "Resmî oturum iptal edildi ve geçici profil silindi.",
+      "failed": "Resmî oturum başarısız: {{error}}",
+      "success": "Hesap alındı: {{email}}",
+      "intercept": {
+        "toggle": "Tarayıcı açılışını yakala ve yetkilendirme adresini burada göster",
+        "hint": "Etkinleştirildiğinde resmî istemcide «Devam» seçeneğine basmak artık tarayıcıyı açmaz; resmî istemcinin ürettiği yetkilendirme adresini kopyalamanız için yalnızca burada gösterir. Herhangi bir tarayıcıdan giriş yaptıktan sonra yetkilendirme geri çağrısı ve token değişimi yine resmî masaüstü istemci tarafından yürütülür; Cockpit yetkilendirmeye katılmaz. Kapatıldığında resmî akış değişmeden işler."
+      },
+      "authUrl": {
+        "label": "Yetkilendirme adresi (resmî istemci üretir)",
+        "open": "Varsayılan tarayıcıda aç",
+        "openFailed": "Yetkilendirme adresi açılamadı: {{error}}",
+        "hint": "Adres resmî istemciden gelir ve yalnızca bu bilgisayardaki bir tarayıcıda açılır. Oturum açma bitene kadar resmî pencereyi kapatmayın.",
+        "unavailable": "Cockpit bu kez yetkilendirme adresini yakalayamadı. Resmî istemci tarayıcıyı her zamanki gibi açacak; oradan giriş yapabilirsiniz."
+      },
+      "phase": {
+        "prepare": "Geçici profili hazırla",
+        "launch": "Resmî istemciyi aç",
+        "wait": "Oturumu bekle",
+        "import": "Kimlik bilgilerini oku",
+        "close": "Resmî istemciyi kapat",
+        "clean": "Geçici profili sil"
+      }
+    },
     "import": {
       "localDesc": "Yerelde oturum açılmış oturumlardan Codex hesaplarını içe aktar.",
+      "localInstanceTitle": "Oturum seçin",
+      "localInstanceDesc": "Birden fazla Codex oturumu bulundu. Yerel hesabın hangi oturumdan alınacağını seçin:",
       "importing": "Yerel hesap içe aktarılıyor...",
       "successMsg": "İçe aktarma başarılı: {{email}}"
     },

@@ -530,6 +530,9 @@ pub fn run() {
 
             modules::provider_token_keeper::ensure_started(app.handle().clone());
             modules::auto_local_import::ensure_started(app.handle().clone());
+            // 官方客户端临时登录会留下一次性 profile，成功/失败/取消都会清理；
+            // 这里额外启动巡检，兜住异常退出后残留的临时目录与钥匙串条目。
+            modules::codex_temp_login::ensure_cleanup_loop_started();
 
             // Wakeup restore/start and Deep Link registration/read can hit disk or OS
             // APIs — never block setup (window + skeleton tray first).
@@ -1020,6 +1023,10 @@ pub fn run() {
             commands::codex::clear_codex_batch_delete,
             commands::codex::import_codex_access_token_account,
             commands::codex::import_codex_from_local,
+            commands::codex::start_codex_temp_login,
+            commands::codex::cancel_codex_temp_login,
+            commands::codex::open_codex_temp_login_auth_url,
+            commands::codex::cleanup_codex_temp_login_artifacts,
             commands::codex::import_codex_from_json,
             commands::codex::export_codex_accounts,
             commands::codex::import_codex_from_files,

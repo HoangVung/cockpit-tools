@@ -342,6 +342,74 @@
     }
 
     #[test]
+    fn deepseek_profile_overrides_reapply_after_gateway_takeover() {
+        let base_dir = make_temp_dir("codex-deepseek-gateway-fallback");
+        // 接管流程还没写入 profile 配置时不生成残缺配置。
+        assert!(!super::reapply_deepseek_config_overrides_for_dir(&base_dir).expect("skip missing"));
+        assert!(!super::get_config_toml_path(&base_dir).exists());
+
+        let config_path = super::get_config_toml_path(&base_dir);
+        // 模拟实例网关接管后的 profile：网关运行账号 + 已被接管流程清掉的 DeepSeek 兜底。
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &config_path,
+            "model = \"gpt-5.6-sol\"\n\n[features]\njs_repl = false\n\n[model_providers.codex_local_access]\nname = \"OpenAI\"\n",
+        )
+        .expect("write config");
+
+        assert!(super::reapply_deepseek_config_overrides_for_dir(&base_dir).expect("reapply"));
+        let applied = fs::read_to_string(&config_path).expect("read config");
+        assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(applied.contains("token_budget = true"));
+        assert!(applied.contains("js_repl = false"));
+        assert!(applied.contains("name = \"OpenAI\""));
+        assert!(base_dir.join(super::DEEPSEEK_COMPACTION_BACKUP_FILE).exists());
+
+        // 已经补写过时不重复改写。
+        assert!(!super::reapply_deepseek_config_overrides_for_dir(&base_dir).expect("idempotent"));
+
+        // 切走时仍按备份还原：兜底键被清掉，用户原有设置保留。
+        let mut doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(&applied)
+            .expect("parse config");
+        assert!(super::restore_deepseek_config_overrides(&mut doc, &base_dir));
+        let restored = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
+        assert!(!restored.contains("remote_compaction_v2"));
+        assert!(!restored.contains("token_budget"));
+        assert!(restored.contains("js_repl = false"));
+        assert!(restored.contains("name = \"OpenAI\""));
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn local_compaction_fallback_forwards_profile_and_is_idempotent() {
+        let base_dir = make_temp_dir("codex-local-compaction-fallback");
+        // 接管还没写入 profile 配置时跳过，避免生成没有 provider 的残缺配置。
+        assert!(!super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("skip missing"));
+
+        let config_path = super::get_config_toml_path(&base_dir);
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &config_path,
+            "model = \"gpt-5.6-sol\"\nservice_tier = \"priority\"\nweb_search = \"live\"\n\n[features]\njs_repl = false\n\n[model_providers.codex_local_access]\nname = \"OpenAI\"\n",
+        )
+        .expect("write config");
+
+        assert!(super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("apply"));
+        let applied = fs::read_to_string(&config_path).expect("read config");
+        assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(applied.contains("token_budget = true"));
+        // 只动压缩键：账号池里的官方账号仍要保留 service_tier / web_search 等原有设置。
+        assert!(applied.contains("service_tier = \"priority\""));
+        assert!(applied.contains("web_search = \"live\""));
+        assert!(!applied.contains("web_search = \"disabled\""));
+
+        assert!(!super::ensure_local_compaction_fallback_for_dir(&base_dir).expect("idempotent"));
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("read config"),
+            applied
+        );
+        fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
     fn deepseek_overrides_disable_web_search_and_clean_conflict_keys() {
         let base_dir = make_temp_dir("codex-deepseek-config-overrides");
         let mut doc = crate::modules::codex_config_format::read_codex_config_doc_from_str(

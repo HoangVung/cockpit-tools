@@ -643,7 +643,8 @@
         cleanup_provider_gateway_profile_model_overrides, codex_price,
         collect_local_access_profile_takeover_dirs_from_store, compare_routing_candidates,
         count_request_logs_for_model_ids, default_codex_model_ids, effective_api_key_account_ids,
-        empty_stats_snapshot, extract_usage_capture, filter_bound_oauth_quota_reserve_account,
+        empty_stats_snapshot, ensure_local_compaction_for_account_pool, extract_usage_capture,
+        filter_bound_oauth_quota_reserve_account,
         filter_websocket_client_message, insert_local_access_usage_event,
         load_stats_windows_and_recent_events_from_conn,
         inspect_local_access_profile_attachment, inspect_local_access_profile_config,
@@ -658,19 +659,22 @@
         merge_collection_and_account_excluded_models, model_pricing,
         model_provider_direct_test_client_model, model_provider_test_uses_provider_gateway,
         normalize_account_id_list, normalize_account_model_rules, normalize_collection_api_keys,
-        normalize_custom_routing_rules, normalized_sidecar_error_category,
+        normalize_custom_routing_rules, new_empty_local_access_collection,
+        normalized_sidecar_error_category,
         open_local_access_logs_db_once, parse_codex_retry_after,
         parse_responses_payload_from_upstream, parse_websocket_upstream_error,
         pin_account_to_front_for_strategy, prepare_gateway_request,
         prepare_gateway_request_with_default_service_tier, prepare_sidecar_launch_config_in_dir,
         prepare_websocket_initial_request, profile_api_key_supports_websockets,
+        profile_config_path,
         profile_base_url_matches, provider_gateway_api_key_id,
         provider_gateway_bound_oauth_account_id_for_account,
         provider_gateway_default_model_for_account,
         provider_gateway_image_generation_mode_for_account, provider_gateway_model_slots,
         provider_gateway_models_for_account, provider_model_slots_need_upstream_rewrite,
         read_http_request, read_request_log_reprice_batch, recompute_time_windows,
-        recover_invalid_stats_file, remove_account_refs_from_collection,
+        reapply_deepseek_profile_compaction_fallback, recover_invalid_stats_file,
+        remove_account_refs_from_collection,
         remove_codex_local_access_config, reprice_request_logs_for_collection,
         request_image_generation_mode, request_logs_has_column, request_ordered_account_ids,
         resolve_collection_api_key, resolve_effective_model_pricing, resolve_plan_rank,
@@ -1625,6 +1629,141 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
 
         account.api_instance_access_mode = Some("cdp".to_string());
         assert!(!account_requires_provider_gateway(&account));
+    }
+
+    #[test]
+    fn account_pool_with_deepseek_switches_profile_to_local_compaction() {
+        let deepseek_gateway = CodexLocalAccessProviderGateway {
+            base_url: "https://api.deepseek.com/v1".to_string(),
+            api_key: "sk-deepseek".to_string(),
+            upstream_model: "deepseek-v4-pro".to_string(),
+            upstream_models: vec!["deepseek-v4-pro".to_string()],
+            wire_api: Some("chat_completions".to_string()),
+            supports_vision: false,
+            model_capabilities: HashMap::new(),
+            vision_routing_model: None,
+        };
+        let mut key = CodexLocalAccessApiKey {
+            id: "provider_gateway_deepseek".to_string(),
+            label: "Provider Gateway: deepseek".to_string(),
+            key: "agt_test".to_string(),
+            provider_gateway: Some(deepseek_gateway.clone()),
+            model_routing: None,
+            inherit_account_pool: Some(false),
+            account_ids: Vec::new(),
+            priority_account_ids: Vec::new(),
+            preferred_account_id: None,
+            model_prefix: None,
+            allowed_models: Vec::new(),
+            excluded_models: Vec::new(),
+            token_limit: None,
+            token_used: 0,
+            enabled: true,
+            created_at: 0,
+            updated_at: 0,
+            last_used_at: None,
+        };
+        let mut collection = new_empty_local_access_collection().expect("collection");
+        collection.enabled = true;
+        collection.api_keys = vec![key.clone()];
+        assert!(super::collection_pool_contains_official_deepseek_account(&collection));
+
+        // 上游不是 DeepSeek 时不改动 profile。
+        key.provider_gateway = Some(CodexLocalAccessProviderGateway {
+            base_url: "https://token-plan-cn.xiaomimimo.com/v1".to_string(),
+            ..deepseek_gateway.clone()
+        });
+        let mut other_collection = new_empty_local_access_collection().expect("collection");
+        other_collection.enabled = true;
+        other_collection.api_keys = vec![key.clone()];
+        assert!(!super::collection_pool_contains_official_deepseek_account(&other_collection));
+
+        let profile_dir = make_temp_dir("codex-pool-local-compaction");
+        let config_path = profile_config_path(&profile_dir);
+        let original = "model = \"gpt-5.6-sol\"\nservice_tier = \"priority\"\n\n[features]\njs_repl = false\n";
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &config_path,
+            original,
+        )
+        .expect("write profile config");
+
+        ensure_local_compaction_for_account_pool(&profile_dir, &other_collection)
+            .expect("skip non-deepseek pool");
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("read profile config"),
+            original
+        );
+
+        ensure_local_compaction_for_account_pool(&profile_dir, &collection)
+            .expect("apply deepseek pool fallback");
+        let applied = fs::read_to_string(&config_path).expect("read profile config");
+        assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(applied.contains("token_budget = true"));
+        assert!(applied.contains("js_repl = false"));
+        // 混合账号池只动压缩键，官方账号的 service_tier 必须保留。
+        assert!(applied.contains("service_tier = \"priority\""));
+
+        fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn deepseek_provider_gateway_profile_keeps_local_compaction_fallback() {
+        let profile_dir = make_temp_dir("codex-deepseek-gateway-compaction");
+        let config_path = profile_config_path(&profile_dir);
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &config_path,
+            "model = \"gpt-5.6-sol\"\n\n[features]\njs_repl = false\n\n[model_providers.codex_local_access]\nname = \"OpenAI\"\n",
+        )
+        .expect("write profile config");
+
+        let mut deepseek = CodexAccount::new_api_key(
+            "local-account-id".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-test".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            vec!["deepseek-v4-flash".to_string()],
+        );
+        deepseek.api_wire_api = Some("responses".to_string());
+        deepseek.api_sync_model_catalog_to_codex = true;
+
+        reapply_deepseek_profile_compaction_fallback(&profile_dir, &deepseek)
+            .expect("reapply deepseek fallback");
+        let applied = fs::read_to_string(&config_path).expect("read profile config");
+        assert!(applied.contains("remote_compaction_v2 = false"));
+        assert!(applied.contains("token_budget = true"));
+        assert!(applied.contains("js_repl = false"));
+
+        // 其它供应商的网关 profile 不做任何改写。
+        let other_dir = make_temp_dir("codex-generic-gateway-compaction");
+        let other_config_path = profile_config_path(&other_dir);
+        let original = "model = \"gpt-5.6-sol\"\n\n[features]\njs_repl = false\n";
+        crate::modules::codex_config_format::write_codex_config_toml_atomic(
+            &other_config_path,
+            original,
+        )
+        .expect("write other profile config");
+        let other = CodexAccount::new_api_key(
+            "other-account-id".to_string(),
+            "other@example.com".to_string(),
+            "sk-other".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.moonshot.cn/v1".to_string()),
+            Some("moonshot".to_string()),
+            Some("Moonshot".to_string()),
+            vec!["kimi-k2".to_string()],
+        );
+        reapply_deepseek_profile_compaction_fallback(&other_dir, &other)
+            .expect("skip non-deepseek fallback");
+        assert_eq!(
+            fs::read_to_string(&other_config_path).expect("read other profile config"),
+            original
+        );
+
+        fs::remove_dir_all(&profile_dir).expect("cleanup temp dir");
+        fs::remove_dir_all(&other_dir).expect("cleanup temp dir");
     }
 
     #[test]
@@ -3230,11 +3369,15 @@ http_headers = { "x-cockpit-instance-id" = "default" }
             vec![
                 existing.id.clone(),
                 "preserved".to_string(),
-                "added".to_string()
+                "added".to_string(),
+                "chat".to_string()
             ]
         );
-        assert_eq!(synced_ids, vec![existing.id, "added".to_string()]);
-        assert_eq!(added_ids, vec!["added".to_string()]);
+        assert_eq!(
+            synced_ids,
+            vec![existing.id, "added".to_string(), "chat".to_string()]
+        );
+        assert_eq!(added_ids, vec!["added".to_string(), "chat".to_string()]);
         assert_eq!(
             skipped
                 .iter()
@@ -3242,7 +3385,6 @@ http_headers = { "x-cockpit-instance-id" = "default" }
                 .collect::<Vec<_>>(),
             vec![
                 (free.id.as_str(), "free_restricted"),
-                ("chat", "chat_completions_api_key"),
                 ("missing", "not_found"),
             ]
         );

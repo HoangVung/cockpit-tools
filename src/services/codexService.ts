@@ -316,8 +316,16 @@ export async function importCodexAccessTokenAccount(
   });
 }
 
-export async function importCodexFromLocal(): Promise<CodexAccount> {
-  return await invoke('import_codex_from_local');
+/**
+ * 从官方 Codex 本机凭据存储导入账号。
+ *
+ * `instanceId` 省略或为 `null` 时读取默认实例；传入多开实例 ID 时读取该实例的
+ * profile 目录（官方客户端按 `CODEX_HOME` 分别落盘凭据）。
+ */
+export async function importCodexFromLocal(
+  instanceId?: string | null,
+): Promise<CodexAccount> {
+  return await invoke('import_codex_from_local', { instanceId: instanceId ?? null });
 }
 
 /** 从 JSON 字符串导入账号 */

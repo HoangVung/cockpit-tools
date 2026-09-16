@@ -2371,6 +2371,7 @@
       "apiKey": "Chave",
       "statusRunning": "Em execução",
       "statusStopped": "Parado",
+      "internalSchedulerLabel": "Agendador interno",
       "statusDisabled": "Desativado",
       "emptyMembers": "Não há contas na coleção",
       "footerHint": "Escopo de acesso: {{scope}}",
@@ -2401,8 +2402,6 @@
         "restrictFreeToggle": "Limitar contas Free",
         "sessionAffinityConfirmTitle": "Ativar afinidade de sessão?",
         "sessionAffinityDescription": "Ao ativar, a mesma conversa tentará continuar usando a mesma conta. Se ela estiver indisponível, o roteamento poderá trocar; após a expiração, uma conta será escolhida novamente.",
-        "chatApiKeyUnsupported": "Chat Completions sem suporte",
-        "deepseekUnsupported": "DeepSeek ainda não",
         "pendingOauthUnsupported": "Auth pendente excluída",
         "freeNoticeRestricted": "Contas Free são limitadas. Desative isso para selecioná-las.",
         "freeNoticeUnstable": "O proxy de contas Free pode ser instável. Use com cautela.",
@@ -2726,8 +2725,41 @@
       "desc": "Importe a conta atual de ~/.codex/auth.json",
       "import": "Obter conta local"
     },
+    "tempLogin": {
+      "tab": "Login oficial",
+      "desc": "O login acontece inteiramente no cliente de desktop oficial: a URL de autorização é gerada pelo cliente oficial, e o callback de autorização e a troca de token também são tratados pelo cliente oficial. O Cockpit não participa do callback de autorização: apenas lê e importa as credenciais depois que o cliente oficial as grava em disco.",
+      "note": "O perfil temporário é uma pasta vazia no diretório de dados do aplicativo. Depois de ler a conta, ele é excluído junto com o diretório de execução do cliente e a entrada do chaveiro; a instância padrão e as instâncias múltiplas não são afetadas.",
+      "start": "Abrir o cliente oficial e entrar",
+      "cancel": "Cancelar login",
+      "cancelling": "Cancelando o login oficial…",
+      "waitingHint": "Conclua o login no cliente oficial. Ele fecha automaticamente quando as credenciais são detectadas (até 10 minutos).",
+      "cancelled": "Login oficial cancelado e perfil temporário removido.",
+      "failed": "Falha no login oficial: {{error}}",
+      "success": "Conta obtida: {{email}}",
+      "intercept": {
+        "toggle": "Interceptar a abertura do navegador e mostrar a URL de autorização aqui",
+        "hint": "Quando ativado, clicar em “Continuar” no cliente oficial não abre mais o navegador: apenas mostra aqui a URL de autorização gerada pelo cliente oficial para copiar. Após entrar por qualquer navegador, o callback de autorização e a troca de token continuam sendo feitos pelo cliente de desktop oficial; o Cockpit não participa da autorização. Quando desativado, o fluxo oficial segue inalterado."
+      },
+      "authUrl": {
+        "label": "URL de autorização (gerada pelo cliente oficial)",
+        "open": "Abrir no navegador padrão",
+        "openFailed": "Não foi possível abrir a URL de autorização: {{error}}",
+        "hint": "A URL vem do cliente oficial e só funciona em um navegador deste computador. Mantenha a janela oficial aberta até concluir o login.",
+        "unavailable": "Desta vez o Cockpit não conseguiu capturar a URL de autorização. O cliente oficial abrirá o navegador como sempre; entre por lá."
+      },
+      "phase": {
+        "prepare": "Preparar o perfil temporário",
+        "launch": "Abrir o cliente oficial",
+        "wait": "Aguardar o login",
+        "import": "Ler as credenciais",
+        "close": "Fechar o cliente oficial",
+        "clean": "Remover o perfil temporário"
+      }
+    },
     "import": {
       "localDesc": "Importar contas Codex de sessões locais conectadas.",
+      "localInstanceTitle": "Selecionar instância",
+      "localInstanceDesc": "Várias instâncias do Codex foram encontradas. Escolha de qual instância importar a conta local:",
       "importing": "Importando conta local...",
       "successMsg": "Importação bem-sucedida: {{email}}"
     },
