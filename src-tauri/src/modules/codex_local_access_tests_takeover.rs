@@ -242,7 +242,7 @@
         let config =
             fs::read_to_string(profile_dir.join(CODEX_PROFILE_CONFIG_FILE)).expect("read config");
         assert!(config.contains("model_provider = \"codex_local_access\""));
-        assert!(config.contains("name = \"OpenAI\""));
+        assert!(config.contains("name = \"Codex API Service\""));
         assert!(config.contains("requires_openai_auth = false"));
         assert!(config.contains(CODEX_IMAGEGEN_ACTOR_HEADER));
         assert!(config.contains(CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER));
@@ -594,9 +594,12 @@
 
         let config_path = profile_dir.join(CODEX_PROFILE_CONFIG_FILE);
         let config = fs::read_to_string(&config_path).expect("read config");
+        // 历史版本曾把托管 provider 显示名写成 `OpenAI`，那会让客户端误判上游支持远端压缩；
+        // 这里模拟这种旧 profile，确认启动自愈会把它改回受管名字。
+        assert!(config.contains("name = \"Codex API Service\""));
         fs::write(
             &config_path,
-            config.replace("name = \"OpenAI\"", "name = \"Codex API Service\""),
+            config.replace("name = \"Codex API Service\"", "name = \"OpenAI\""),
         )
         .expect("write legacy provider name");
 
@@ -613,8 +616,8 @@
         ));
 
         let repaired_config = fs::read_to_string(&config_path).expect("read repaired config");
-        assert!(repaired_config.contains("name = \"OpenAI\""));
-        assert!(!repaired_config.contains("name = \"Codex API Service\""));
+        assert!(repaired_config.contains("name = \"Codex API Service\""));
+        assert!(!repaired_config.contains("name = \"OpenAI\""));
         fs::remove_dir_all(profile_dir).expect("cleanup temp dir");
     }
 

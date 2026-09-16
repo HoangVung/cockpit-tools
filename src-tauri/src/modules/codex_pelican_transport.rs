@@ -348,7 +348,9 @@ async fn pelican_chat_inner(
     {
         headers.insert("x-openai-fedramp".into(), "true".into());
     }
-    let target = resolve_upstream_target(RESPONSES_PATH)?;
+    // 内部请求走 API 服务 sidecar 的对外路由，路径必须保留 `/v1` 前缀，
+    // 不能像直连上游那样裁剪成 `/responses`。
+    let target = RESPONSES_PATH;
     let response = timeout(
         PELICAN_IDLE_TIMEOUT,
         send_internal_api_service_request(

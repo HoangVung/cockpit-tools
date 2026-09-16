@@ -144,3 +144,36 @@ async fn internal_requests_serialize_per_account() {
     .await;
     assert!(released.is_ok(), "请求结束后必须释放账号闸门");
 }
+
+/// 内部请求必须落在 sidecar 真正注册的 `/v1/*` 路由上。
+///
+/// 回归背景：内部请求一度把客户端路径先解析成上游路径（`/v1/responses` → `/responses`），
+/// 唤醒返回 404 `endpoint not supported`，鹈鹕测试则在本地解析阶段直接报
+/// 「仅支持 /v1 或 /backend-api/codex 路径」。
+#[test]
+fn internal_requests_use_api_service_public_paths() {
+    assert_eq!(
+        super::resolve_internal_api_service_target(super::RESPONSES_PATH)
+            .expect("responses path resolves"),
+        "/v1/responses"
+    );
+    assert_eq!(
+        super::resolve_internal_api_service_target(super::RESPONSES_COMPACT_PATH)
+            .expect("compact path resolves"),
+        "/v1/responses/compact"
+    );
+    assert_eq!(
+        super::resolve_internal_api_service_target("/backend-api/codex/responses")
+            .expect("backend codex path resolves"),
+        "/v1/responses"
+    );
+    assert_eq!(
+        super::resolve_internal_api_service_target("/v1/responses?debug=1")
+            .expect("query string is preserved"),
+        "/v1/responses?debug=1"
+    );
+    assert!(
+        super::resolve_internal_api_service_target("/responses").is_err(),
+        "上游路径不能再进入内部请求，避免退化成 sidecar 404"
+    );
+}

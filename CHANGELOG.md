@@ -7,6 +7,13 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [1.3.55] - 2026-09-16
+
+### Fixed
+
+- **Fixed context compaction failing for DeepSeek accounts behind an instance gateway or the API Service**: starting with 1.3.53 the managed provider was written with the name `OpenAI`, so the client treated the upstream as official and sent compaction to DeepSeek, which does not support it — compaction always failed and the conversation could not continue, showing an error where compaction happens. The name is no longer `OpenAI`, so DeepSeek and other third-party upstreams use local compaction again, matching 1.3.51 and 1.3.52; configurations that already carry the old name are corrected automatically on the next start, and no rebinding is needed. Accordingly, official accounts behind the local gateway or the API Service use local compaction as they did in 1.3.52.
+- **Fixed wakeups and Pelican tests failing after they were routed through the API Service**: starting with 1.3.54 scheduled and manual wakeups and Pelican test runs are handled by the same local API Service process, but the internal request still applied the direct-upstream path handling and turned the client path (`/v1/responses`) into the upstream path (`/responses`) before sending it to the service. The service only registers `/v1/*` routes, so wakeups ended in a 404 `endpoint not supported` and Pelican tests failed one step earlier, locally, with "only /v1 or /backend-api/codex paths are supported". Internal requests now keep the API Service's public path, so wakeups and Pelican tests work again while still sharing the service's account selection, token refresh, concurrency and quota-cooldown scheduling.
+
 ## [1.3.54] - 2026-09-16
 
 ### Added

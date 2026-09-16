@@ -164,7 +164,7 @@ async fn send_internal_api_service_request(
         return Err("Codex API 内部请求缺少目标账号".to_string());
     }
     register_internal_api_account(account_id)?;
-    let target = resolve_upstream_target(target)?;
+    let target = resolve_internal_api_service_target(target)?;
     ensure_runtime_loaded_without_start().await?;
     ensure_gateway_matches_runtime().await?;
 
@@ -211,6 +211,20 @@ async fn send_internal_api_service_request(
         .send()
         .await
         .map_err(|error| format!("连接 API 服务 sidecar 失败: {}", error))
+}
+
+/// 宿主内部请求打到 API 服务 sidecar 时使用的路径。
+///
+/// 内部请求的输入仍是客户端路径形态（`/v1/*` 或 `/backend-api/codex/*`），但必须还原成
+/// sidecar 的对外路由路径：sidecar 只注册了 `/v1/*`（例如 `/v1/responses`），
+/// 直接拿上游路径 `/responses` 去请求只会命中 404 `endpoint not supported`，
+/// 唤醒与鹈鹕测试都会因此不可用。
+fn resolve_internal_api_service_target(target: &str) -> Result<String, String> {
+    let upstream_path = resolve_upstream_target(target)?;
+    Ok(match upstream_path.as_str() {
+        "/" => "/v1".to_string(),
+        _ => format!("/v1{}", upstream_path),
+    })
 }
 
 #[cfg(test)]
@@ -279,7 +293,13 @@ const CODEX_LOCAL_ACCESS_API_PORT_ENV: &str = "COCKPIT_TOOLS_API_PORT";
 const CODEX_LOCAL_ACCESS_DEV_DEFAULT_PORT: u16 = 1456;
 const CODEX_LOCAL_ACCESS_TAKEOVER_BACKUP_VERSION: u32 = 1;
 const CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID: &str = "codex_local_access";
-const CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_NAME: &str = "OpenAI";
+/// 托管 profile 写入的 provider 显示名。
+///
+/// 客户端只用它判断压缩能力：`ModelProviderInfo::is_openai()` 要求名字**恰好等于**
+/// `OpenAI` 才把 `remote_compaction` 判定为 V2（走 `/responses/compact`），其它名字一律
+/// 走本地压缩。本地 API 服务的上游可能是 DeepSeek / Chat Completions 等没有服务端压缩
+/// 的实现，所以这里必须保持非 `OpenAI` 的名字，避免远程压缩被错误启用。
+const CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_NAME: &str = "Codex API Service";
 const CODEX_LOCAL_ACCESS_RUNTIME_ACCOUNT_ID: &str = "codex_local_access_runtime";
 const CODEX_IMAGEGEN_ACTOR_HEADER: &str = "x-openai-actor-authorization";
 const CODEX_LOCAL_ACCESS_DISABLE_HOSTED_IMAGE_GENERATION_HEADER: &str =

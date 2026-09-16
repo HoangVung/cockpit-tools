@@ -3743,7 +3743,10 @@ http_headers = { "x-cockpit-instance-id" = "default" }
         );
         assert!(account.api_supports_websockets);
         assert_eq!(account.api_wire_api.as_deref(), Some("responses"));
-        assert_eq!(account.api_provider_name.as_deref(), Some("OpenAI"));
+        assert_eq!(
+            account.api_provider_name.as_deref(),
+            Some("Codex API Service")
+        );
         assert_eq!(
             account.api_provider_id.as_deref(),
             Some(CODEX_LOCAL_ACCESS_RUNTIME_PROVIDER_ID)
