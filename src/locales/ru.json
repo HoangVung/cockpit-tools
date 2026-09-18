@@ -364,7 +364,11 @@
     "deleteTagWarning": "Вы уверены, что хотите удалить этот тег со всех аккаунтов?",
     "expand": "Развернуть",
     "processing": "Обработка...",
-    "selectAll": "Выбрать всё"
+    "selectAll": "Выбрать всё",
+    "clear": "Очистить",
+    "unknown": "Неизвестно",
+    "syncing": "Синхронизация...",
+    "clearAll": "Очистить все"
   },
   "nav": {
     "overview": "Antigravity IDE​",
@@ -1067,7 +1071,17 @@
       "menuBarAccountPrefixDesc": "Только обычные аккаунты: выкл. скрывает префикс почты. API-сервис Codex / API Key по-прежнему показывают API",
       "menuBarQuotaConfirmEnable": "Включить",
       "codexHideRelayQuota": "Скрыть квоту ретранслятора",
-      "codexHideRelayQuotaDesc": "Скрывает панели квоты ретранслятора / New API в обзоре аккаунтов Codex."
+      "codexHideRelayQuotaDesc": "Скрывает панели квоты ретранслятора / New API в обзоре аккаунтов Codex.",
+      "accountLevelRefreshTitle": "Настройка обновления на уровне аккаунта",
+      "accountLevelRefreshDesc": "Задайте разные интервалы автообновления для отдельных аккаунтов, переопределяя значения по умолчанию для платформы.",
+      "accountLevelRefreshSummary": "Развернуть конфигурацию",
+      "accountLevelRefreshSummaryActive": "Настроено аккаунтов: {{count}}",
+      "accountLevelRefreshInherit": "Наследовать настройки платформы",
+      "accountLevelRefreshDisabled": "Отключено",
+      "codexAutoRestoreTakeoverOnLaunch": "Автоматически восстанавливать перехват прокси Codex при запуске",
+      "codexAutoRestoreTakeoverOnLaunchDesc": "Автоматически восстанавливает видимые модели и перехват прокси при запуске инструмента, сохраняя контекст 1M без ручного переключения.",
+      "errorReporting": "Телеметрическая диагностика",
+      "errorReportingDesc": "Включено по умолчанию, используется только для диагностики проблем при запуске и интерфейсе; при отключении события не отправляются. Данные обезличиваются перед отправкой; пароли, токены, ключи 2FA и телефоны не передаются."
     },
     "network": {
       "apiTitle": "API антигравитационной кабины",
@@ -1381,7 +1395,8 @@
       "windowsApp": "Приложение Microsoft Store",
       "defaultOnly": "Только для стандартного рабочего стола; для нескольких экземпляров выберите реальный Claude.exe.",
       "claudeScanEmpty": "Цель Claude Desktop не найдена. Выберите Claude.exe вручную или измените области сканирования.",
-      "claudeTargetPlaceholder": "Путь Claude.exe или shell:AppsFolder\\..."
+      "claudeTargetPlaceholder": "Путь Claude.exe или shell:AppsFolder\\...",
+      "scanEmptyGeneric": "Запущенное приложение {{app}} не обнаружено. Сначала запустите приложение и повторите попытку или выберите путь вручную."
     },
     "modal": {
       "desc": "Путь приложения {{app}} не найден. Настройте его сейчас для продолжения."
@@ -1391,7 +1406,9 @@
     "title": "Управление аккаунтами",
     "subtitle": "Управляйте списком ваших аккаунтов Antigravity IDE.",
     "total": "Аккаунтов: {{count}}",
-    "search": "Поиск аккаунтов...",
+    "search": {
+      "placeholder": "Поиск аккаунтов..."
+    },
     "addAccount": "Добавить аккаунт",
     "refreshAll": "Обновить все",
     "export": "Экспорт",
@@ -3426,7 +3443,10 @@
         "fetchCredentialsRequired": "Сначала укажите API Key и Base URL.",
         "fetchEmpty": "Поставщик не вернул модели. Текущий список сохранён.",
         "fetchFailed": "Не удалось получить модели поставщика: {{error}}",
-        "syncRequiresModels": "Перед синхронизацией с Codex получите или укажите хотя бы одну модель."
+        "syncRequiresModels": "Перед синхронизацией с Codex получите или укажите хотя бы одну модель.",
+        "contextWindowInvalid": "Окно контекста должно быть целым числом больше 0",
+        "contextWindowPlaceholder": "Пусто = По умолчанию",
+        "restartHint": "Каталог моделей обновлен. Если Codex запущен, перезапустите его для применения изменений."
       },
       "actions": {
         "addAndSwitch": "Добавить и переключить"
@@ -4525,6 +4545,11 @@
       "stopConfirmDescription": "Остановка шлюза смешанной маршрутизации также отключает смешанную маршрутизацию этого экземпляра (настройки каналов сохраняются); остальные шлюзы можно запустить кнопкой «Перезапустить».",
       "stopFailed": "Не удалось остановить шлюз: {{error}}",
       "restartFailed": "Не удалось перезапустить шлюз: {{error}}"
+    },
+    "cli": {
+      "quickLaunch": "Быстрый запуск CLI",
+      "selectWorkingDir": "Выберите рабочий каталог Codex CLI",
+      "launchSuccess": "Codex CLI запущен"
     }
   },
   "githubCopilot": {
@@ -5466,6 +5491,12 @@
       "desc": "Локальные файлы сессий — Локальное сканирование и открытие папки.",
       "empty": "Файлы сессий не найдены",
       "open": "Открыть папку"
+    },
+    "quotaCategory": {
+      "base": "Базовый пакет",
+      "activity": "Промо-пакет",
+      "extra": "Дополнительный пакет",
+      "other": "Другое"
     }
   },
   "qoder": {
@@ -6172,7 +6203,8 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Настройки APIKEY.FUN заполнены. Подтвердите добавление в Claude."
+      "claudeDesktopReady": "Настройки APIKEY.FUN заполнены. Подтвердите добавление в Claude.",
+      "codexReady": "Конфигурация APIKEY.FUN импортирована. Подтвердите и добавьте в Codex."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -6546,5 +6578,14 @@
   "opencode": {
     "title": "OpenCode",
     "desc": "Управление ключами OpenCode Go/Zen и фильтр по tier."
+  },
+  "sessionManager": {
+    "time": {
+      "unknown": "Время неизвестно",
+      "minutesAgo": "{{count}} мин. назад",
+      "hoursAgo": "{{count}} ч. назад",
+      "daysAgo": "{{count}} дн. назад",
+      "weeksAgo": "{{count}} нед. назад"
+    }
   }
 }

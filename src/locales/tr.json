@@ -364,7 +364,11 @@
     "deleteTagWarning": "Bu etiketi tüm hesaplardan silmek istediğinizden emin misiniz?",
     "expand": "Genişlet",
     "processing": "İşleniyor...",
-    "selectAll": "Tümünü Seç"
+    "selectAll": "Tümünü Seç",
+    "clear": "Temizle",
+    "unknown": "Bilinmiyor",
+    "syncing": "Eşitleniyor...",
+    "clearAll": "Tümünü temizle"
   },
   "nav": {
     "overview": "Antigravity IDE​",
@@ -1067,7 +1071,17 @@
       "menuBarAccountPrefixDesc": "Yalnızca normal hesaplar: kapalı e-posta önekini gizler. Codex API hizmeti / API Key yine API etiketini gösterir",
       "menuBarQuotaConfirmEnable": "Etkinleştir",
       "codexHideRelayQuota": "Relay kotasını gizle",
-      "codexHideRelayQuotaDesc": "Codex hesap özetinde relay / New API kota panellerini gizler."
+      "codexHideRelayQuotaDesc": "Codex hesap özetinde relay / New API kota panellerini gizler.",
+      "accountLevelRefreshTitle": "Hesap düzeyinde yenileme yapılandırması",
+      "accountLevelRefreshDesc": "Farklı hesaplar için farklı otomatik yenileme aralıkları ayarlayarak platform düzeyindeki varsayılan değerleri geçersiz kılın.",
+      "accountLevelRefreshSummary": "Yapılandırmayı genişlet",
+      "accountLevelRefreshSummaryActive": "{{count}} hesap yapılandırıldı",
+      "accountLevelRefreshInherit": "Platform ayarlarını devral",
+      "accountLevelRefreshDisabled": "Devre dışı",
+      "codexAutoRestoreTakeoverOnLaunch": "Başlangıçta Codex proxy devralmasını otomatik geri yükle",
+      "codexAutoRestoreTakeoverOnLaunchDesc": "Araç başlatıldığında önceki görünür modelleri ve proxy devralmasını otomatik olarak geri yükler, manuel geçiş olmadan 1M bağlamı korur.",
+      "errorReporting": "Telemetri tanılaması",
+      "errorReportingDesc": "Varsayılan olarak etkindir, yalnızca başlangıç ve kullanıcı arayüzü sorunlarını teşhis etmek için kullanılır; devre dışıyken olay gönderilmez. Gönderimden önce veriler temizlenir; şifreler, belirteçler, 2FA anahtarları veya telefon numaraları asla yüklenmez."
     },
     "network": {
       "apiTitle": "Yerçekimine Karşı Kokpit API'si",
@@ -1381,7 +1395,8 @@
       "windowsApp": "Microsoft Store uygulaması",
       "defaultOnly": "Yalnızca varsayılan masaüstü; çoklu örnekler için gerçek Claude.exe seçin.",
       "claudeScanEmpty": "Claude Desktop hedefi bulunamadı. Claude.exe dosyasını elle seçin veya tarama kapsamını değiştirin.",
-      "claudeTargetPlaceholder": "Claude.exe yolu veya shell:AppsFolder\\..."
+      "claudeTargetPlaceholder": "Claude.exe yolu veya shell:AppsFolder\\...",
+      "scanEmptyGeneric": "Çalışan {{app}} algılanamadı. Lütfen önce uygulamayı başlatıp tekrar deneyin veya yolu manuel olarak seçin."
     },
     "modal": {
       "desc": "{{app}} uygulama yolu bulunamadı. Devam etmek için lütfen şimdi yapılandırın."
@@ -1391,7 +1406,9 @@
     "title": "Hesap Yönetimi",
     "subtitle": "Antigravity IDE hesap listenizi yönetin.",
     "total": "{{count}} hesap",
-    "search": "Hesaplarda ara...",
+    "search": {
+      "placeholder": "Hesapları ara..."
+    },
     "addAccount": "Hesap Ekle",
     "refreshAll": "Tümünü Yenile",
     "export": "Dışa Aktar",
@@ -3426,7 +3443,10 @@
         "fetchCredentialsRequired": "Önce API Key ve Base URL girin.",
         "fetchEmpty": "Sağlayıcı model döndürmedi. Mevcut liste korundu.",
         "fetchFailed": "Sağlayıcı modelleri alınamadı: {{error}}",
-        "syncRequiresModels": "Codex ile eşitlemeden önce en az bir model alın veya girin."
+        "syncRequiresModels": "Codex ile eşitlemeden önce en az bir model alın veya girin.",
+        "contextWindowInvalid": "Bağlam penceresi 0'dan büyük bir tamsayı olmalıdır",
+        "contextWindowPlaceholder": "Boş = Varsayılan",
+        "restartHint": "Model kataloğu güncellendi. Codex çalışıyorsa, değişiklikleri uygulamak için lütfen yeniden başlatın."
       },
       "actions": {
         "addAndSwitch": "Ekle ve geçiş yap"
@@ -4525,6 +4545,11 @@
       "stopConfirmDescription": "Karma model yönlendirme ağ geçidini durdurmak, o örneğin karma model yönlendirmesini de kapatır (kanal yapılandırması korunur); diğer ağ geçitleri “Yeniden başlat” ile geri getirilebilir.",
       "stopFailed": "Ağ geçidi durdurulamadı: {{error}}",
       "restartFailed": "Ağ geçidi yeniden başlatılamadı: {{error}}"
+    },
+    "cli": {
+      "quickLaunch": "CLI Hızlı Başlatma",
+      "selectWorkingDir": "Codex CLI Çalışma Dizinini Seçin",
+      "launchSuccess": "Codex CLI başlatıldı"
     }
   },
   "githubCopilot": {
@@ -5466,6 +5491,12 @@
       "desc": "Yerel oturum dosyaları — Yerel tarama ve konumu açma.",
       "empty": "Oturum dosyası yok",
       "open": "Konumu aç"
+    },
+    "quotaCategory": {
+      "base": "Temel paket",
+      "activity": "Promosyon paketi",
+      "extra": "Ekstra paket",
+      "other": "Diğer"
     }
   },
   "qoder": {
@@ -6172,7 +6203,8 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "APIKEY.FUN ayarları dolduruldu. Claude’a eklemek için onaylayın."
+      "claudeDesktopReady": "APIKEY.FUN ayarları dolduruldu. Claude’a eklemek için onaylayın.",
+      "codexReady": "APIKEY.FUN yapılandırması içe aktarıldı. Lütfen onaylayıp Codex'e ekleyin."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -6546,5 +6578,14 @@
   "opencode": {
     "title": "OpenCode",
     "desc": "OpenCode Go/Zen anahtarlarını yönetin ve kademeye göre süzün."
+  },
+  "sessionManager": {
+    "time": {
+      "unknown": "Bilinmeyen zaman",
+      "minutesAgo": "{{count}} dk önce",
+      "hoursAgo": "{{count}} sa önce",
+      "daysAgo": "{{count}} gün önce",
+      "weeksAgo": "{{count}} hafta önce"
+    }
   }
 }

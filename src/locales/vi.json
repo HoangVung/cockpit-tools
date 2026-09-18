@@ -364,7 +364,11 @@
     "deleteTagWarning": "Bạn có chắc chắn muốn xóa thẻ này khỏi tất cả tài khoản không?",
     "expand": "Mở rộng",
     "processing": "Đang xử lý...",
-    "selectAll": "Chọn tất cả"
+    "selectAll": "Chọn tất cả",
+    "clear": "Xóa",
+    "unknown": "Không xác định",
+    "syncing": "Đang đồng bộ...",
+    "clearAll": "Xóa tất cả"
   },
   "nav": {
     "overview": "Antigravity IDE​",
@@ -1067,7 +1071,17 @@
       "menuBarAccountPrefixDesc": "Chỉ tài khoản thường: tắt sẽ ẩn tiền tố email. Dịch vụ API Codex / API Key vẫn hiện nhãn API",
       "menuBarQuotaConfirmEnable": "Bật",
       "codexHideRelayQuota": "Ẩn hạn mức relay",
-      "codexHideRelayQuotaDesc": "Ẩn bảng hạn mức relay / New API trên tổng quan tài khoản Codex."
+      "codexHideRelayQuotaDesc": "Ẩn bảng hạn mức relay / New API trên tổng quan tài khoản Codex.",
+      "accountLevelRefreshTitle": "Cấu hình làm mới theo tài khoản",
+      "accountLevelRefreshDesc": "Đặt khoảng thời gian tự động làm mới riêng cho từng tài khoản, ghi đè giá trị mặc định của nền tảng.",
+      "accountLevelRefreshSummary": "Mở rộng cấu hình",
+      "accountLevelRefreshSummaryActive": "Đã cấu hình {{count}} tài khoản",
+      "accountLevelRefreshInherit": "Kế thừa cài đặt nền tảng",
+      "accountLevelRefreshDisabled": "Vô hiệu hóa",
+      "codexAutoRestoreTakeoverOnLaunch": "Tự động khôi phục tiếp quản proxy Codex khi khởi động",
+      "codexAutoRestoreTakeoverOnLaunchDesc": "Tự động khôi phục mô hình hiển thị và tiếp quản proxy lần trước khi khởi động công cụ, giữ ngữ cảnh 1M mà không cần chuyển thủ công.",
+      "errorReporting": "Chẩn đoán từ xa",
+      "errorReportingDesc": "Bật theo mặc định, chỉ dùng để chẩn đoán sự cố khởi động và giao diện; tắt sẽ không gửi sự kiện từ xa. Dữ liệu được khử nhạy cảm trước khi gửi, không bao giờ tải lên mật khẩu, token, khóa 2FA hay số điện thoại."
     },
     "network": {
       "apiTitle": "API Antigravity Cockpit",
@@ -1381,7 +1395,8 @@
       "windowsApp": "Ứng dụng Microsoft Store",
       "defaultOnly": "Chỉ dành cho desktop mặc định; hãy chọn Claude.exe thật cho hồ sơ đa phiên bản.",
       "claudeScanEmpty": "Không tìm thấy mục tiêu Claude Desktop. Hãy chọn Claude.exe thủ công hoặc chỉnh phạm vi quét.",
-      "claudeTargetPlaceholder": "Đường dẫn Claude.exe hoặc shell:AppsFolder\\..."
+      "claudeTargetPlaceholder": "Đường dẫn Claude.exe hoặc shell:AppsFolder\\...",
+      "scanEmptyGeneric": "Không phát hiện {{app}} đang chạy. Vui lòng khởi chạy ứng dụng trước rồi thử lại, hoặc chọn đường dẫn thủ công."
     },
     "modal": {
       "desc": "Không tìm thấy đường dẫn ứng dụng {{app}}. Vui lòng cấu hình ngay để tiếp tục."
@@ -1391,7 +1406,9 @@
     "title": "Quản lý tài khoản",
     "subtitle": "Quản lý danh sách tài khoản Antigravity IDE của bạn.",
     "total": "Tổng cộng {{count}} tài khoản",
-    "search": "Tìm kiếm tài khoản...",
+    "search": {
+      "placeholder": "Tìm kiếm tài khoản..."
+    },
     "addAccount": "Thêm tài khoản",
     "refreshAll": "Làm mới tất cả",
     "export": "Xuất",
@@ -3426,7 +3443,10 @@
         "fetchCredentialsRequired": "Hãy nhập API Key và Base URL trước.",
         "fetchEmpty": "Nhà cung cấp không trả về mô hình nào. Danh sách hiện tại được giữ nguyên.",
         "fetchFailed": "Không thể lấy mô hình từ nhà cung cấp: {{error}}",
-        "syncRequiresModels": "Hãy lấy hoặc nhập ít nhất một mô hình trước khi đồng bộ với Codex."
+        "syncRequiresModels": "Hãy lấy hoặc nhập ít nhất một mô hình trước khi đồng bộ với Codex.",
+        "contextWindowInvalid": "Cửa sổ ngữ cảnh phải là số nguyên lớn hơn 0",
+        "contextWindowPlaceholder": "Để trống = Mặc định",
+        "restartHint": "Danh mục mô hình đã được cập nhật. Nếu Codex đang chạy, vui lòng khởi động lại để áp dụng thay đổi."
       },
       "actions": {
         "addAndSwitch": "Thêm và chuyển"
@@ -4525,6 +4545,11 @@
       "stopConfirmDescription": "Dừng gateway định tuyến hỗn hợp cũng sẽ tắt định tuyến hỗn hợp của instance đó (cấu hình kênh vẫn được giữ); các gateway khác có thể chạy lại bằng “Khởi động lại”.",
       "stopFailed": "Không dừng được gateway: {{error}}",
       "restartFailed": "Không khởi động lại được gateway: {{error}}"
+    },
+    "cli": {
+      "quickLaunch": "Khởi chạy nhanh CLI",
+      "selectWorkingDir": "Chọn thư mục làm việc Codex CLI",
+      "launchSuccess": "Đã khởi chạy Codex CLI"
     }
   },
   "githubCopilot": {
@@ -5466,6 +5491,12 @@
       "desc": "Tệp phiên cục bộ — Quét cục bộ và mở vị trí.",
       "empty": "Không thấy tệp phiên",
       "open": "Mở vị trí"
+    },
+    "quotaCategory": {
+      "base": "Gói cơ bản",
+      "activity": "Gói ưu đãi sự kiện",
+      "extra": "Gói bổ sung",
+      "other": "Khác"
     }
   },
   "qoder": {
@@ -6172,7 +6203,8 @@
       "claudeShort": "Claude CLI"
     },
     "prefill": {
-      "claudeDesktopReady": "Đã điền cấu hình APIKEY.FUN. Hãy xác nhận để thêm vào Claude."
+      "claudeDesktopReady": "Đã điền cấu hình APIKEY.FUN. Hãy xác nhận để thêm vào Claude.",
+      "codexReady": "Đã nhập cấu hình APIKEY.FUN, vui lòng xác nhận rồi thêm vào Codex."
     },
     "copyKey": "Copy Key​",
     "clearKey": "Clear input​"
@@ -6546,5 +6578,14 @@
   "opencode": {
     "title": "OpenCode",
     "desc": "Quản lý key OpenCode Go/Zen và lọc theo tier."
+  },
+  "sessionManager": {
+    "time": {
+      "unknown": "Thời gian không xác định",
+      "minutesAgo": "{{count}} phút trước",
+      "hoursAgo": "{{count}} giờ trước",
+      "daysAgo": "{{count}} ngày trước",
+      "weeksAgo": "{{count}} tuần trước"
+    }
   }
 }
