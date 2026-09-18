@@ -798,7 +798,15 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
       localAccessQuotaPoolSummary.visiblePlans.length -
         localAccessQuotaPreviewItems.length,
     );
-    const overviewAccounts = accounts;
+    // Grok 供应商账号在「添加至 API 服务」里以 Grok 平台行呈现，
+    // 不在账号总览里单独占一行（成员弹框仍拿到完整账号列表）。
+    const overviewAccounts = useMemo(
+      () =>
+        accounts.filter(
+          (account) => !account.upstream_grok_account_id?.trim(),
+        ),
+      [accounts],
+    );
     const localAccessScope = localAccessCollection?.accessScope ?? "localhost";
     const localAccessScopeLabel =
       localAccessScope === "lan"

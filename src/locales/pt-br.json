@@ -616,7 +616,7 @@
         "summary": "Modelos sem prefixo usam a assinatura atual; modelos com prefixo como cpa/gpt-5.5 são encaminhados para uma API de terceiros. Ambos dependem do serviço de roteamento local.",
         "rowSummary": "Modelos sem prefixo usam a assinatura atual; modelos com prefixo como cpa/gpt-5.5 são encaminhados para uma API de terceiros. Ambos dependem do serviço de roteamento local.",
         "confirmEnableTitle": "Ativar roteamento de API de terceiros?",
-        "confirmEnableMessage": "As solicitações de modelos do Codex serão roteadas através do serviço local Cockpit Tools. Se o serviço não estiver em execução, tanto os modelos de assinatura quanto os de terceiros poderão ficar indisponíveis. A inicialização no login será ativada ao salvar.\n\nAtivar roteamento?",
+        "confirmEnableMessage": "As solicitações de modelos do Codex serão roteadas através do serviço local Cockpit Tools. Se o serviço não estiver em execução, tanto os modelos de assinatura quanto os de terceiros poderão ficar indisponíveis.\n\nAtivar roteamento?",
         "confirmEnableAction": "Ativar",
         "confirmDisableTitle": "Desativar roteamento de API de terceiros?",
         "confirmDisableMessage": "Após essa alteração entrar em vigor, o gateway local será interrompido, o acesso nativo da assinatura será restaurado e os modelos de terceiros ficarão indisponíveis.\n\nDesativar roteamento?",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Sincronizar Codex com WSL",
       "codexSyncWslDesc": "Depois de trocar a conta padrão do Codex, auth.json e config.toml também são gravados no diretório Codex no WSL.",
       "codexAppUiInjection": "Cota do serviço de API",
-      "codexAppUiInjectionDesc": "Após reiniciar uma instância do Codex, mostrar abaixo do compositor a quantidade de contas e as cotas semanal e de 5 horas do serviço de API do Cockpit Tools; instâncias vinculadas a uma conta DeepSeek mostram o saldo dessa conta. O Cockpit Tools deve continuar em execução em segundo plano; as atualizações param ao fechar completamente o aplicativo ou quando a rede está indisponível.",
+      "codexAppUiInjectionDesc": "Após reiniciar uma instância do Codex, o selo de cota abaixo do compositor acompanha o modelo selecionado: o DeepSeek mostra o saldo da conta, o Grok mostra sua cota e os modelos GPT mostram as cotas semanal e de 5 horas. O Cockpit Tools deve continuar em execução em segundo plano; as atualizações param ao fechar completamente o aplicativo ou quando a rede está indisponível.",
       "codexAppUiInjectionPoolLabel": "Contas",
       "codexAppUiInjectionWeeklyLabel": "Semana",
       "codexAppUiInjectionFiveHourLabel": "5 h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Diretório Codex no WSL",
       "codexWslConfigDirDesc": "Informe o diretório .codex dentro do WSL. Caminhos \\\\wsl.localhost\\ são compatíveis.",
       "codexWslConfigDirPlaceholder": "Exemplo: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} contas · {{scope}}",
       "summaryMetaUnconfigured": "Não configurado · {{scope}}",
       "memberTitle": "Membros da coleção",
+      "memberPlatformLabel": "Plataforma",
+      "memberPlatformAll": "Todas as plataformas",
+      "memberPlatformGrok": "Contas da plataforma Grok",
       "imagePolicy": {
         "label": "Política de imagem",
         "inherit": "Imagem: Automático",
@@ -3552,6 +3556,9 @@
           "message": "Ao ativar, conversas de texto desta conta API Key vinculada ao OAuth passarão pelo gateway local, onde a declaração da ferramenta image_generation é removida antes do encaminhamento para evitar erros como \"Image generation is not enabled\". gpt-image e outros modelos de imagem não são removidos. Continuar?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Conta Grok"
     },
     "deepSeek": {
       "start": {

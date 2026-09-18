@@ -616,7 +616,7 @@
         "summary": "Các mô hình không có tiền tố sử dụng gói đăng ký hiện tại; các mô hình có tiền tố như cpa/gpt-5.5 được chuyển tiếp đến API của bên thứ ba. Cả hai đều phụ thuộc vào dịch vụ định tuyến cục bộ.",
         "rowSummary": "Các mô hình không có tiền tố sử dụng gói đăng ký hiện tại; các mô hình có tiền tố như cpa/gpt-5.5 được chuyển tiếp đến API của bên thứ ba. Cả hai đều phụ thuộc vào dịch vụ định tuyến cục bộ.",
         "confirmEnableTitle": "Bật định tuyến API của bên thứ ba?",
-        "confirmEnableMessage": "Các yêu cầu mô hình Codex sẽ được định tuyến qua dịch vụ Cockpit Tools cục bộ. Nếu dịch vụ không chạy, cả mô hình đăng ký và bên thứ ba có thể không khả dụng. Khởi chạy khi đăng nhập sẽ được bật khi bạn lưu.\n\nBật định tuyến?",
+        "confirmEnableMessage": "Các yêu cầu mô hình Codex sẽ được định tuyến qua dịch vụ Cockpit Tools cục bộ. Nếu dịch vụ không chạy, cả mô hình đăng ký và bên thứ ba có thể không khả dụng.\n\nBật định tuyến?",
         "confirmEnableAction": "Bật",
         "confirmDisableTitle": "Tắt định tuyến API của bên thứ ba?",
         "confirmDisableMessage": "Sau khi thay đổi này có hiệu lực, cổng cục bộ sẽ dừng, quyền truy cập đăng ký chính thức sẽ được khôi phục và các mô hình của bên thứ ba sẽ không khả dụng.\n\nTắt định tuyến?",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Đồng bộ Codex sang WSL",
       "codexSyncWslDesc": "Sau khi chuyển tài khoản Codex mặc định, auth.json và config.toml cũng được ghi vào thư mục Codex trong WSL.",
       "codexAppUiInjection": "Hạn mức dịch vụ API",
-      "codexAppUiInjectionDesc": "Sau khi khởi động lại phiên Codex, hiển thị số tài khoản cùng hạn mức tuần và 5 giờ của dịch vụ API Cockpit Tools bên dưới trình soạn thảo; phiên liên kết với tài khoản DeepSeek sẽ hiển thị số dư của tài khoản đó. Cần giữ Cockpit Tools chạy trong nền; dữ liệu sẽ ngừng cập nhật khi thoát hoàn toàn hoặc khi mạng không khả dụng.",
+      "codexAppUiInjectionDesc": "Sau khi khởi động lại phiên Codex, huy hiệu hạn mức bên dưới trình soạn thảo sẽ thay đổi theo mô hình đang chọn: DeepSeek hiển thị số dư tài khoản, Grok hiển thị hạn mức Grok, các mô hình GPT hiển thị hạn mức tuần và 5 giờ. Cần giữ Cockpit Tools chạy trong nền; dữ liệu sẽ ngừng cập nhật khi thoát hoàn toàn hoặc khi mạng không khả dụng.",
       "codexAppUiInjectionPoolLabel": "Tài khoản",
       "codexAppUiInjectionWeeklyLabel": "Tuần",
       "codexAppUiInjectionFiveHourLabel": "5 giờ",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Thư mục Codex WSL",
       "codexWslConfigDirDesc": "Nhập thư mục .codex trong WSL. Hỗ trợ đường dẫn \\\\wsl.localhost\\.",
       "codexWslConfigDirPlaceholder": "Ví dụ: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} tài khoản · {{scope}}",
       "summaryMetaUnconfigured": "Chưa cấu hình · {{scope}}",
       "memberTitle": "Thành viên bộ sưu tập",
+      "memberPlatformLabel": "Nền tảng",
+      "memberPlatformAll": "Tất cả nền tảng",
+      "memberPlatformGrok": "Tài khoản nền tảng Grok",
       "imagePolicy": {
         "label": "Chính sách hình ảnh",
         "inherit": "Hình ảnh: Tự động",
@@ -3552,6 +3556,9 @@
           "message": "Khi bật, hội thoại văn bản thường của tài khoản API Key đã liên kết OAuth này sẽ đi qua cổng cục bộ, nơi khai báo công cụ image_generation được bỏ trước khi chuyển tiếp để tránh lỗi như \"Image generation is not enabled\". Không xóa gpt-image hay các mô hình tạo ảnh khác. Tiếp tục?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Tài khoản Grok"
     },
     "deepSeek": {
       "start": {

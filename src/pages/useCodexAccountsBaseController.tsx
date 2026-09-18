@@ -505,6 +505,8 @@ export function useCodexAccountsBaseController() {
       platformKey: "Codex",
       oauthLogPrefix: "CodexOAuth",
       exportFilePrefix: "codex_accounts",
+      // 官方登录优先：打开「添加账号」默认落在官方登录页签。
+      defaultAddTab: "tempLogin",
       store: {
         accounts: store.accounts,
         loading: store.loading,
@@ -1060,7 +1062,7 @@ export function useCodexAccountsBaseController() {
                 (account) => account.id === detail.targetAccountId,
               ) ?? null;
         }
-        openCodexAddModal(detail?.tab ?? "oauth", targetAccount, {
+        openCodexAddModal(detail?.tab ?? "tempLogin", targetAccount, {
           retrySwitchAfterOAuth: detail?.retrySwitchAfterOAuth,
           retrySwitchLaunchAfterSwitch: detail?.retrySwitchLaunchAfterSwitch,
           retryInstanceLaunchAfterOAuth: detail?.retryInstanceLaunchAfterOAuth,

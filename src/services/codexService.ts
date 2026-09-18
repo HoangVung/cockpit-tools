@@ -564,6 +564,26 @@ export async function updateCodexAccountName(
   return await invoke('update_codex_account_name', { accountId, name });
 }
 
+/**
+ * 通过 Grok 平台账号添加 Codex 供应商账号。
+ *
+ * 账号本身不保存上游 API Key：运行态使用绑定的 Grok 账号 OAuth 令牌，
+ * 并由 Grok 账号的模型目录决定客户端可见模型。
+ */
+export async function addCodexAccountFromGrok(
+  grokAccountId: string,
+  options?: {
+    apiModelCatalog?: string[] | null;
+    accountName?: string | null;
+  },
+): Promise<CodexAccount> {
+  return await invoke('add_codex_account_from_grok', {
+    grokAccountId,
+    apiModelCatalog: options?.apiModelCatalog ?? null,
+    accountName: options?.accountName ?? null,
+  });
+}
+
 export async function updateCodexApiKeyCredentials(
   accountId: string,
   apiKey: string,

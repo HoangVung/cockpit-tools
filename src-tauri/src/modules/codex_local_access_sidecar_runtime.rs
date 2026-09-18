@@ -1569,6 +1569,16 @@ fn local_access_profile_model_definitions(
     let experimental_model_catalog_enabled =
         codex_account::read_quick_config_from_config_toml(profile_dir)?
             .experimental_model_catalog_enabled;
+    // 该 profile 能承接的账号池里没有 GPT / Codex 能力时，客户端选择器只展示账号池自己的模型
+    // （例如只加了 Grok 账号就只显示 Grok 模型），不再无条件塞入官方推荐 GPT 集。
+    let pool_accounts: Vec<CodexAccount> = effective_sidecar_account_ids(collection)
+        .into_iter()
+        .filter_map(|account_id| codex_account::load_account(&account_id))
+        .filter(|account| {
+            is_local_access_eligible_account(account, collection.restrict_free_accounts)
+        })
+        .collect();
+    let include_official_gpt_models = pool_provides_gpt_models(&pool_accounts);
     let mut definitions: Vec<ProfileModelDefinition> = if experimental_model_catalog_enabled {
         codex_account::read_experimental_model_definitions(profile_dir)
             .iter()
@@ -1576,12 +1586,16 @@ fn local_access_profile_model_definitions(
             .collect()
     } else {
         // 只暴露官方推荐集里的 GPT 模型（显示名与官方客户端一致），外加客户端内部需要的隐藏条目。
-        let mut definitions = local_gateway_visible_gpt_model_definitions()
-            .into_iter()
-            .map(|(model_id, display_name)| {
-                ProfileModelDefinition::plain(&model_id, &display_name)
-            })
-            .collect::<Vec<_>>();
+        let mut definitions = if include_official_gpt_models {
+            local_gateway_visible_gpt_model_definitions()
+                .into_iter()
+                .map(|(model_id, display_name)| {
+                    ProfileModelDefinition::plain(&model_id, &display_name)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         definitions.extend(
             local_access_profile_hidden_model_definitions()
                 .into_iter()
@@ -1658,7 +1672,12 @@ fn write_local_access_profile_client_models(
     supports_websockets: bool,
     mut client_models: Value,
 ) -> Result<(), String> {
-    codex_protocol::ensure_codex_reserve_fallback(&mut client_models);
+    // 只有目录里已经有官方 GPT / Codex 模型（或用户显式列出 gpt-reserve）时才追加额度兜底
+    // 条目。账号池没有能承接官方模型的账号时（例如只加了 DeepSeek + Grok 账号），客户端
+    // 选择器里不应再出现 GPT-5.6 Reserve。
+    if profile_catalog_allows_reserve(&client_models) {
+        codex_protocol::ensure_codex_reserve_fallback(&mut client_models);
+    }
     apply_profile_model_ordering(&mut client_models);
     if let Some(models) = client_models
         .get_mut("models")
@@ -1688,6 +1707,29 @@ fn write_local_access_profile_client_models(
     doc["model_catalog_json"] = value(catalog_file);
     let content = crate::modules::codex_config_format::codex_config_doc_to_string(&mut doc);
     crate::modules::codex_config_format::write_codex_config_toml_atomic(&config_path, &content)
+}
+
+/// 客户端模型目录里是否已有官方 GPT / Codex 模型（或用户显式列出的 `gpt-reserve`）。
+///
+/// `ensure_codex_reserve_fallback` 会强制把兜底条目设为可见，因此只在目录本身就有官方
+/// GPT 模型、或用户自己就列了 `gpt-reserve` 时调用；否则（例如账号池只有 DeepSeek /
+/// Grok）会把没有任何账号可承接的 `GPT-5.6 Reserve` 塞进选择器。
+fn profile_catalog_allows_reserve(client_models: &Value) -> bool {
+    let Some(models) = client_models.get("models").and_then(Value::as_array) else {
+        return false;
+    };
+    models.iter().any(|model| {
+        model
+            .get("slug")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|slug| {
+                slug.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID)
+                    || LOCAL_GATEWAY_VISIBLE_GPT_MODELS
+                        .iter()
+                        .any(|(model_id, _)| model_id.eq_ignore_ascii_case(slug))
+            })
+    })
 }
 
 pub(crate) fn invalidate_codex_model_cache(profile_dir: &Path) -> Result<(), String> {

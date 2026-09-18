@@ -148,6 +148,10 @@ func (s *relayServer) handleAutomaticModelRequest(c *gin.Context, spec *apiKeySp
 		last = newAutomaticAttemptWriter(originalWriter)
 		c.Writer = last
 		canonical := canonicalModelForClientModel(s.manifest, spec, model)
+		if strings.TrimSpace(canonical) == "" {
+			// 原生（订阅）路由不经过 provider gateway 的模型清单，保留客户端模型名。
+			canonical = stripModelPrefix(model, spec)
+		}
 		nativeBody := rewriteProviderGatewayBodyModel(body, canonical)
 		alt := fixedAlt
 		if alt == "" {
@@ -156,9 +160,9 @@ func (s *relayServer) handleAutomaticModelRequest(c *gin.Context, spec *apiKeySp
 		if sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAI) && isGPTImageGenerationModel(canonical) {
 			writeAPIError(c, http.StatusBadRequest, "This model is not supported on the Chat Completions endpoint", "invalid_request")
 		} else if requestBodyStream(body) && fixedAlt != "responses/compact" {
-			s.handleStream(c, nativeBody, canonical, sourceFormat, alt)
+			s.handleStream(c, nativeBody, canonical, sourceFormat, alt, executionProviders())
 		} else {
-			s.handleNonStream(c, nativeBody, canonical, sourceFormat, alt)
+			s.handleNonStream(c, nativeBody, canonical, sourceFormat, alt, executionProviders())
 		}
 		if originalWriter.Written() || !retryableAutomaticStatus(last.Status()) || c.Request.Context().Err() != nil || fixedAlt == "responses/compact" {
 			last.commit()

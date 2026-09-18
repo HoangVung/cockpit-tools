@@ -779,6 +779,18 @@ fn normalize_deepseek_account(account: &mut CodexAccount) -> bool {
             account.api_vision_routing_model = None;
             changed = true;
         }
+        // 迁移历史遗留的 Codex/GPT 内置 id 别名（例如 gpt-5.6-sol / gpt-5.6-terra）：
+        // 这些名字没有 DeepSeek 目录元数据，客户端会用内置 GPT 工具协议发请求，DeepSeek
+        // 上游只能把工具调用写成文本标记返回，工具调用无法解析。只保留官方 slug 与目录壳位。
+        let mappings_before = account.api_model_mappings.len();
+        account.api_model_mappings.retain(|mapping| {
+            let client = mapping.client_model.trim();
+            !crate::modules::codex_local_access::is_codex_provider_shell_model_id(client)
+                || is_allowed_deepseek_client_model(client)
+        });
+        if account.api_model_mappings.len() != mappings_before {
+            changed = true;
+        }
         for default_mapping in default_deepseek_api_model_mappings() {
             let has_client_mapping = account.api_model_mappings.iter().any(|mapping| {
                 mapping
@@ -980,37 +992,61 @@ pub fn apply_deepseek_cdp_startup_model(
     Ok(account)
 }
 
+/// DeepSeek 账号默认模型映射（客户端可见名 → 上游模型）。
+///
+/// 客户端可见名只允许两类：
+/// 1. DeepSeek 官方 slug（`DEEPSEEK_OFFICIAL_CLIENT_MODELS`）：直连 / CDP 模式，以及调用方
+///    显式使用官方模型名时使用；
+/// 2. 目录壳位（`deepseek_official_shell_client_mappings`）：gateway 模式写入的 Codex 目录条目
+///    带 DeepSeek 元数据，客户端会按 DeepSeek 工具协议发请求。
+///
+/// 这里不能出现 `gpt-5.6-sol` / `gpt-5.6-terra` 这类 Codex 内置模型 id：目录里没有它们的
+/// DeepSeek 元数据，客户端会用内置 GPT 元数据生成工具定义，DeepSeek 上游只能把工具调用写成
+/// 文本标记（如 `<||DSML||...>`）返回，链路无法解析，正文里就会直接出现原始标记。
 pub(crate) fn default_deepseek_api_model_mappings() -> Vec<CodexApiModelMapping> {
-    vec![
-        CodexApiModelMapping {
-            client_model: "gpt-5.6-sol".to_string(),
-            upstream_model: "deepseek-flash".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "gpt-5.6-terra".to_string(),
-            upstream_model: "deepseek-v4-pro".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "deepseek-flash".to_string(),
-            upstream_model: "deepseek-flash".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "deepseek-v4-flash".to_string(),
-            upstream_model: "deepseek-v4-flash".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "deepseek-v4-pro".to_string(),
-            upstream_model: "deepseek-v4-pro".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "gpt-5.4-mini".to_string(),
-            upstream_model: "deepseek-v4-flash-vision-exp".to_string(),
-        },
-        CodexApiModelMapping {
-            client_model: "deepseek-v4-flash-vision-exp".to_string(),
-            upstream_model: "deepseek-v4-flash-vision-exp".to_string(),
-        },
-    ]
+    let mut mappings: Vec<CodexApiModelMapping> =
+        crate::modules::codex_local_access::deepseek_official_shell_client_mappings()
+            .into_iter()
+            .map(|(client_model, upstream_model)| CodexApiModelMapping {
+                client_model,
+                upstream_model,
+            })
+            .collect();
+    for model in DEEPSEEK_OFFICIAL_CLIENT_MODELS {
+        if mappings
+            .iter()
+            .any(|mapping| mapping.client_model.eq_ignore_ascii_case(model))
+        {
+            continue;
+        }
+        mappings.push(CodexApiModelMapping {
+            client_model: (*model).to_string(),
+            upstream_model: (*model).to_string(),
+        });
+    }
+    mappings
+}
+
+/// DeepSeek 官方 slug：客户端可见名与上游模型名一致。
+const DEEPSEEK_OFFICIAL_CLIENT_MODELS: &[&str] = &[
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash-vision-exp",
+];
+
+/// DeepSeek 账号是否允许把该模型名暴露给客户端。
+fn is_allowed_deepseek_client_model(model: &str) -> bool {
+    let model = model.trim();
+    if model.is_empty() {
+        return false;
+    }
+    DEEPSEEK_OFFICIAL_CLIENT_MODELS
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(model))
+        || default_deepseek_api_model_mappings()
+            .iter()
+            .any(|mapping| mapping.client_model.eq_ignore_ascii_case(model))
 }
 
 pub(crate) fn normalize_api_model_mappings(

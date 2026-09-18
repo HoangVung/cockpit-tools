@@ -163,6 +163,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
     handlePendingOAuthEmailInputChange,
     handleQuickAddAccountsToGroup,
     handleRecoverLocalAccessAccounts,
+    handleCreateGrokUpstreamAccount,
     handleRefreshAccountNoteMailPreview,
     handleRefreshAll,
     handleRemoveFromGroup,
@@ -566,7 +567,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
             <div className="toolbar-right">
               <button
                 className="btn btn-primary icon-only"
-                onClick={() => openCodexAddModal("oauth")}
+                onClick={() => openCodexAddModal("tempLogin")}
                 title={t("common.shared.addAccount", "添加账号")}
               >
                 <Plus size={14} />
@@ -688,7 +689,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
               >
                 <button
                   className="btn btn-primary"
-                  onClick={() => openCodexAddModal("oauth")}
+                  onClick={() => openCodexAddModal("tempLogin")}
                 >
                   <Plus size={16} />
                   {t("common.shared.addAccount", "添加账号")}
@@ -3528,6 +3529,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
             accounts={accounts}
             accountsLoaded={store.accountsLoaded}
             accountGroups={codexGroups}
+            onAddGrokMember={handleCreateGrokUpstreamAccount}
             memberView={
               localAccessModalMode === "members"
                 ? {

@@ -436,6 +436,12 @@ pub struct CodexLocalAccessModelRoute {
     pub namespace: String,
     pub provider_account_id: String,
     pub provider_gateway: CodexLocalAccessProviderGateway,
+    /// 原生 provider 路由：非空时 sidecar 直接交给该 provider 的执行器（当前为 xai）。
+    ///
+    /// Grok 供应商账号没有上游 API Key，请求不能走 Provider Gateway 直连，
+    /// 只能由 sidecar 用绑定的 Grok 账号凭据发出，因此这类路由标记为原生 provider。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

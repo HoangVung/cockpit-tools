@@ -51,6 +51,26 @@ of the bundled v7.2.155 dependency tree.
   custom headers resolve from the canonical request session, and the
   `gpt-image-2.5-flare` / `gpt-image-2.5-sunburst` image variants are accepted.
   Cockpit keeps `gpt-5.5` and `gpt-image-2.5` as its local image defaults.
+- Synchronized the xAI (Grok) chat path with the reference tree: the HTTP chat
+  executor, auth helpers and the exported `util.InlineLocalRefs` now match
+  `CLIProxyAPI` HEAD (`xai_executor.go`, `xai_executor_request.go`,
+  `xai_executor_response.go`, `xai_executor_execute.go`, `xai_executor_stream.go`,
+  `xai_executor_media.go`, `internal/auth/xai/*`). This brings the Codex-facing
+  compatibility fixes with it: MCP-namespaced `automation_update`
+  (`mcp__codex_app__automation_update`, `codex_apps__automation_update`),
+  `$ref`/union tool-schema simplification with local `$ref` inlining, the
+  200-tool limit with namespace folding + dispatcher tool restoration,
+  image/video requests following the OAuth chat base URL, forced
+  image-generation tool choices, and `previous_response_id` passthrough on
+  `/responses/compact`.
+  The bundled `internal/auth/xai/pkce.go` was removed because the reference tree
+  dropped PKCE types for the device-code flow.
+  Known divergence: `xai_websockets_executor.go` stays at the bundled revision —
+  the reference implementation depends on the newer Codex WebSocket session
+  layer (`codex_websockets_connection.go` / `codex_websockets_execute.go`) that is
+  outside this synchronization scope. Cockpit does not route Grok models over
+  Responses WebSocket (the catalog clears `prefer_websockets` for them), so the
+  HTTP chat path is authoritative.
 
 ## Update procedure
 

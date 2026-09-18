@@ -616,7 +616,7 @@
         "summary": "Los modelos sin prefijo usan la suscripción actual; los modelos con prefijo como cpa/gpt-5.5 se reenvían a una API de terceros. Ambos dependen del servicio de enrutamiento local.",
         "rowSummary": "Los modelos sin prefijo usan la suscripción actual; los modelos con prefijo como cpa/gpt-5.5 se reenvían a una API de terceros. Ambos dependen del servicio de enrutamiento local.",
         "confirmEnableTitle": "¿Habilitar enrutamiento de API de terceros?",
-        "confirmEnableMessage": "Las solicitudes de modelos de Codex se enrutarán a través del servicio local de Cockpit Tools. Si el servicio no está en ejecución, tanto los modelos de suscripción como los de terceros pueden no estar disponibles. El inicio al iniciar sesión se habilitará al guardar.\n\n¿Habilitar enrutamiento?",
+        "confirmEnableMessage": "Las solicitudes de modelos de Codex se enrutarán a través del servicio local de Cockpit Tools. Si el servicio no está en ejecución, tanto los modelos de suscripción como los de terceros pueden no estar disponibles.\n\n¿Habilitar enrutamiento?",
         "confirmEnableAction": "Habilitar",
         "confirmDisableTitle": "¿Deshabilitar enrutamiento de API de terceros?",
         "confirmDisableMessage": "Una vez aplicado este cambio, la puerta de enlace local se detendrá, se restaurará el acceso nativo a la suscripción y los modelos de terceros no estarán disponibles.\n\n¿Deshabilitar enrutamiento?",
@@ -843,10 +843,11 @@
       "codexSyncWsl": "Sincronizar Codex con WSL",
       "codexSyncWslDesc": "Después de cambiar la cuenta predeterminada de Codex, también se escriben auth.json y config.toml en el directorio de Codex en WSL.",
       "codexAppUiInjection": "Cuota del servicio API",
-      "codexAppUiInjectionDesc": "Tras reiniciar una instancia de Codex, muestra debajo del compositor el número de cuentas y las cuotas semanal y de 5 horas del servicio API de Cockpit Tools; las instancias vinculadas a una cuenta DeepSeek muestran en su lugar el saldo de esa cuenta. Cockpit Tools debe seguir ejecutándose en segundo plano; las actualizaciones se detienen al cerrarlo por completo o si no hay red.",
+      "codexAppUiInjectionDesc": "Tras reiniciar una instancia de Codex, el indicador de cuota bajo el compositor sigue al modelo seleccionado: DeepSeek muestra el saldo de la cuenta, Grok su cuota y los modelos GPT las cuotas semanal y de 5 horas. Cockpit Tools debe seguir ejecutándose en segundo plano; las actualizaciones se detienen al cerrarlo por completo o si no hay red.",
       "codexAppUiInjectionPoolLabel": "Cuentas",
       "codexAppUiInjectionWeeklyLabel": "Semana",
       "codexAppUiInjectionFiveHourLabel": "5 h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Directorio Codex en WSL",
       "codexWslConfigDirDesc": "Introduce el directorio .codex dentro de WSL. Se admiten rutas \\\\wsl.localhost\\.",
       "codexWslConfigDirPlaceholder": "Ejemplo: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} cuentas · {{scope}}",
       "summaryMetaUnconfigured": "Sin configurar · {{scope}}",
       "memberTitle": "Miembros de la colección",
+      "memberPlatformLabel": "Plataforma",
+      "memberPlatformAll": "Todas las plataformas",
+      "memberPlatformGrok": "Cuentas de la plataforma Grok",
       "imagePolicy": {
         "label": "Política de imágenes",
         "inherit": "Imagen: Automático",
@@ -3552,6 +3556,9 @@
           "message": "Al activarlo, los chats de texto de esta cuenta API Key vinculada con OAuth pasarán por la puerta de enlace local, donde se elimina la declaración de herramienta image_generation antes de reenviar para evitar errores como \"Image generation is not enabled\". No se eliminan gpt-image ni otros modelos de imagen. ¿Continuar?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Cuenta de Grok"
     },
     "deepSeek": {
       "start": {

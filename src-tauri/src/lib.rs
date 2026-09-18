@@ -1050,6 +1050,7 @@ pub fn run() {
             commands::codex::codex_oauth_login_cancel,
             commands::codex::add_codex_account_with_token,
             commands::codex::add_codex_account_with_api_key,
+            commands::codex::add_codex_account_from_grok,
             commands::codex::update_codex_account_name,
             commands::codex::update_codex_api_key_credentials,
             commands::codex::sync_codex_api_key_provider_accounts,

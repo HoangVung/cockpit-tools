@@ -420,7 +420,7 @@ func (s *relayServer) handleOllamaProviderGatewayChat(c *gin.Context, gateway *p
 		writeAPIError(c, http.StatusBadRequest, "Ollama bridge requires provider gateway wire API chat_completions", "invalid_request")
 		return
 	}
-	upstreamModel := providerGatewayCanonicalModel(gateway, model)
+	upstreamModel := s.providerGatewayUpstreamModel(gateway, model)
 	if strings.TrimSpace(upstreamModel) == "" {
 		writeAPIError(c, http.StatusNotFound, fmt.Sprintf("model %s is not available for this provider gateway", model), "model_not_available")
 		return

@@ -99,8 +99,8 @@ export function useCodexTempLoginController(
   }, []);
 
   /**
-   * 商店版 Codex 路径失效（商店包更新后旧目录残留等）时，后端回传的是内部错误串，
-   * 直接展示对用户不可读，这里换成可操作的说明并保留原始原因。
+   * 商店版 Codex 无法启动（直启 / PowerShell / 包身份都被系统拒绝）时，后端回传的是
+   * 内部错误串，直接展示对用户不可读，这里换成可操作的说明并保留原始原因。
    */
   const describeTempLoginFailure = useCallback(
     (message: string): string => {
@@ -112,7 +112,7 @@ export function useCodexTempLoginController(
       }
       return `${t(
         "common.windowsOperation.storeLaunchBlockedDescription",
-        "Windows 无法执行当前配置的 Codex 客户端：商店版应用目录可能已被更新替换，或不再允许运行。为免打开错误账号，已阻止直接启动。请到设置中重新检测 Codex 路径后重试；仍失败时请改用 CLI 启动方式。",
+        "Windows 拒绝了商店版 Codex 客户端的全部启动方式（直接启动、PowerShell 启动、包身份启动），已阻止启动以免打开错误的账号。多数情况下需要修复或重新安装商店版 Codex（可在 Microsoft Store 检查更新并重新安装）；也可「重新检测路径并重试」；仍失败时请把该实例的启动方式改为 CLI。",
       )}\n${parsed.originalReason}`;
     },
     [t],

@@ -616,7 +616,7 @@
         "summary": "I modelli senza prefisso utilizzano l'abbonamento corrente; i modelli con prefisso come cpa/gpt-5.5 vengono inoltrati a un'API di terze parti. Entrambi dipendono dal servizio di routing locale.",
         "rowSummary": "I modelli senza prefisso utilizzano l'abbonamento corrente; i modelli con prefisso come cpa/gpt-5.5 vengono inoltrati a un'API di terze parti. Entrambi dipendono dal servizio di routing locale.",
         "confirmEnableTitle": "Abilitare il routing API di terze parti?",
-        "confirmEnableMessage": "Le richieste dei modelli Codex verranno instradate tramite il servizio locale Cockpit Tools. Se il servizio non è in esecuzione, sia i modelli in abbonamento che quelli di terze parti potrebbero non essere disponibili. L'avvio al login verrà abilitato al salvataggio.\n\nAbilitare il routing?",
+        "confirmEnableMessage": "Le richieste dei modelli Codex verranno instradate tramite il servizio locale Cockpit Tools. Se il servizio non è in esecuzione, sia i modelli in abbonamento che quelli di terze parti potrebbero non essere disponibili.\n\nAbilitare il routing?",
         "confirmEnableAction": "Abilita",
         "confirmDisableTitle": "Disabilitare il routing API di terze parti?",
         "confirmDisableMessage": "Dopo che questa modifica avrà effetto, il gateway locale verrà arrestato, verrà ripristinato l'accesso nativo all'abbonamento e i modelli di terze parti non saranno disponibili.\n\nDisabilitare il routing?",
@@ -843,10 +843,11 @@
       "codexSyncWsl": "Sincronizza Codex con WSL",
       "codexSyncWslDesc": "Dopo il cambio dell'account Codex predefinito, anche auth.json e config.toml vengono scritti nella directory Codex in WSL.",
       "codexAppUiInjection": "Quota del servizio API",
-      "codexAppUiInjectionDesc": "Dopo il riavvio di un’istanza Codex, mostra sotto il composer il numero di account e le quote settimanale e di 5 ore del servizio API Cockpit Tools; le istanze associate a un account DeepSeek mostrano invece il saldo di quell’account. Cockpit Tools deve restare in esecuzione in background; gli aggiornamenti si interrompono se viene chiuso del tutto o se la rete non è disponibile.",
+      "codexAppUiInjectionDesc": "Dopo il riavvio di un’istanza Codex, il badge della quota sotto il composer segue il modello selezionato: DeepSeek mostra il saldo dell’account, Grok la sua quota e i modelli GPT le quote settimanale e di 5 ore. Cockpit Tools deve restare in esecuzione in background; gli aggiornamenti si interrompono se viene chiuso del tutto o se la rete non è disponibile.",
       "codexAppUiInjectionPoolLabel": "Account",
       "codexAppUiInjectionWeeklyLabel": "Settimana",
       "codexAppUiInjectionFiveHourLabel": "5 h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Directory Codex WSL",
       "codexWslConfigDirDesc": "Inserisci la directory .codex in WSL. I percorsi \\\\wsl.localhost\\ sono supportati.",
       "codexWslConfigDirPlaceholder": "Esempio: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} account · {{scope}}",
       "summaryMetaUnconfigured": "Non configurato · {{scope}}",
       "memberTitle": "Membri della raccolta",
+      "memberPlatformLabel": "Piattaforma",
+      "memberPlatformAll": "Tutte le piattaforme",
+      "memberPlatformGrok": "Account della piattaforma Grok",
       "imagePolicy": {
         "label": "Politica immagini",
         "inherit": "Immagine: Automatica",
@@ -3552,6 +3556,9 @@
           "message": "Se attivo, le chat di testo di questo account API Key collegato a OAuth passeranno dal gateway locale, dove la dichiarazione dello strumento image_generation viene rimossa prima dell'inoltro per evitare errori come \"Image generation is not enabled\". gpt-image e altri modelli immagine non vengono rimossi. Continuare?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Account Grok"
     },
     "deepSeek": {
       "start": {

@@ -284,7 +284,7 @@ func TestSplitResponsesConcatenatedJSONDocumentsRejectsMalformedPayload(t *testi
 }
 
 func TestCodexClientModelsResponseShape(t *testing.T) {
-	response := buildCodexClientModelsResponse([]string{"gpt-5.4", "gpt-image-2", codexAutoReviewModel}, &apiKeySpec{}, nil)
+	response := buildCodexClientModelsResponse([]string{"gpt-5.4", "gpt-image-2", codexAutoReviewModel}, &apiKeySpec{}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -330,7 +330,7 @@ func TestCodexClientModelsResponseShape(t *testing.T) {
 }
 
 func TestCodexClientModelsResponsePreserves56Template(t *testing.T) {
-	response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "custom-compat-model"}, &apiKeySpec{}, nil)
+	response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "custom-compat-model"}, &apiKeySpec{}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -389,7 +389,7 @@ func TestCodexClientModelsResponsePreserves56Template(t *testing.T) {
 }
 
 func TestCodexClientModelsResponsePreservesAstraTemplate(t *testing.T) {
-	response := buildCodexClientModelsResponse([]string{"gpt-6-astra"}, &apiKeySpec{}, nil)
+	response := buildCodexClientModelsResponse([]string{"gpt-6-astra"}, &apiKeySpec{}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok || len(models) != 1 {
 		t.Fatalf("Astra models response = %#v, want one model", response["models"])
@@ -435,6 +435,7 @@ func TestCodexClientModelsResponseAppliesExplicitContextWindows(t *testing.T) {
 			"gpt-5.6-sol":  900000,
 			"custom-flash": 1048576,
 		},
+		nil,
 	)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
@@ -498,7 +499,7 @@ func TestCodexClientModelsResponseDoesNotInjectFastMode(t *testing.T) {
 		{name: "provider gateway", spec: &apiKeySpec{ProviderGateway: &providerGatewaySpec{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol", "custom-compat-model"}, test.spec, nil)
+			response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol", "custom-compat-model"}, test.spec, nil, nil)
 			models, ok := response["models"].([]map[string]any)
 			if !ok {
 				t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -529,7 +530,7 @@ func TestCodexClientModelsResponseDoesNotInjectFastMode(t *testing.T) {
 func TestCodexClientModelsResponseEnablesWebsocketsWhenConfigured(t *testing.T) {
 	response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol"}, &apiKeySpec{
 		ResponsesWebsockets: true,
-	}, nil)
+	}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -787,7 +788,7 @@ func TestRelayServerCockpitQuotaUpstreamFailureReturnsScopedEmptyState(t *testin
 func TestCodexClientModelsResponseDisablesSearchForProviderGateway(t *testing.T) {
 	response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol"}, &apiKeySpec{
 		ProviderGateway: &providerGatewaySpec{},
-	}, nil)
+	}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -855,7 +856,7 @@ func TestCodexClientModelsResponseGatesProviderGatewayImageInput(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			response := buildCodexClientModelsResponse([]string{test.model}, &apiKeySpec{
 				ProviderGateway: test.gateway,
-			}, nil)
+			}, nil, nil)
 			models, ok := response["models"].([]map[string]any)
 			if !ok {
 				t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -921,7 +922,7 @@ func stringFromAny(value any) string {
 }
 
 func TestCodexSparkUsesCompleteCodexClientCatalogTemplate(t *testing.T) {
-	response := buildCodexClientModelsResponse([]string{codexSparkCatalogTemplateModel, codexSparkModel}, &apiKeySpec{}, nil)
+	response := buildCodexClientModelsResponse([]string{codexSparkCatalogTemplateModel, codexSparkModel}, &apiKeySpec{}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -998,7 +999,7 @@ func TestCodexReserveClientCatalogListsLunaReserveWithLunaCapabilities(t *testin
 		ModelIDs: []string{codexReserveModel},
 	}
 	models := clientCatalogModelsForAPIKey(m, &apiKeySpec{AccountIDs: []string{"reserve-account"}})
-	response := buildCodexClientModelsResponse(models, &apiKeySpec{}, nil)
+	response := buildCodexClientModelsResponse(models, &apiKeySpec{}, nil, nil)
 	data, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models response should contain a models array: %#v", response["models"])
@@ -1007,7 +1008,7 @@ func TestCodexReserveClientCatalogListsLunaReserveWithLunaCapabilities(t *testin
 	if reserve == nil || reserve["display_name"] != "GPT-5.6 Reserve" || reserve["visibility"] != "list" {
 		t.Fatalf("gpt-reserve catalog entry = %#v", reserve)
 	}
-	lunaResponse := buildCodexClientModelsResponse([]string{"gpt-5.6-luna"}, &apiKeySpec{}, nil)
+	lunaResponse := buildCodexClientModelsResponse([]string{"gpt-5.6-luna"}, &apiKeySpec{}, nil, nil)
 	luna := findCodexClientModelForTest(lunaResponse["models"].([]map[string]any), "gpt-5.6-luna")
 	for _, field := range []string{"context_window", "max_context_window", "auto_compact_token_limit", "supported_reasoning_levels", "default_reasoning_level", "input_modalities", "tool_mode", "shell_type", "use_responses_lite", "priority"} {
 		if !reflect.DeepEqual(reserve[field], luna[field]) {
@@ -1024,7 +1025,15 @@ func TestCodexReserveClientCatalogListsLunaReserveWithLunaCapabilities(t *testin
 }
 
 func TestImageRequestModelIsNotRewrittenToProviderUpstreamModel(t *testing.T) {
-	m := &manifest{ModelIDs: []string{"gpt-5.5", "deepseek-flash"}}
+	// gpt-5.5 是 DeepSeek 网关的目录壳位，必须由别名声明；未声明的 Codex/GPT 官方 id
+	// 不再兜底改写成 provider 上游模型。
+	m := &manifest{
+		ModelIDs:     []string{"gpt-5.5", "deepseek-flash"},
+		ModelAliases: []modelAliasSpec{{SourceModel: "deepseek-flash", Alias: "gpt-5.5"}},
+		aliasToSource: map[string]string{
+			"gpt-5.5": "deepseek-flash",
+		},
+	}
 	spec := &apiKeySpec{
 		ProviderGateway: &providerGatewaySpec{
 			UpstreamModel:  "deepseek-flash",
@@ -1078,7 +1087,7 @@ func TestReserveModelAdmissionKeepsIDAndStillHonorsExplicitAccessFilters(t *test
 
 func TestPrefixedCodexReserveKeepsVisibleLunaCapabilitiesAndExplicitContext(t *testing.T) {
 	spec := &apiKeySpec{ModelPrefix: "team"}
-	response := buildCodexClientModelsResponse([]string{"team/gpt-reserve"}, spec, map[string]int64{"gpt-reserve": 516000})
+	response := buildCodexClientModelsResponse([]string{"team/gpt-reserve"}, spec, map[string]int64{"gpt-reserve": 516000}, nil)
 	reserve := findCodexClientModelForTest(response["models"].([]map[string]any), "team/gpt-reserve")
 	if reserve == nil || reserve["visibility"] != "list" || reserve["display_name"] != "GPT-5.6 Reserve" {
 		t.Fatalf("prefixed Reserve = %#v", reserve)
@@ -3201,7 +3210,7 @@ func TestMixedRoutingCatalogPreservesGPTCapabilities(t *testing.T) {
 		UpstreamModels: []string{"gpt-6-astra"},
 		WireAPI:        "responses",
 	})
-	catalog := buildCodexClientModelsResponse([]string{"gpt-6-astra", "cpa/gpt-6-astra"}, spec, nil)
+	catalog := buildCodexClientModelsResponse([]string{"gpt-6-astra", "cpa/gpt-6-astra"}, spec, nil, nil)
 	models := catalog["models"].([]map[string]any)
 	if models[1]["slug"] != "cpa/gpt-6-astra" {
 		t.Fatal("lost routing identity")

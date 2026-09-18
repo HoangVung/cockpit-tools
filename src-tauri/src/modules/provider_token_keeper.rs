@@ -420,6 +420,10 @@ async fn refresh_due_grok_accounts() -> bool {
             Ok(updated) => {
                 clear_attempt_backoff(&key);
                 refreshed_any = true;
+                // Grok 供应商账号（Codex 侧）用同一份 OAuth 令牌：刷新后写穿到运行中的 sidecar。
+                crate::modules::codex_local_access::sync_grok_upstream_auth_files_in_background(
+                    updated.id.clone(),
+                );
                 logger::log_info(&format!(
                     "[TokenKeeper][Grok] Token 保活成功: account_id={}, email={}",
                     updated.id, updated.email

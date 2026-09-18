@@ -123,7 +123,7 @@
     "windowsOperation": {
       "title": "Windows 操作未完成",
       "accessDeniedDescription": "Windows 拒绝了本次操作。目标程序可能以更高权限运行，或位于受保护目录中。",
-      "storeLaunchBlockedDescription": "Windows 无法执行当前配置的 Codex 客户端：商店版应用目录可能已被更新替换，或该目录不再允许运行。为免打开错误的账号，已阻止直接启动。可「重新检测路径并重试」；仍失败时请把该实例的启动方式改为 CLI。",
+      "storeLaunchBlockedDescription": "Windows 拒绝了商店版 Codex 客户端的全部启动方式（直接启动、PowerShell 启动、包身份启动），已阻止启动以免打开错误的账号。多数情况下需要修复或重新安装商店版 Codex（可在 Microsoft Store 检查更新并重新安装）；也可「重新检测路径并重试」；仍失败时请把该实例的启动方式改为 CLI。",
       "repairPath": "重新检测路径并重试",
       "fileInUseDescription": "目标文件正在被其他程序使用。请关闭占用程序后重试。",
       "programNotFoundDescription": "Windows 找不到完成本次操作所需的程序。请检查安装状态或路径设置。",
@@ -821,7 +821,7 @@
         "summary": "普通模型使用当前订阅；带前缀模型（如 cpa/gpt-5.5）转发到第三方 API。两者都依赖本地分流服务。",
         "rowSummary": "普通模型使用当前订阅；带前缀模型（如 cpa/gpt-5.5）转发到第三方 API。两者都依赖本地分流服务。",
         "confirmEnableTitle": "开启第三方 API 路由？",
-        "confirmEnableMessage": "开启后，Codex 的模型请求将通过 Cockpit Tools 本地服务分流。服务未运行时，官方订阅和第三方模型都可能无法使用。保存时将默认启用开机自启。\n\n确认开启吗？",
+        "confirmEnableMessage": "开启后，Codex 的模型请求将通过 Cockpit Tools 本地服务分流。服务未运行时，官方订阅和第三方模型都可能无法使用。\n\n确认开启吗？",
         "confirmEnableAction": "确认开启",
         "confirmDisableTitle": "关闭第三方 API 路由？",
         "confirmDisableMessage": "关闭并生效后将停止本地网关、恢复官方原生直连，所有第三方模型将不可用。\n\n确认关闭吗？",
@@ -1056,10 +1056,11 @@
       "codexSyncWsl": "同步 Codex 到 WSL",
       "codexSyncWslDesc": "切换默认 Codex 账号后，同时把 auth.json 和 config.toml 写入 WSL 的 Codex 配置目录。",
       "codexAppUiInjection": "显示 API 服务额度",
-      "codexAppUiInjectionDesc": "重启 Codex 实例后，在输入框下方显示 Cockpit Tools API 服务的账号数、周额度和 5h 额度；绑定 DeepSeek 账号的实例改为显示该账号余额。需保持 Cockpit Tools 在后台运行；完全退出或网络不可用时，额度不会继续刷新。",
+      "codexAppUiInjectionDesc": "重启 Codex 实例后，输入框下方的额度徽章跟随当前所选模型：DeepSeek 显示账号余额、Grok 显示 Grok 额度、GPT 显示周额度和 5h 额度。需保持 Cockpit Tools 在后台运行；完全退出或网络不可用时，额度不会继续刷新。",
       "codexAppUiInjectionPoolLabel": "账号",
       "codexAppUiInjectionWeeklyLabel": "周",
       "codexAppUiInjectionFiveHourLabel": "5h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL Codex 目录",
       "codexWslConfigDirDesc": "填写 WSL 中的 .codex 目录，支持 \\\\wsl.localhost\\ 形式。",
       "codexWslConfigDirPlaceholder": "例如：\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2929,6 +2930,9 @@
         }
       },
       "memberTitle": "集合成员",
+      "memberPlatformLabel": "平台",
+      "memberPlatformAll": "全部平台",
+      "memberPlatformGrok": "Grok 平台账号",
       "memberPriorityLabel": "优先级",
       "memberPriorityLowest": "最低",
       "memberPriorityNormal": "正常",
@@ -3219,6 +3223,9 @@
       "noStats": "暂无统计",
       "refreshHint": "点击刷新后会同步当前 API key 的统计。",
       "dailyStats": "每日统计"
+    },
+    "grokAdd": {
+      "tab": "Grok 账号"
     },
     "deepSeek": {
       "start": {

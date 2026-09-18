@@ -663,7 +663,7 @@
         "summary": "تستخدم النماذج بدون بادئة الاشتراك الحالي؛ وتتم إعادة توجيه النماذج ذات البادئة مثل cpa/gpt-5.5 إلى واجهة برمجة تطبيقات تابعة لجهة خارجية. يعتمد كلاهما على خدمة التوجيه المحلية.",
         "rowSummary": "تستخدم النماذج بدون بادئة الاشتراك الحالي؛ وتتم إعادة توجيه النماذج ذات البادئة مثل cpa/gpt-5.5 إلى واجهة برمجة تطبيقات تابعة لجهة خارجية. يعتمد كلاهما على خدمة التوجيه المحلية.",
         "confirmEnableTitle": "هل تريد تمكين توجيه واجهة برمجة تطبيقات الطرف الثالث؟",
-        "confirmEnableMessage": "سيتم توجيه طلبات نموذج Codex عبر خدمة Cockpit Tools المحلية. إذا كانت الخدمة لا تعمل، فقد لا تتوفر نماذج الاشتراك ونماذج الطرف الثالث. سيتم تمكين التشغيل عند تسجيل الدخول عند الحفظ.\n\nهل تريد تمكين التوجيه؟",
+        "confirmEnableMessage": "سيتم توجيه طلبات نموذج Codex عبر خدمة Cockpit Tools المحلية. إذا كانت الخدمة لا تعمل، فقد لا تتوفر نماذج الاشتراك ونماذج الطرف الثالث.\n\nهل تريد تمكين التوجيه؟",
         "confirmEnableAction": "تمكين",
         "confirmDisableTitle": "هل تريد تعطيل توجيه واجهة برمجة تطبيقات الطرف الثالث؟",
         "confirmDisableMessage": "بعد سريان هذا التغيير، سيتم إيقاف البوابة المحلية، واستعادة الوصول المباشر للاشتراك الرسمي، ولن تتوفر نماذج الطرف الثالث.\n\nهل تريد تعطيل التوجيه؟",
@@ -890,10 +890,11 @@
       "codexSyncWsl": "مزامنة Codex مع WSL",
       "codexSyncWslDesc": "بعد تبديل حساب Codex الافتراضي، تتم كتابة auth.json و config.toml أيضًا إلى مجلد إعدادات Codex في WSL.",
       "codexAppUiInjection": "عرض حصة خدمة API",
-      "codexAppUiInjectionDesc": "بعد إعادة تشغيل مثيل Codex، اعرض عدد حسابات خدمة API في Cockpit Tools وحصتي الأسبوع و5 ساعات أسفل منطقة الكتابة؛ تعرض المثيلات المرتبطة بحساب DeepSeek رصيد ذلك الحساب بدلاً من ذلك. يجب إبقاء Cockpit Tools قيد التشغيل في الخلفية؛ يتوقف التحديث عند إغلاقه تمامًا أو عند عدم توفر الشبكة.",
+      "codexAppUiInjectionDesc": "بعد إعادة تشغيل مثيل Codex، تتبع شارة الحصة أسفل منطقة الكتابة النموذج المحدد: يعرض DeepSeek رصيد الحساب، ويعرض Grok حصته، وتعرض نماذج GPT حصتي الأسبوع و5 ساعات. يجب إبقاء Cockpit Tools قيد التشغيل في الخلفية؛ يتوقف التحديث عند إغلاقه تمامًا أو عند عدم توفر الشبكة.",
       "codexAppUiInjectionPoolLabel": "الحسابات",
       "codexAppUiInjectionWeeklyLabel": "أسبوع",
       "codexAppUiInjectionFiveHourLabel": "5 س",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "مجلد Codex في WSL",
       "codexWslConfigDirDesc": "أدخل مجلد .codex داخل WSL. مسارات \\\\wsl.localhost\\ مدعومة.",
       "codexWslConfigDirPlaceholder": "مثال: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2519,6 +2520,9 @@
       "summaryMeta": "{{count}} حسابًا · {{scope}}",
       "summaryMetaUnconfigured": "غير مهيأ · {{scope}}",
       "memberTitle": "أعضاء المجموعة",
+      "memberPlatformLabel": "المنصة",
+      "memberPlatformAll": "كل المنصات",
+      "memberPlatformGrok": "حسابات منصة Grok",
       "imagePolicy": {
         "label": "سياسة الصور",
         "inherit": "الصور: تلقائي",
@@ -3599,6 +3603,9 @@
           "message": "عند التفعيل، ستمر محادثات النص العادية لحساب API Key المرتبط بـ OAuth عبر البوابة المحلية، حيث يُزال تعريف أداة image_generation قبل التمرير لتجنب أخطاء مثل \"Image generation is not enabled\". لا تُحذف نماذج الصور مثل gpt-image. هل تريد المتابعة؟"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "حساب Grok"
     },
     "deepSeek": {
       "start": {

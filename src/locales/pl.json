@@ -616,7 +616,7 @@
         "summary": "Modele bez prefiksu korzystają z bieżącej subskrypcji; modele z prefiksem, takie jak cpa/gpt-5.5, są przekazywane do zewnętrznego API. Oba zależą od lokalnej usługi routingu.",
         "rowSummary": "Modele bez prefiksu korzystają z bieżącej subskrypcji; modele z prefiksem, takie jak cpa/gpt-5.5, są przekazywane do zewnętrznego API. Oba zależą od lokalnej usługi routingu.",
         "confirmEnableTitle": "Włączyć routing API innych firm?",
-        "confirmEnableMessage": "Żądania modeli Codex będą kierowane przez lokalną usługę Cockpit Tools. Jeśli usługa nie działa, zarówno modele subskrypcyjne, jak i zewnętrzne mogą być niedostępne. Uruchamianie przy logowaniu zostanie włączone po zapisaniu.\n\nWłączyć routing?",
+        "confirmEnableMessage": "Żądania modeli Codex będą kierowane przez lokalną usługę Cockpit Tools. Jeśli usługa nie działa, zarówno modele subskrypcyjne, jak i zewnętrzne mogą być niedostępne.\n\nWłączyć routing?",
         "confirmEnableAction": "Włącz",
         "confirmDisableTitle": "Wyłączyć routing API innych firm?",
         "confirmDisableMessage": "Gdy ta zmiana wejdzie w życie, lokalna brama zostanie zatrzymana, bezpośredni dostęp do oficjalnej subskrypcji zostanie przywrócony, a modele innych firm będą niedostępne.\n\nWyłączyć routing?",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Synchronizuj Codex z WSL",
       "codexSyncWslDesc": "Po przełączeniu domyślnego konta Codex pliki auth.json i config.toml są też zapisywane w katalogu Codex w WSL.",
       "codexAppUiInjection": "Limit usługi API",
-      "codexAppUiInjectionDesc": "Po ponownym uruchomieniu instancji Codex pokaż pod kompozytorem liczbę kont oraz tygodniowy i 5-godzinny limit usługi API Cockpit Tools; instancje powiązane z kontem DeepSeek pokazują zamiast tego saldo tego konta. Cockpit Tools musi działać w tle; aktualizacje zatrzymują się po całkowitym zamknięciu aplikacji lub przy braku sieci.",
+      "codexAppUiInjectionDesc": "Po ponownym uruchomieniu instancji Codex plakietka limitu pod kompozytorem podąża za wybranym modelem: DeepSeek pokazuje saldo konta, Grok swój limit, a modele GPT tygodniowy i 5-godzinny limit. Cockpit Tools musi działać w tle; aktualizacje zatrzymują się po całkowitym zamknięciu aplikacji lub przy braku sieci.",
       "codexAppUiInjectionPoolLabel": "Konta",
       "codexAppUiInjectionWeeklyLabel": "Tydzień",
       "codexAppUiInjectionFiveHourLabel": "5 godz.",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Katalog Codex w WSL",
       "codexWslConfigDirDesc": "Wpisz katalog .codex w WSL. Ścieżki \\\\wsl.localhost\\ są obsługiwane.",
       "codexWslConfigDirPlaceholder": "Przykład: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} kont · {{scope}}",
       "summaryMetaUnconfigured": "Nie skonfigurowano · {{scope}}",
       "memberTitle": "Członkowie kolekcji",
+      "memberPlatformLabel": "Platforma",
+      "memberPlatformAll": "Wszystkie platformy",
+      "memberPlatformGrok": "Konta platformy Grok",
       "imagePolicy": {
         "label": "Zasady obrazów",
         "inherit": "Obraz: Automatycznie",
@@ -3552,6 +3556,9 @@
           "message": "Po włączeniu zwykłe czaty tekstowe tego konta API Key powiązanego z OAuth przejdą przez lokalną bramę, gdzie deklaracja narzędzia image_generation zostanie usunięta przed przekazaniem, aby uniknąć błędów typu „Image generation is not enabled”. gpt-image i inne modele obrazów nie są usuwane. Kontynuować?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Konto Grok"
     },
     "deepSeek": {
       "start": {

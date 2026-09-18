@@ -257,33 +257,20 @@
                 .expect("read local access model catalog"),
         )
         .expect("parse local access model catalog");
-        let reserve = catalog["models"].as_array().unwrap().iter()
-            .find(|model| model["slug"] == "gpt-reserve")
-            .expect("API Service catalog should list Reserve even with an empty account pool");
-        assert_eq!(reserve["visibility"], "list");
-        assert_eq!(reserve["display_name"], "GPT-5.6 Reserve");
-        assert!(reserve["auto_compact_token_limit"].is_null());
-        assert_eq!(reserve["prefer_websockets"], false);
         assert!(!config.contains("model_context_window"));
         assert!(!config.contains("model_auto_compact_token_limit"));
         assert!(!config.contains("model = \"gpt-reserve\""));
-        // 只保留官方推荐的 GPT 集：历史兼容模型（Spark / 5.4）不再出现在客户端目录里。
+        // 空账号池没有任何账号能承接官方模型，官方推荐 GPT 集与额度兜底条目
+        // （gpt-reserve）都不应进入客户端模型目录，只留客户端内部需要的隐藏条目。
         let catalog_models = catalog["models"].as_array().expect("catalog models");
         let listed_gpt_slugs = catalog_models
             .iter()
             .filter_map(|model| model.get("slug").and_then(Value::as_str))
             .filter(|slug| slug.starts_with("gpt-") && !slug.starts_with("gpt-image"))
             .collect::<Vec<_>>();
-        assert_eq!(
-            listed_gpt_slugs,
-            vec![
-                "gpt-6-astra",
-                "gpt-5.6-sol",
-                "gpt-5.6-terra",
-                "gpt-5.6-luna",
-                "gpt-5.5",
-                "gpt-reserve"
-            ]
+        assert!(
+            listed_gpt_slugs.is_empty(),
+            "空账号池不应展示任何 GPT 条目: {listed_gpt_slugs:?}"
         );
         for hidden in ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"] {
             assert!(
@@ -1801,7 +1788,7 @@
 
         let catalog = read_profile_model_catalog(&profile_dir);
         let slugs = catalog_model_slugs(&catalog);
-        // 客户端按 priority 升序展示：GPT 官方推荐集在最前，其后是额度兜底，最后才是账号模型。
+        // 客户端按 priority 升序展示：账号池里没有官方 GPT 能力时目录里只剩账号模型。
         let ordered: Vec<(String, i64)> = catalog["models"]
             .as_array()
             .expect("catalog models")
@@ -1821,18 +1808,8 @@
             .iter()
             .map(|(slug, _)| slug.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(
-            &listed[..6],
-            &[
-                "gpt-6-astra",
-                "gpt-5.6-sol",
-                "gpt-5.6-terra",
-                "gpt-5.6-luna",
-                "gpt-5.5",
-                "gpt-reserve"
-            ],
-            "GPT 模型必须排在最前面: {listed:?}"
-        );
+        // 账号池里没有能承接官方 GPT 模型的账号（DeepSeek 目录是自己的模型、chat 账号是 vendor 模型），
+        // 因此官方推荐 GPT 集不再进入客户端选择器。
         assert_eq!(
             listed
                 .iter()
@@ -1840,25 +1817,23 @@
                 .copied()
                 .collect::<Vec<_>>(),
             vec!["deepseek-flash", "deepseek-v4-pro"],
-            "账号模型必须排在 GPT 之后: {listed:?}"
+            "账号模型必须全部出现在客户端目录里: {listed:?}"
         );
-        // GPT 只保留官方推荐集，且显示名与官方客户端一致。
+        assert!(
+            !listed.iter().any(|slug| slug.starts_with("gpt-5")
+                || slug.starts_with("gpt-6")
+                || *slug == "gpt-5.5"),
+            "账号池无 GPT 能力时不应展示官方 GPT 模型: {listed:?}"
+        );
+        // 账号池里没有任何能承接官方模型的账号：连额度兜底条目也不再保留。
         let gpt_slugs = slugs
             .iter()
             .filter(|slug| slug.starts_with("gpt-") && !slug.starts_with("gpt-image"))
             .map(String::as_str)
             .collect::<Vec<_>>();
-        assert_eq!(
-            gpt_slugs,
-            vec![
-                "gpt-6-astra",
-                "gpt-5.6-sol",
-                "gpt-5.6-terra",
-                "gpt-5.6-luna",
-                "gpt-5.5",
-                "gpt-reserve"
-            ],
-            "只保留官方推荐的 GPT 模型: {slugs:?}"
+        assert!(
+            gpt_slugs.is_empty(),
+            "账号池无 GPT 能力时不应保留任何 GPT 条目: {slugs:?}"
         );
         let catalog_display_names = catalog
             .get("models")
@@ -1877,16 +1852,13 @@
             })
             .unwrap_or_default();
         for (slug, expected_name) in [
-            ("gpt-6-astra", "GPT-6 Astra"),
-            ("gpt-5.6-sol", "GPT-5.6 Sol"),
-            ("gpt-5.6-terra", "GPT-5.6 Terra"),
-            ("gpt-5.6-luna", "GPT-5.6 Luna"),
-            ("gpt-5.5", "GPT-5.5"),
+            ("deepseek-flash", "DeepSeek-V4.1-Flash"),
+            ("deepseek-v4-pro", "DeepSeek-V4-Pro"),
         ] {
             assert_eq!(
                 catalog_display_names.get(slug).map(String::as_str),
                 Some(expected_name),
-                "模型 {slug} 显示名必须与官方客户端一致"
+                "账号模型 {slug} 的显示名必须来自账号目录"
             );
         }
         assert!(

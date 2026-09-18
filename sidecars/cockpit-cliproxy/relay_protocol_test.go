@@ -418,49 +418,82 @@ func TestRelayServerProviderGatewayChatStreamTerminatesResponsesSSEFrames(t *tes
 	}
 }
 
-func TestRelayServerProviderGatewayFallsBackToDefaultUpstreamModel(t *testing.T) {
+func TestRelayServerProviderGatewayModelResolution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	var upstreamBody string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		upstreamBody = string(body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"chatcmpl_1","object":"chat.completion","created":1,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
-	}))
-	defer upstream.Close()
 
-	gateway := &providerGatewaySpec{
-		BaseURL:        upstream.URL,
-		APIKey:         "deepseek-key",
-		UpstreamModel:  "deepseek-v4-flash",
-		UpstreamModels: []string{"deepseek-v4-flash", "deepseek-v4-pro"},
-		WireAPI:        "chat_completions",
-	}
-	m := &manifest{
-		APIKeys:  []apiKeySpec{{ID: "provider_gateway_account_1", Label: "Provider Gateway", Key: "client-key", Enabled: true, ProviderGateway: gateway}},
-		ModelIDs: []string{"deepseek-v4-flash", "deepseek-v4-pro"},
-		apiKeyByValue: map[string]*apiKeySpec{
-			"client-key": {ID: "provider_gateway_account_1", Label: "Provider Gateway", Key: "client-key", Enabled: true, ProviderGateway: gateway},
-		},
-	}
-	router := (&relayServer{
-		runtime:  &fakeRuntime{},
-		cfg:      &config.Config{},
-		manifest: m,
-		policy:   &requestPolicy{manifest: m},
-	}).router()
+	serve := func(t *testing.T, requestModel string, aliases map[string]string) (int, string, string) {
+		t.Helper()
+		upstreamBody := ""
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			upstreamBody = string(body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"chatcmpl_1","object":"chat.completion","created":1,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+		}))
+		defer upstream.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5.4","input":"hello","stream":false}`))
-	req.Header.Set("Authorization", "Bearer client-key")
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+		gateway := &providerGatewaySpec{
+			BaseURL:        upstream.URL,
+			APIKey:         "deepseek-key",
+			UpstreamModel:  "deepseek-v4-flash",
+			UpstreamModels: []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+			WireAPI:        "chat_completions",
+		}
+		aliasToSource := map[string]string{}
+		modelAliases := make([]modelAliasSpec, 0, len(aliases))
+		for alias, source := range aliases {
+			aliasToSource[strings.ToLower(alias)] = source
+			modelAliases = append(modelAliases, modelAliasSpec{SourceModel: source, Alias: alias})
+		}
+		spec := &apiKeySpec{ID: "provider_gateway_account_1", Label: "Provider Gateway", Key: "client-key", Enabled: true, ProviderGateway: gateway}
+		m := &manifest{
+			APIKeys:       []apiKeySpec{*spec},
+			ModelIDs:      []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+			ModelAliases:  modelAliases,
+			aliasToSource: aliasToSource,
+			apiKeyByValue: map[string]*apiKeySpec{"client-key": spec},
+		}
+		router := (&relayServer{
+			runtime:  &fakeRuntime{},
+			cfg:      &config.Config{},
+			manifest: m,
+			policy:   &requestPolicy{manifest: m},
+		}).router()
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"`+requestModel+`","input":"hello","stream":false}`))
+		req.Header.Set("Authorization", "Bearer client-key")
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code, w.Body.String(), upstreamBody
 	}
-	if !strings.Contains(upstreamBody, `"model":"deepseek-v4-flash"`) || strings.Contains(upstreamBody, `"model":"gpt-5.4"`) {
-		t.Fatalf("request should fall back to provider default upstream model: %s", upstreamBody)
+
+	// 目录壳位（客户端可见名）有别名声明时，按别名改写上游模型。
+	status, body, upstreamBody := serve(t, "gpt-5.4", map[string]string{"gpt-5.4": "deepseek-v4-pro"})
+	if status != http.StatusOK {
+		t.Fatalf("declared alias should be routable, got status=%d body=%s", status, body)
+	}
+	if !strings.Contains(upstreamBody, `"model":"deepseek-v4-pro"`) {
+		t.Fatalf("declared alias should resolve to its upstream model: %s", upstreamBody)
+	}
+
+	// 未声明的 Codex/GPT 模型 id 不能再静默落到默认上游模型：DeepSeek 之类的上游只能把
+	// 工具调用写成文本标记返回，客户端无法解析。
+	status, body, upstreamBody = serve(t, "gpt-5.6-sol", nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("undeclared codex shell model should be rejected, got status=%d body=%s", status, body)
+	}
+	if upstreamBody != "" {
+		t.Fatalf("undeclared codex shell model must not reach upstream: %s", upstreamBody)
+	}
+
+	// 非 Codex/GPT 的未知模型名保留原有兜底行为。
+	status, body, upstreamBody = serve(t, "custom-model", nil)
+	if status != http.StatusOK {
+		t.Fatalf("custom model keeps fallback, got status=%d body=%s", status, body)
+	}
+	if !strings.Contains(upstreamBody, `"model":"deepseek-v4-flash"`) {
+		t.Fatalf("custom model should fall back to provider default upstream model: %s", upstreamBody)
 	}
 }
 

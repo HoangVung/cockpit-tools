@@ -4,6 +4,7 @@ import { useCodexAccountsBaseController } from "./useCodexAccountsBaseController
 import { useCodexAccountsOAuthController } from "./useCodexAccountsOAuthController";
 import { useCodexAccountsAccessController } from "./useCodexAccountsAccessController";
 import { useCodexTempLoginController } from "./useCodexTempLoginController";
+import { useCodexAddGrokController } from "./useCodexAddGrokController";
 import { useCodexAccountsLocalAccessController } from "./useCodexAccountsLocalAccessController";
 import { useCodexAccountsOverviewController } from "./useCodexAccountsOverviewController";
 import { useCodexAccountsRenderers } from "./useCodexAccountsRenderers";
@@ -375,6 +376,11 @@ export function useCodexAccountsPageController() {
 
   // 官方客户端临时登录（一次性空白 profile，读取后立即关闭并清理）
   const tempLoginController = useCodexTempLoginController({
+    ...baseController,
+    ...oauthController,
+  });
+  // 「Grok 账号」添加方式：把 Grok 平台账号接入 Codex 供应商账号。
+  const addGrokController = useCodexAddGrokController({
     ...baseController,
     ...oauthController,
   });
@@ -1081,6 +1087,7 @@ export function useCodexAccountsPageController() {
     syncImportedToApiService,
     t,
     ...tempLoginController,
+    ...addGrokController,
     tagDeleteConfirm,
     tagDeleteConfirmError,
     tagDeleteConfirmErrorScrollKey,

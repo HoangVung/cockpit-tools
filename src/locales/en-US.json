@@ -123,7 +123,7 @@
     "windowsOperation": {
       "title": "Windows operation incomplete",
       "accessDeniedDescription": "Windows denied this operation. The target may be running with higher privileges or stored in a protected location.",
-      "storeLaunchBlockedDescription": "Windows could not run the currently configured Codex client: the Store package folder may have been replaced by an update, or it no longer allows execution. Launching directly was blocked so the wrong account is not opened. Use \"Re-detect path and retry\"; if it still fails, switch this instance to CLI launch mode.",
+      "storeLaunchBlockedDescription": "Windows rejected every way of launching the Store version of the Codex client (direct launch, PowerShell launch, and package-identity launch), so launching was blocked to avoid opening the wrong account. In most cases the Store version of Codex needs repair or reinstallation (check for updates and reinstall it from the Microsoft Store). You can also use \"Re-detect path and retry\"; if it still fails, switch this instance to CLI launch mode.",
       "repairPath": "Re-detect path and retry",
       "fileInUseDescription": "The target file is in use by another program. Close the program and try again.",
       "programNotFoundDescription": "Windows could not find the program required for this operation. Check the installation or configured path.",
@@ -821,7 +821,7 @@
         "summary": "Unprefixed models use the current subscription; prefixed models such as cpa/gpt-5.5 are forwarded to a third-party API. Both depend on the local routing service.",
         "rowSummary": "Unprefixed models use the current subscription; prefixed models such as cpa/gpt-5.5 are forwarded to a third-party API. Both depend on the local routing service.",
         "confirmEnableTitle": "Enable third-party API routing?",
-        "confirmEnableMessage": "Codex model requests will be routed through the local Cockpit Tools service. If the service is not running, both subscription and third-party models may be unavailable. Launch at login will be enabled when you save.\n\nEnable routing?",
+        "confirmEnableMessage": "Codex model requests will be routed through the local Cockpit Tools service. If the service is not running, both subscription and third-party models may be unavailable.\n\nEnable routing?",
         "confirmEnableAction": "Enable",
         "confirmDisableTitle": "Disable third-party API routing?",
         "confirmDisableMessage": "After this change takes effect, the local gateway will stop, native subscription access will be restored, and third-party models will be unavailable.\n\nDisable routing?",
@@ -1056,10 +1056,11 @@
       "codexSyncWsl": "Sync Codex to WSL",
       "codexSyncWslDesc": "After switching the default Codex account, also write auth.json and config.toml to the WSL Codex directory.",
       "codexAppUiInjection": "Show API Service quota",
-      "codexAppUiInjectionDesc": "After restarting a Codex instance, show the Cockpit Tools API Service account count, weekly quota, and 5-hour quota below the composer; instances bound to a DeepSeek account show that account's balance instead. Keep Cockpit Tools running in the background; updates stop when it is fully quit or the network is unavailable.",
+      "codexAppUiInjectionDesc": "After restarting a Codex instance, the quota badge below the composer follows the selected model: DeepSeek shows the account balance, Grok shows its quota, and GPT models show the weekly and 5-hour quota. Keep Cockpit Tools running in the background; updates stop when it is fully quit or the network is unavailable.",
       "codexAppUiInjectionPoolLabel": "Accounts",
       "codexAppUiInjectionWeeklyLabel": "Week",
       "codexAppUiInjectionFiveHourLabel": "5h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL Codex Directory",
       "codexWslConfigDirDesc": "Enter the .codex directory inside WSL. \\\\wsl.localhost\\ paths are supported.",
       "codexWslConfigDirPlaceholder": "Example: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2929,6 +2930,9 @@
         }
       },
       "memberTitle": "Collection Members",
+      "memberPlatformLabel": "Platform",
+      "memberPlatformAll": "All platforms",
+      "memberPlatformGrok": "Grok platform accounts",
       "memberPriorityLabel": "Priority",
       "memberPriorityLowest": "Lowest",
       "memberPriorityNormal": "Normal",
@@ -3219,6 +3223,9 @@
       "noStats": "No stats yet",
       "refreshHint": "Click refresh to sync stats for this API key.",
       "dailyStats": "Daily Stats"
+    },
+    "grokAdd": {
+      "tab": "Grok Account"
     },
     "deepSeek": {
       "start": {

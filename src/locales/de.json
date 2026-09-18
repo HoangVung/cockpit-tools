@@ -616,7 +616,7 @@
         "summary": "Präfixfreie Modelle nutzen das aktuelle Abonnement; Modelle mit Präfix wie cpa/gpt-5.5 werden an eine Drittanbieter-API weitergeleitet. Beide hängen vom lokalen Routing-Dienst ab.",
         "rowSummary": "Präfixfreie Modelle nutzen das aktuelle Abonnement; Modelle mit Präfix wie cpa/gpt-5.5 werden an eine Drittanbieter-API weitergeleitet. Beide hängen vom lokalen Routing-Dienst ab.",
         "confirmEnableTitle": "Drittanbieter-API-Routing aktivieren?",
-        "confirmEnableMessage": "Codex-Modellanfragen werden über den lokalen Cockpit Tools-Dienst weitergeleitet. Wenn der Dienst nicht läuft, sind möglicherweise sowohl Abonnement- als auch Drittanbietermodelle nicht verfügbar. Der Autostart bei der Anmeldung wird beim Speichern aktiviert.\n\nRouting aktivieren?",
+        "confirmEnableMessage": "Codex-Modellanfragen werden über den lokalen Cockpit Tools-Dienst weitergeleitet. Wenn der Dienst nicht läuft, sind möglicherweise sowohl Abonnement- als auch Drittanbietermodelle nicht verfügbar.\n\nRouting aktivieren?",
         "confirmEnableAction": "Aktivieren",
         "confirmDisableTitle": "Drittanbieter-API-Routing deaktivieren?",
         "confirmDisableMessage": "Sobald diese Änderung wirksam wird, wird das lokale Gateway gestoppt, der offizielle Direktzugriff wiederhergestellt und Drittanbietermodelle sind nicht mehr verfügbar.\n\nRouting deaktivieren?",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Codex mit WSL synchronisieren",
       "codexSyncWslDesc": "Nach dem Wechsel des Standard-Codex-Kontos werden auth.json und config.toml auch in das Codex-Verzeichnis in WSL geschrieben.",
       "codexAppUiInjection": "API-Dienst-Kontingent",
-      "codexAppUiInjectionDesc": "Nach dem Neustart einer Codex-Instanz Kontenanzahl sowie Wochen- und 5-Stunden-Kontingent des Cockpit Tools API-Dienstes unter dem Composer anzeigen; Instanzen mit gebundenem DeepSeek-Konto zeigen stattdessen das Guthaben dieses Kontos. Cockpit Tools muss im Hintergrund laufen; nach vollständigem Beenden oder ohne Netzwerk werden die Werte nicht weiter aktualisiert.",
+      "codexAppUiInjectionDesc": "Nach dem Neustart einer Codex-Instanz folgt die Kontingent-Anzeige unter dem Composer dem ausgewählten Modell: DeepSeek zeigt das Kontoguthaben, Grok sein Kontingent, GPT-Modelle das Wochen- und 5-Stunden-Kontingent. Cockpit Tools muss im Hintergrund laufen; nach vollständigem Beenden oder ohne Netzwerk werden die Werte nicht weiter aktualisiert.",
       "codexAppUiInjectionPoolLabel": "Konten",
       "codexAppUiInjectionWeeklyLabel": "Woche",
       "codexAppUiInjectionFiveHourLabel": "5 Std.",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL-Codex-Verzeichnis",
       "codexWslConfigDirDesc": "Gib das .codex-Verzeichnis in WSL ein. \\\\wsl.localhost\\-Pfade werden unterstützt.",
       "codexWslConfigDirPlaceholder": "Beispiel: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} Konten · {{scope}}",
       "summaryMetaUnconfigured": "Nicht konfiguriert · {{scope}}",
       "memberTitle": "Sammlungsmitglieder",
+      "memberPlatformLabel": "Plattform",
+      "memberPlatformAll": "Alle Plattformen",
+      "memberPlatformGrok": "Grok-Plattformkonten",
       "imagePolicy": {
         "label": "Bildrichtlinie",
         "inherit": "Bild: Automatisch",
@@ -3552,6 +3556,9 @@
           "message": "Bei Aktivierung laufen normale Textchats dieses per OAuth gebundenen API-Key-Kontos über das lokale Gateway. Dort wird die Tool-Deklaration image_generation vor dem Weiterleiten entfernt, um Fehler wie „Image generation is not enabled“ zu vermeiden. gpt-image und andere Bildmodelle werden nicht entfernt. Fortfahren?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Grok-Konto"
     },
     "deepSeek": {
       "start": {

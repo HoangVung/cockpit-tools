@@ -167,6 +167,16 @@ export function CodexAddAccountDialog(props: CodexAccountsViewProps) {
                   </div>
                   <div className="modal-tabs">
                     <button
+                      className={`modal-tab ${addTab === "tempLogin" ? "active" : ""}`}
+                      onClick={() => openCodexAddModal("tempLogin")}
+                      disabled={importing || tempLoginRunning}
+                    >
+                      <Monitor size={14} />
+                      <span className="modal-tab-label">
+                        {t("codex.tempLogin.tab", "官方登录")}
+                      </span>
+                    </button>
+                    <button
                       className={`modal-tab ${addTab === "oauth" ? "active" : ""}`}
                       onClick={() => openCodexAddModal("oauth")}
                       disabled={importing || tempLoginRunning}
@@ -207,16 +217,6 @@ export function CodexAddAccountDialog(props: CodexAccountsViewProps) {
                       <Database size={14} />
                       <span className="modal-tab-label">
                         {t("accounts.tabs.import", "本地导入")}
-                      </span>
-                    </button>
-                    <button
-                      className={`modal-tab ${addTab === "tempLogin" ? "active" : ""}`}
-                      onClick={() => openCodexAddModal("tempLogin")}
-                      disabled={importing || tempLoginRunning}
-                    >
-                      <Monitor size={14} />
-                      <span className="modal-tab-label">
-                        {t("codex.tempLogin.tab", "官方登录")}
                       </span>
                     </button>
                   </div>

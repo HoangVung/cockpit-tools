@@ -64,6 +64,8 @@ export interface CodexAccount {
   /** 网关模式下用于生图转发的 GPT(OAuth) 账号池。 */
   api_image_generation_account_ids?: string[] | null;
   bound_oauth_account_id?: string | null;
+  /** Grok 供应商账号绑定的 Grok 平台账号 ID：上游凭据来自该 Grok 账号（OAuth）。 */
+  upstream_grok_account_id?: string | null;
   user_id?: string;
   plan_type?: string;
   subscription_active_until?: string;

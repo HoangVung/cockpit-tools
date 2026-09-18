@@ -1013,7 +1013,7 @@ async function confirmRoutingToggle(
   const message = nextEnabled
     ? t(
         "instances.form.modelRouting.confirmEnableMessage",
-        "开启后，Codex 的模型请求将通过 Cockpit Tools 本地服务分流。服务未运行时，官方订阅和第三方模型都可能无法使用。保存时将默认启用开机自启。\n\n确认开启吗？",
+        "开启后，Codex 的模型请求将通过 Cockpit Tools 本地服务分流。服务未运行时，官方订阅和第三方模型都可能无法使用。\n\n确认开启吗？",
       )
     : t(
         "instances.form.modelRouting.confirmDisableMessage",

@@ -449,6 +449,10 @@ fn sidecar_codex_api_key_auth_id(account: &CodexAccount) -> Option<String> {
 }
 
 fn sidecar_auth_id_for_account(account: &CodexAccount) -> Option<String> {
+    if codex_account::is_grok_upstream_provider(account) {
+        // Grok 供应商账号在 sidecar 里是 xai OAuth 账号，认证文件即账号 ID 对应文件。
+        return Some(codex_account::grok_sidecar_auth_file_name(&account.id));
+    }
     if account.is_api_key_auth() {
         return sidecar_codex_api_key_auth_id(account);
     }
@@ -1581,6 +1585,24 @@ fn sidecar_account_manifest_value(
     value
 }
 
+/// Grok 供应商账号在 sidecar 里的账号条目。
+///
+/// 该账号的上游是 Grok(xAI) provider，因此显式声明 `provider` 与 `modelIds`，
+/// 让 sidecar 只把绑定的 Grok 模型注册到这个账号上。
+fn grok_sidecar_account_manifest_value(account: &CodexAccount, auth_id: &str) -> Value {
+    let mut models = account.api_model_catalog.clone();
+    models.retain(|model| !model.trim().is_empty());
+    json!({
+        "id": account.id.clone(),
+        "email": account.email.clone(),
+        "authId": auth_id,
+        "authKind": "oauth",
+        "provider": codex_account::GROK_PROVIDER_ID,
+        "modelIds": models,
+        "planType": account.plan_type.as_deref(),
+    })
+}
+
 /// Hosts that must not be treated as a real upstream for the local API sidecar.
 fn is_loopback_http_host(host: &str) -> bool {
     matches!(
@@ -2025,6 +2047,7 @@ async fn prepare_sidecar_launch_config(
     collection: &CodexLocalAccessCollection,
     preparation: GatewayPreparationContext,
 ) -> Result<SidecarLaunchConfig, String> {
+    refresh_grok_upstream_accounts_for_collection(collection).await;
     let health_snapshot = {
         let runtime = gateway_runtime().lock().await;
         runtime.account_health.clone()
@@ -2054,6 +2077,7 @@ async fn prepare_sidecar_launch_config_in_dir(
     default_service_tier: Option<&str>,
     account_overrides: HashMap<String, CodexAccount>,
 ) -> Result<SidecarLaunchConfig, String> {
+    refresh_grok_upstream_accounts_for_collection(collection).await;
     prepare_sidecar_launch_config_in_dir_sync(
         collection,
         base_dir,
@@ -2063,6 +2087,37 @@ async fn prepare_sidecar_launch_config_in_dir(
         false,
         None,
     )
+}
+
+/// 启动网关前刷新 Grok 供应商账号绑定的 Grok 平台账号令牌。
+///
+/// 令牌快过期（或已过期）时先刷新再写 xai auth 文件，避免 sidecar 拿着失效令牌
+/// 启动；刷新失败只记日志，仍写入当前令牌，由后续保活与写穿补齐。
+async fn refresh_grok_upstream_accounts_for_collection(collection: &CodexLocalAccessCollection) {
+    for account_id in effective_sidecar_account_ids(collection) {
+        let Some(account) = codex_account::load_account(&account_id) else {
+            continue;
+        };
+        if !codex_account::is_grok_upstream_provider(&account) {
+            continue;
+        }
+        let Some(grok_account_id) = account
+            .upstream_grok_account_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if let Err(error) =
+            crate::modules::grok_account::prepare_account_for_injection(grok_account_id).await
+        {
+            logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess][provider-gateway] Grok 账号令牌刷新失败（继续使用当前令牌）: account_id={}, grok_account_id={}, error={}",
+                account.id, grok_account_id, error
+            ));
+        }
+    }
 }
 
 fn prepare_sidecar_launch_config_in_dir_sync(
@@ -2140,6 +2195,22 @@ fn prepare_sidecar_launch_config_in_dir_sync(
             continue;
         }
         routing_accounts.insert(account.id.clone(), account.clone());
+
+        if codex_account::is_grok_upstream_provider(&account) {
+            // Grok 供应商账号：把绑定的 Grok 平台账号令牌写成 xai auth 文件，
+            // sidecar 用 Grok(xAI) 执行器承接该账号的模型。
+            let file_name = codex_account::grok_sidecar_auth_file_name(&account.id);
+            let auth_path = auths_dir.join(&file_name);
+            let auth_json =
+                codex_account::grok_sidecar_auth_json(&account, effective_proxy_url_ref)?;
+            let auth_content = serde_json::to_string_pretty(&auth_json)
+                .map_err(|e| format!("序列化 sidecar Grok 认证失败: {}", e))?;
+            write_string_atomic_if_changed(&auth_path, &auth_content)?;
+            harden_sidecar_auth_file_permissions(&auth_path)?;
+            expected_auth_files.insert(file_name.clone());
+            manifest_accounts.push(grok_sidecar_account_manifest_value(&account, &file_name));
+            continue;
+        }
 
         if account.is_api_key_auth() {
             // 与自动混合路由的判定保持一致：Chat 协议账号、以及具备逐模型识图能力的账号
@@ -2224,6 +2295,25 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         .iter()
         .map(|model| model.trim().to_ascii_lowercase())
         .collect::<HashSet<_>>();
+    // Grok 供应商账号自带模型目录：客户端可以直接请求这些模型名。
+    for account_id in effective_sidecar_account_ids(collection) {
+        let Some(account) = routing_accounts
+            .get(&account_id)
+            .cloned()
+            .or_else(|| load_sidecar_account_for_start(&account_id))
+        else {
+            continue;
+        };
+        if !codex_account::is_grok_upstream_provider(&account) {
+            continue;
+        }
+        for model in &account.api_model_catalog {
+            let model = model.trim();
+            if !model.is_empty() && model_id_keys.insert(model.to_ascii_lowercase()) {
+                model_ids.push(model.to_string());
+            }
+        }
+    }
     for api_key in &collection.api_keys {
         let Some(model_routing) = api_key.model_routing.as_ref() else {
             continue;

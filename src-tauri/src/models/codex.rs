@@ -164,6 +164,12 @@ pub struct CodexAccount {
     pub bound_oauth_account_id: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub bound_oauth_use_local_gateway: bool,
+    /// 上游凭据来自 Grok 平台账号（OAuth）的供应商账号。
+    ///
+    /// 该账号自身不带上游 API Key：本地网关会把绑定的 Grok 平台账号的 OAuth
+    /// 访问令牌写成 xai auth 文件交给 sidecar，由 Grok(xAI) 执行器完成上游请求。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_grok_account_id: Option<String>,
     pub user_id: Option<String>,
     pub plan_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -578,6 +584,7 @@ impl CodexAccount {
             api_image_generation_account_ids: Vec::new(),
             bound_oauth_account_id: None,
             bound_oauth_use_local_gateway: false,
+            upstream_grok_account_id: None,
             user_id: None,
             plan_type: None,
             subscription_active_until: None,

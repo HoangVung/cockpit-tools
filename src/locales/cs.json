@@ -616,7 +616,7 @@
         "summary": "Modely bez předpony používají aktuální předplatné; modely s předponou jako cpa/gpt-5.5 jsou předávány do API třetích stran. Obojí závisí na místní službě směrování.",
         "rowSummary": "Modely bez předpony používají aktuální předplatné; modely s předponou jako cpa/gpt-5.5 jsou předávány do API třetích stran. Obojí závisí na místní službě směrování.",
         "confirmEnableTitle": "Povolit směrování API třetích stran?",
-        "confirmEnableMessage": "Požadavky na modely Codex budou směrovány přes místní službu Cockpit Tools. Pokud služba neběží, modely předplatného i modely třetích stran mohou být nedostupné. Spuštění při přihlášení bude povoleno při uložení.\n\nPovolit směrování?",
+        "confirmEnableMessage": "Požadavky na modely Codex budou směrovány přes místní službu Cockpit Tools. Pokud služba neběží, modely předplatného i modely třetích stran mohou být nedostupné.\n\nPovolit směrování?",
         "confirmEnableAction": "Povolit",
         "confirmDisableTitle": "Zakázat směrování API třetích stran?",
         "confirmDisableMessage": "Jakmile tato změna vstoupí v platnost, místní brána se zastaví, obnoví se přímý přístup k oficiálnímu předplatnému a modely třetích stran nebudou k dispozici.\n\nZakázat směrování?",
@@ -843,10 +843,11 @@
       "codexSyncWsl": "Synchronizovat Codex do WSL",
       "codexSyncWslDesc": "Po přepnutí výchozího účtu Codex se auth.json a config.toml zapíší také do adresáře Codex ve WSL.",
       "codexAppUiInjection": "Kvóta API služby",
-      "codexAppUiInjectionDesc": "Po restartování instance Codex zobrazí pod kompozitorem počet účtů API služby Cockpit Tools a kvóty za týden a 5 hodin; instance s připojeným účtem DeepSeek místo toho zobrazují zůstatek tohoto účtu. Cockpit Tools musí běžet na pozadí; po úplném ukončení nebo bez sítě se údaje neobnovují.",
+      "codexAppUiInjectionDesc": "Po restartování instance Codex sleduje odznak kvóty pod kompozitorem zvolený model: DeepSeek zobrazuje zůstatek účtu, Grok svou kvótu a modely GPT týdenní a 5hodinovou kvótu. Cockpit Tools musí běžet na pozadí; po úplném ukončení nebo bez sítě se údaje neobnovují.",
       "codexAppUiInjectionPoolLabel": "Účty",
       "codexAppUiInjectionWeeklyLabel": "Týden",
       "codexAppUiInjectionFiveHourLabel": "5 h",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Adresář Codex ve WSL",
       "codexWslConfigDirDesc": "Zadejte adresář .codex ve WSL. Cesty \\\\wsl.localhost\\ jsou podporované.",
       "codexWslConfigDirPlaceholder": "Příklad: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} účtů · {{scope}}",
       "summaryMetaUnconfigured": "Nenastaveno · {{scope}}",
       "memberTitle": "Členové kolekce",
+      "memberPlatformLabel": "Platforma",
+      "memberPlatformAll": "Všechny platformy",
+      "memberPlatformGrok": "Účty platformy Grok",
       "imagePolicy": {
         "label": "Zásady obrázků",
         "inherit": "Obrázky: automaticky",
@@ -3552,6 +3556,9 @@
           "message": "Po zapnutí budou běžné textové konverzace tohoto účtu API Key navázaného na OAuth procházet místní bránou, kde se před přeposláním odstraní deklarace nástroje image_generation, aby se předešlo chybám typu „Image generation is not enabled“. Modely obrázků jako gpt-image se nemažou. Pokračovat?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Účet Grok"
     },
     "deepSeek": {
       "start": {

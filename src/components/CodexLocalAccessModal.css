@@ -3320,3 +3320,9 @@
   background: rgba(15, 23, 42, 0.42);
   border-color: rgba(148, 163, 184, 0.16);
 }
+
+/* 跨平台成员：Grok 平台账号分组（与 Codex 列表同款行样式）。 */
+/* 跨平台成员：Grok 平台账号行与 Codex 行共用同一列表，仅错误提示单独着色。 */
+.codex-local-access-grok-member-error {
+  color: var(--danger, #dc2626);
+}

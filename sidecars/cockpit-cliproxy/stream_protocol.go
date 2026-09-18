@@ -193,6 +193,9 @@ func buildExecutorRequest(c *gin.Context, body []byte, model string, sourceForma
 }
 
 func writeAPIError(c *gin.Context, status int, message, code string) {
+	if relayServerFromContext(c).tryWriteModerationNotice(c, status, message, sourceFormatFromRequest(c), requestPrefersStream(c)) {
+		return
+	}
 	if status <= 0 {
 		status = http.StatusInternalServerError
 	}
@@ -212,6 +215,9 @@ func writeAPIError(c *gin.Context, status int, message, code string) {
 }
 
 func (s *relayServer) writeExecutorError(c *gin.Context, err error) {
+	if s.tryWriteModerationNoticeFromError(c, err, sourceFormatFromRequest(c), requestPrefersStream(c)) {
+		return
+	}
 	status := statusCodeFromError(err)
 	code := "upstream_error"
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
@@ -383,6 +389,9 @@ func writeStreamTerminalError(c *gin.Context, err error) {
 
 func writeStreamTerminalErrorForFormat(c *gin.Context, err error, sourceFormat sdktranslator.Format) {
 	if c == nil {
+		return
+	}
+	if relayServerFromContext(c).tryWriteModerationNoticeFromError(c, err, sourceFormat, true) {
 		return
 	}
 	if !sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {

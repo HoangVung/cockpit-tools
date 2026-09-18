@@ -675,7 +675,7 @@
         "summary": "Model tanpa awalan menggunakan langganan saat ini; model dengan awalan seperti cpa/gpt-5.5 diteruskan ke API pihak ketiga. Keduanya bergantung pada layanan perutean lokal.",
         "rowSummary": "Model tanpa awalan menggunakan langganan saat ini; model dengan awalan seperti cpa/gpt-5.5 diteruskan ke API pihak ketiga. Keduanya bergantung pada layanan perutean lokal.",
         "confirmEnableTitle": "Aktifkan perutean API pihak ketiga?",
-        "confirmEnableMessage": "Permintaan model Codex akan dirutekan melalui layanan Cockpit Tools lokal. Jika layanan tidak berjalan, model langganan dan pihak ketiga mungkin tidak tersedia. Mulai saat masuk akan diaktifkan saat Anda menyimpan.\n\nAktifkan perutean?",
+        "confirmEnableMessage": "Permintaan model Codex akan dirutekan melalui layanan Cockpit Tools lokal. Jika layanan tidak berjalan, model langganan dan pihak ketiga mungkin tidak tersedia.\n\nAktifkan perutean?",
         "confirmEnableAction": "Aktifkan",
         "confirmDisableTitle": "Nonaktifkan perutean API pihak ketiga?",
         "confirmDisableMessage": "Setelah perubahan ini berlaku, gateway lokal akan berhenti, akses langganan resmi akan dipulihkan, dan model pihak ketiga tidak akan tersedia.\n\nNonaktifkan perutean?",
@@ -904,10 +904,11 @@
       "codexSyncWsl": "Sinkronkan Codex ke WSL",
       "codexSyncWslDesc": "Setelah mengganti akun Codex default, auth.json dan config.toml juga ditulis ke direktori Codex di WSL.",
       "codexAppUiInjection": "Kuota layanan API",
-      "codexAppUiInjectionDesc": "Setelah instans Codex dimulai ulang, tampilkan jumlah akun serta kuota mingguan dan 5 jam layanan API Cockpit Tools di bawah composer; instans yang terhubung ke akun DeepSeek menampilkan saldo akun tersebut. Cockpit Tools harus tetap berjalan di latar belakang; pembaruan berhenti jika aplikasi ditutup sepenuhnya atau jaringan tidak tersedia.",
+      "codexAppUiInjectionDesc": "Setelah instans Codex dimulai ulang, lencana kuota di bawah composer mengikuti model yang dipilih: DeepSeek menampilkan saldo akun, Grok menampilkan kuotanya, dan model GPT menampilkan kuota mingguan dan 5 jam. Cockpit Tools harus tetap berjalan di latar belakang; pembaruan berhenti jika aplikasi ditutup sepenuhnya atau jaringan tidak tersedia.",
       "codexAppUiInjectionPoolLabel": "Akun",
       "codexAppUiInjectionWeeklyLabel": "Minggu",
       "codexAppUiInjectionFiveHourLabel": "5 jam",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "Direktori Codex WSL",
       "codexWslConfigDirDesc": "Masukkan direktori .codex di dalam WSL. Path \\\\wsl.localhost\\ didukung.",
       "codexWslConfigDirPlaceholder": "Contoh: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2522,6 +2523,9 @@
       "summaryMeta": "{{count}} akun · {{scope}}",
       "summaryMetaUnconfigured": "Belum dikonfigurasi · {{scope}}",
       "memberTitle": "Anggota koleksi",
+      "memberPlatformLabel": "Asal platform",
+      "memberPlatformAll": "Semua platform",
+      "memberPlatformGrok": "Akun platform Grok",
       "imagePolicy": {
         "label": "Kebijakan gambar",
         "inherit": "Gambar: Otomatis",
@@ -3599,6 +3603,9 @@
         "requests": "Mnt",
         "cost": "Biaya"
       }
+    },
+    "grokAdd": {
+      "tab": "Akun Grok"
     },
     "deepSeek": {
       "start": {

@@ -150,7 +150,50 @@ fn provider_gateway_has_vision_support(gateway: &CodexLocalAccessProviderGateway
         == 1
 }
 
+/// 账号池里是否有账号能承接官方 GPT / Codex 模型。
+///
+/// - OAuth(订阅) 账号：直接承接官方模型；
+/// - API Key 账号：只有自己的模型槽位里出现 GPT / Codex 名称（例如 DeepSeek 的目录壳位）
+///   才算；目录为空但按 Responses 直通时仍按官方名称透传。
+fn pool_provides_gpt_models(accounts: &[CodexAccount]) -> bool {
+    accounts.iter().any(|account| {
+        if !account.is_api_key_auth() {
+            return true;
+        }
+        let slots = automatic_api_service_account_model_slots(account);
+        if slots.is_empty() {
+            return provider_gateway_wire_api_for_account(account) == "responses";
+        }
+        slots.into_iter().any(|(client, _)| {
+            let key = client.trim().to_ascii_lowercase();
+            key.starts_with("gpt-") || key.starts_with("codex-")
+        })
+    })
+}
+
+/// 该模型是否属于官方推荐 GPT 集（只用于展示收敛，内部隐藏模型不受影响）。
+fn is_local_gateway_visible_gpt_model(model: &str) -> bool {
+    let key = model.trim();
+    LOCAL_GATEWAY_VISIBLE_GPT_MODELS
+        .iter()
+        .any(|(model_id, _)| model_id.eq_ignore_ascii_case(key))
+}
+
 fn automatic_api_service_pool_model_ids(accounts: &[CodexAccount], fallback: Vec<String>) -> Vec<String> {
+    // 账号池里没有能承接官方 GPT / Codex 模型的账号时，官方推荐目录不参与展示：
+    // 客户端可见模型完全来自账号池（例如只加了 Grok 账号就只显示 Grok 模型），
+    // 额度兜底条目 `gpt-reserve` 同样要隐藏（它只能由 OAuth 账号承接）。
+    let fallback = if pool_provides_gpt_models(accounts) {
+        fallback
+    } else {
+        fallback
+            .into_iter()
+            .filter(|model| {
+                !is_local_gateway_visible_gpt_model(model)
+                    && !model.trim().eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID)
+            })
+            .collect::<Vec<_>>()
+    };
     // Keep the existing empty-pool catalog so configuration remains possible before adding accounts.
     if accounts.is_empty() { return fallback; }
     let mut models = Vec::new();
@@ -282,7 +325,11 @@ fn automatic_api_service_model_routing_value(
     for account_id in normalize_account_id_list(account_ids.to_vec()) {
         let Some(account) = accounts.get(&account_id) else { continue; };
         let models = automatic_api_service_route_models(collection, account, &fallback);
-        if !automatic_api_service_provider_route_eligible(account) {
+        // Grok 供应商账号没有上游 API Key：模型直接以原生名称暴露，请求由 sidecar
+        // 的 Grok(xAI) 执行器用绑定的 Grok 平台账号凭据发出。
+        if !automatic_api_service_provider_route_eligible(account)
+            || codex_account::is_grok_upstream_provider(account)
+        {
             for model in models {
                 let client = model["clientModel"].as_str().unwrap_or_default();
                 if seen_native.insert(client.to_ascii_lowercase()) {

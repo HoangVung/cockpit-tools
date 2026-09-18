@@ -77,6 +77,24 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 		return
 	}
 	if route, upstreamModel, routeStatus := resolveModelRoutingRoute(spec, model); routeStatus != "none" {
+		if routeStatus == "native" {
+			// 原生 provider 路由：只剥掉命名空间，把请求交给该 provider 的执行器。
+			if route == nil || route.NativeProvider == "" {
+				writeAPIError(c, http.StatusNotFound, fmt.Sprintf("model route %s is not available", model), "model_route_not_available")
+				return
+			}
+			nativeBody := rewriteProviderGatewayBodyModel(body, upstreamModel)
+			alt := fixedAlt
+			if alt == "" {
+				alt = requestAlt(c)
+			}
+			if requestBodyStream(nativeBody) && fixedAlt != "responses/compact" {
+				s.handleStream(c, nativeBody, upstreamModel, sourceFormat, alt, []string{route.NativeProvider})
+				return
+			}
+			s.handleNonStream(c, nativeBody, upstreamModel, sourceFormat, alt, []string{route.NativeProvider})
+			return
+		}
 		if routeStatus != "matched" {
 			writeAPIError(c, http.StatusNotFound, fmt.Sprintf("model route %s is not available", model), "model_route_not_available")
 			return
@@ -113,10 +131,10 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 	}
 	stream := requestBodyStream(body) && fixedAlt != "responses/compact"
 	if stream {
-		s.handleStream(c, body, model, sourceFormat, alt)
+		s.handleStream(c, body, model, sourceFormat, alt, executionProviders())
 		return
 	}
-	s.handleNonStream(c, body, model, sourceFormat, alt)
+	s.handleNonStream(c, body, model, sourceFormat, alt, executionProviders())
 }
 
 func resolveModelRouting(spec *apiKeySpec, clientModel string) (*providerGatewaySpec, string, string) {
@@ -171,6 +189,9 @@ func resolveModelRoutingRoute(spec *apiKeySpec, clientModel string) (*modelRoute
 		if !strings.EqualFold(route.Namespace, namespace) {
 			continue
 		}
+		if route.NativeProvider != "" {
+			return route, upstreamModel, "native"
+		}
 		if route.ProviderGateway == nil {
 			return nil, "", "missing"
 		}
@@ -187,6 +208,31 @@ func resolveModelRoutingRoute(spec *apiKeySpec, clientModel string) (*modelRoute
 	return nil, "", "missing"
 }
 
+// providerGatewayUpstreamModel 把客户端模型名解析成真正的上游模型名。
+//
+// 先按 manifest 的别名表解析（例如 DeepSeek 网关的目录壳位 gpt-5.5 → deepseek-flash），
+// 再对照 provider gateway 的模型清单。未声明的 Codex/GPT 官方 id 会解析为空字符串，
+// 由调用方返回明确的「模型不可用」，避免把 GPT 请求静默交给非 GPT 上游。
+func (s *relayServer) providerGatewayUpstreamModel(gateway *providerGatewaySpec, model string) string {
+	resolved := strings.TrimSpace(model)
+	if resolved == "" {
+		return ""
+	}
+	var m *manifest
+	if s != nil {
+		m = s.manifest
+	}
+	if m != nil {
+		if source := s.manifest.aliasToSource[strings.ToLower(resolved)]; source != "" {
+			resolved = source
+		}
+	}
+	if isCodexShellModelID(resolved) && !providerGatewayDeclaresModel(m, gateway, resolved) {
+		return ""
+	}
+	return providerGatewayCanonicalModel(gateway, resolved)
+}
+
 func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *providerGatewaySpec, body []byte, model string, sourceFormat sdktranslator.Format, fixedAlt string) {
 	if gateway == nil {
 		writeAPIError(c, http.StatusBadGateway, "provider gateway is not configured", "bad_gateway")
@@ -198,7 +244,7 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 	}
 	stream := requestBodyStream(body)
 	wireAPI := normalizeProviderGatewayWireAPI(gateway.WireAPI)
-	upstreamModel := providerGatewayCanonicalModel(gateway, model)
+	upstreamModel := s.providerGatewayUpstreamModel(gateway, model)
 	if strings.TrimSpace(upstreamModel) == "" {
 		writeAPIError(c, http.StatusNotFound, fmt.Sprintf("model %s is not available for this provider gateway", model), "model_not_available")
 		return
@@ -321,6 +367,9 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 	writeUpstreamHeaders(c.Writer.Header(), resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		payload, _ := io.ReadAll(resp.Body)
+		if s.tryWriteModerationNotice(c, resp.StatusCode, string(payload), sourceFormat, stream) {
+			return
+		}
 		contentType := resp.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "application/json"
@@ -717,12 +766,15 @@ func providerGatewayPathSegmentIsVersion(segment string) bool {
 	return hasDigit
 }
 
-func (s *relayServer) handleNonStream(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, alt string) {
+func (s *relayServer) handleNonStream(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, alt string, providers []string) {
 	req, opts := buildExecutorRequest(c, body, model, sourceFormat, alt, false)
 	startedAt := time.Now()
 	s.emitExecutorDiagnostic(c, "executor_started", model, "execute", startedAt, "")
 	stopWaitLogger := s.startExecutorWaitLogger(c, model, "execute", startedAt)
-	resp, err := s.runtime.Execute(relayContext(c), []string{"codex"}, req, opts)
+	if len(providers) == 0 {
+		providers = executionProviders()
+	}
+	resp, err := s.runtime.Execute(relayContext(c), providers, req, opts)
 	stopWaitLogger()
 	if err != nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute", startedAt, err.Error())
@@ -742,8 +794,11 @@ func (s *relayServer) handleNonStream(c *gin.Context, body []byte, model string,
 	c.Data(http.StatusOK, contentType, resp.Payload)
 }
 
-func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, alt string) {
+func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, sourceFormat sdktranslator.Format, alt string, providers []string) {
 	req, opts := buildExecutorRequest(c, body, model, sourceFormat, alt, true)
+	if len(providers) == 0 {
+		providers = executionProviders()
+	}
 	startedAt := time.Now()
 	timeouts := s.streamTimeoutsForRequest(c.Request, body, model)
 	immediateSSE := s.manifest != nil && s.manifest.ImmediateSSEResponse
@@ -764,7 +819,7 @@ func (s *relayServer) handleStream(c *gin.Context, body []byte, model string, so
 	stopWaitLogger := s.startExecutorWaitLogger(c, model, "execute_stream", startedAt)
 	streamCtx, cancelStream := context.WithCancel(relayContext(c))
 	defer cancelStream()
-	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, []string{"codex"}, req, opts, model, startedAt, timeouts.open)
+	result, err := s.executeStreamWithOpenTimeout(c, streamCtx, providers, req, opts, model, startedAt, timeouts.open)
 	stopWaitLogger()
 	if err != nil {
 		s.emitExecutorDiagnostic(c, "executor_failed", model, "execute_stream", startedAt, err.Error())

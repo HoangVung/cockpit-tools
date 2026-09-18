@@ -1668,7 +1668,8 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
         collection.api_keys = vec![key.clone()];
         assert!(super::collection_pool_contains_official_deepseek_account(&collection));
 
-        // 上游不是 DeepSeek 时不改动 profile。
+        // 账号池没有能承接官方 GPT 模型的账号（这里是第三方 Chat 协议供应商）时，
+        // 压缩同样回到本地流程：这类上游没有可用的服务端压缩，远端压缩还会带着旧模型 ID 发出。
         key.provider_gateway = Some(CodexLocalAccessProviderGateway {
             base_url: "https://token-plan-cn.xiaomimimo.com/v1".to_string(),
             ..deepseek_gateway.clone()
@@ -1688,10 +1689,15 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
         .expect("write profile config");
 
         ensure_local_compaction_for_account_pool(&profile_dir, &other_collection)
-            .expect("skip non-deepseek pool");
-        assert_eq!(
-            fs::read_to_string(&config_path).expect("read profile config"),
-            original
+            .expect("apply local compaction for non-gpt pool");
+        let non_gpt_applied = fs::read_to_string(&config_path).expect("read profile config");
+        assert!(
+            non_gpt_applied.contains("remote_compaction_v2 = false"),
+            "非 GPT 账号池必须回到本地压缩: {non_gpt_applied}"
+        );
+        assert!(
+            non_gpt_applied.contains("service_tier = \"priority\""),
+            "压缩兜底只动压缩键，其它配置保持不变: {non_gpt_applied}"
         );
 
         ensure_local_compaction_for_account_pool(&profile_dir, &collection)
@@ -3819,6 +3825,7 @@ http_headers = { "x-cockpit-instance-id" = "default" }
                     model_capabilities: HashMap::new(),
                     vision_routing_model: None,
                 },
+                native_provider: None,
             }],
         });
         collection.api_keys = vec![api_key];
@@ -3880,4 +3887,27 @@ http_headers = { "x-cockpit-instance-id" = "default" }
                     && !display_name.trim().is_empty()),
             "官方模型需要带展示名"
         );
+    }
+
+    /// 只加了 DeepSeek + Grok 等第三方账号时，客户端目录里不能出现 GPT-5.6 Reserve。
+    #[test]
+    fn profile_catalog_only_offers_reserve_when_official_gpt_models_are_present() {
+        let third_party_only = serde_json::json!({
+            "models": [
+                {"slug": "deepseek-flash"},
+                {"slug": "deepseek-v4-pro"},
+                {"slug": "grok-4.6"},
+                {"slug": "codex-auto-review", "visibility": "hide"},
+            ]
+        });
+        assert!(!super::profile_catalog_allows_reserve(&third_party_only));
+
+        let with_official = serde_json::json!({
+            "models": [{"slug": "gpt-5.6-sol"}, {"slug": "grok-4.6"}]
+        });
+        assert!(super::profile_catalog_allows_reserve(&with_official));
+
+        // 用户显式列出 gpt-reserve 时保持原样，不做二次隐藏。
+        let explicit_reserve = serde_json::json!({"models": [{"slug": "gpt-reserve"}]});
+        assert!(super::profile_catalog_allows_reserve(&explicit_reserve));
     }

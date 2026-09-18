@@ -85,9 +85,6 @@ export async function createInstance(payload: {
   copySourceInstanceId: string;
   initMode?: "copy" | "empty" | "existingDir";
 }): Promise<InstanceProfile> {
-  if (payload.modelRouting?.enabled) {
-    await ensureCodexModelRoutingBackgroundService();
-  }
   return await invoke("codex_create_instance", {
     name: payload.name,
     userDataDir: payload.userDataDir,
@@ -222,9 +219,6 @@ export async function saveCodexInstanceConfiguration(payload: {
   experimentalModelCatalogModels: CodexExperimentalModelDefinition[];
   experimentalModelCatalogDefaultModelId?: string | null;
 }): Promise<{ instance: InstanceProfile; quickConfig: CodexQuickConfig }> {
-  if (payload.modelRouting?.enabled) {
-    await ensureCodexModelRoutingBackgroundService();
-  }
   const body: Record<string, unknown> = {
     instanceId: payload.instanceId,
     experimentalModelCatalogEnabled:
@@ -251,15 +245,6 @@ export async function saveCodexInstanceConfiguration(payload: {
     if (value !== undefined) body[key] = value;
   }
   return await invoke("codex_save_instance_configuration", body);
-}
-
-export async function ensureCodexModelRoutingBackgroundService(): Promise<void> {
-  await invoke("patch_general_config", {
-    updates: {
-      app_auto_launch_enabled: true,
-      startup_minimized: true,
-    },
-  });
 }
 
 export async function openCodexInstanceConfigToml(

@@ -2168,6 +2168,30 @@ pub fn update_codex_account_name(account_id: String, name: String) -> Result<Cod
     codex_account::update_account_name(&account_id, name)
 }
 
+/// 通过 Grok 平台账号添加 Codex 供应商账号。
+///
+/// 账号自身不保存上游 API Key：运行态使用绑定的 Grok 平台账号 OAuth 令牌。
+#[tauri::command]
+pub fn add_codex_account_from_grok(
+    grok_account_id: String,
+    api_model_catalog: Option<Vec<String>>,
+    account_name: Option<String>,
+) -> Result<CodexAccount, String> {
+    let grok_id = grok_account_id.trim();
+    if grok_id.is_empty() {
+        return Err("请选择要绑定的 Grok 账号".to_string());
+    }
+    let grok_account = grok_account::load_account(grok_id)
+        .ok_or_else(|| "Grok 账号不存在，请先在 Grok 页面登录".to_string())?;
+    let account = codex_account::upsert_grok_provider_account(
+        &grok_account.id,
+        &grok_account.email,
+        api_model_catalog,
+        account_name,
+    )?;
+    codex_account::load_account(&account.id).ok_or_else(|| "账号保存后无法读取".to_string())
+}
+
 #[tauri::command]
 pub fn update_codex_api_key_credentials(
     account_id: String,

@@ -2294,6 +2294,9 @@ pub fn start_codex_with_args_and_env(
             extra_env,
         );
 
+        // 受管实例是通过「包身份」拉起的时为 true：此时没有可用的 spawn 句柄，
+        // 只能靠 CODEX_HOME / user-data 目录匹配真实 PID。
+        let mut launched_via_package_identity = false;
         let child = match spawn_result {
             Ok(child) => Some(child),
             Err(err) => {
@@ -2306,13 +2309,14 @@ pub fn start_codex_with_args_and_env(
                         "--user-data-dir={}",
                         app_user_data_dir.to_string_lossy()
                     ));
-                    match launch_codex_via_powershell_exec_path(
+                    let powershell_result = launch_codex_via_powershell_exec_path(
                         &launch_path,
                         codex_home_trimmed,
                         &app_user_data_dir,
                         &fallback_args,
                         extra_env,
-                    ) {
+                    );
+                    match powershell_result {
                         Ok(()) => {
                             crate::modules::logger::log_warn(&format!(
                                 "[Codex Start] WindowsApps direct launch denied, PowerShell exec fallback succeeded: launch_path={} error={}",
@@ -2321,20 +2325,47 @@ pub fn start_codex_with_args_and_env(
                             ));
                         }
                         Err(ps_err) => {
-                            crate::modules::logger::log_warn(&format!(
-                                "[Codex Start] WindowsApps direct launch denied and PowerShell exec fallback failed; managed Store activation blocked to avoid losing CODEX_HOME: launch_path={} error={} powershell_error={}",
-                                launch_path.to_string_lossy(),
-                                err,
-                                ps_err
-                            ));
-                            return Err(codex_managed_store_launch_unsafe_error(
-                                &err.to_string(),
-                                &ps_err,
-                                &codex_managed_store_launch_diagnostics(
-                                    &launch_path,
-                                    codex_home_trimmed,
-                                ),
-                            ));
+                            // 直启与 Start-Process 都走 ShellExecute/CreateProcess 的同一条
+                            // 包外路径，在当前的 Windows 上必然同时被拒。改用包身份激活，
+                            // 既绕开这层限制，又能把 CODEX_HOME 与注入环境带进官方进程。
+                            match launch_codex_via_package_identity(
+                                &launch_path,
+                                codex_home_trimmed,
+                                &app_user_data_dir,
+                                &fallback_args,
+                                extra_env,
+                            ) {
+                                Ok(()) => {
+                                    launched_via_package_identity = true;
+                                    crate::modules::logger::log_warn(&format!(
+                                        "[Codex Start] WindowsApps direct launch denied, package-identity launch succeeded: launch_path={} error={} powershell_error={}",
+                                        launch_path.to_string_lossy(),
+                                        err,
+                                        ps_err
+                                    ));
+                                }
+                                Err(package_err) => {
+                                    crate::modules::logger::log_warn(&format!(
+                                        "[Codex Start] WindowsApps direct launch denied and every fallback failed; managed Store activation blocked to avoid losing CODEX_HOME: launch_path={} error={} powershell_error={} package_identity_error={}",
+                                        launch_path.to_string_lossy(),
+                                        err,
+                                        ps_err,
+                                        package_err
+                                    ));
+                                    return Err(codex_managed_store_launch_unsafe_error(
+                                        &err.to_string(),
+                                        &ps_err,
+                                        &format!(
+                                            "package_identity_error={}; {}",
+                                            package_err,
+                                            codex_managed_store_launch_diagnostics(
+                                                &launch_path,
+                                                codex_home_trimmed,
+                                            )
+                                        ),
+                                    ));
+                                }
+                            }
                         }
                     }
                     None
@@ -2348,7 +2379,13 @@ pub fn start_codex_with_args_and_env(
             launch_path.to_string_lossy(),
             summarize_text_for_process_log(codex_home_trimmed, 96),
             app_user_data_dir.to_string_lossy(),
-            child.as_ref().map(|item| item.id().to_string()).unwrap_or_else(|| "powershell-exec".to_string())
+            child.as_ref().map(|item| item.id().to_string()).unwrap_or_else(|| {
+                if launched_via_package_identity {
+                    "package-identity".to_string()
+                } else {
+                    "powershell-exec".to_string()
+                }
+            })
         ));
 
         let probe_started = Instant::now();
@@ -2368,11 +2405,15 @@ pub fn start_codex_with_args_and_env(
         } else {
             let error = codex_managed_store_launch_unsafe_error(
                 "WindowsApps direct launch denied",
-                "PowerShell exec returned success but no managed instance matched within 15s",
+                if launched_via_package_identity {
+                    "Package-identity launch returned success but no managed instance matched within 15s"
+                } else {
+                    "PowerShell exec returned success but no managed instance matched within 15s"
+                },
                 &codex_managed_store_launch_diagnostics(&launch_path, codex_home_trimmed),
             );
             crate::modules::logger::log_warn(&format!(
-                "[Codex Start] PowerShell exec did not produce a matching managed instance; default PID fallback blocked: codex_home={}",
+                "[Codex Start] fallback launch did not produce a matching managed instance; default PID fallback blocked: codex_home={}",
                 summarize_text_for_process_log(codex_home_trimmed, 96)
             ));
             Err(error)

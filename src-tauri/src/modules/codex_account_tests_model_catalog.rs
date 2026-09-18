@@ -41,6 +41,89 @@
         );
     }
 
+    /// 历史遗留的 Codex/GPT 内置 id（例如 gpt-5.6-sol / gpt-5.6-terra）不能再作为 DeepSeek
+    /// 的客户端可见模型名：客户端会用内置 GPT 元数据生成工具定义，DeepSeek 上游只能把工具调用
+    /// 写成文本标记（DSML）返回，链路无法解析，正文里就会直接出现原始标记。
+    #[test]
+    fn deepseek_account_mappings_drop_legacy_gpt_shell_ids() {
+        let mut account = CodexAccount::new_api_key(
+            "deepseek-legacy-mappings".to_string(),
+            "deepseek@example.com".to_string(),
+            "sk-deepseek".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.deepseek.com".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek".to_string()),
+            vec!["deepseek-v4-flash".to_string()],
+        );
+        account.api_wire_api = Some("responses".to_string());
+        account.api_model_mappings = vec![
+            CodexApiModelMapping {
+                client_model: "gpt-5.6-sol".to_string(),
+                upstream_model: "deepseek-v4-flash".to_string(),
+            },
+            CodexApiModelMapping {
+                client_model: "gpt-5.6-terra".to_string(),
+                upstream_model: "deepseek-v4-pro".to_string(),
+            },
+            CodexApiModelMapping {
+                client_model: "gpt-5.6-luna".to_string(),
+                upstream_model: "deepseek-v4-flash".to_string(),
+            },
+            CodexApiModelMapping {
+                client_model: "custom-alias".to_string(),
+                upstream_model: "deepseek-v4-flash".to_string(),
+            },
+        ];
+
+        assert!(super::normalize_deepseek_account(&mut account));
+
+        let client_models: Vec<&str> = account
+            .api_model_mappings
+            .iter()
+            .map(|mapping| mapping.client_model.as_str())
+            .collect();
+        for legacy in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            assert!(
+                !client_models
+                    .iter()
+                    .any(|model| model.eq_ignore_ascii_case(legacy)),
+                "历史 Codex/GPT 模型 id 不能继续作为 DeepSeek 的客户端可见名: {legacy}"
+            );
+        }
+        assert!(
+            client_models
+                .iter()
+                .any(|model| model.eq_ignore_ascii_case("custom-alias")),
+            "用户自定义别名不能被清理"
+        );
+        for expected in [
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "deepseek-flash",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "deepseek-v4-flash-vision-exp",
+        ] {
+            assert!(
+                client_models
+                    .iter()
+                    .any(|model| model.eq_ignore_ascii_case(expected)),
+                "缺少默认模型映射: {expected}"
+            );
+        }
+        // 目录壳位仍指向 DeepSeek 上游；历史 GPT 模型 id 不再被解析成 DeepSeek 模型。
+        assert_eq!(
+            super::resolve_account_upstream_model(&account, "gpt-5.5"),
+            "deepseek-flash"
+        );
+        assert_eq!(
+            super::resolve_account_upstream_model(&account, "gpt-5.6-sol"),
+            "gpt-5.6-sol"
+        );
+    }
+
     #[test]
     fn api_model_mappings_normalize_and_resolve_upstream() {
         let mappings = super::normalize_api_model_mappings(vec![

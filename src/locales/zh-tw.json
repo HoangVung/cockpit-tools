@@ -616,7 +616,7 @@
         "summary": "普通模型使用目前訂閱；帶前綴模型（如 cpa/gpt-5.5）轉發到第三方 API。兩者皆依賴本機分流服務。",
         "rowSummary": "普通模型使用目前訂閱；帶前綴模型（如 cpa/gpt-5.5）轉發到第三方 API。兩者皆依賴本機分流服務。",
         "confirmEnableTitle": "開啟第三方 API 路由？",
-        "confirmEnableMessage": "開啟後，Codex 的模型請求將透過 Cockpit Tools 本地服務分流。服務未運行時，官方訂閱與第三方模型皆可能無法使用。儲存時將預設啟用開機自啟。\n\n確認開啟嗎？",
+        "confirmEnableMessage": "開啟後，Codex 的模型請求將透過 Cockpit Tools 本地服務分流。服務未運行時，官方訂閱與第三方模型皆可能無法使用。\n\n確認開啟嗎？",
         "confirmEnableAction": "確認開啟",
         "confirmDisableTitle": "關閉第三方 API 路由？",
         "confirmDisableMessage": "關閉並生效後將停止本機閘道、恢復官方原生直連，所有第三方模型將不可用。\n\n確認關閉嗎？",
@@ -843,10 +843,11 @@
       "codexSyncWsl": "同步 Codex 到 WSL",
       "codexSyncWslDesc": "切換預設 Codex 帳號後，也會把 auth.json 和 config.toml 寫入 WSL 的 Codex 設定目錄。",
       "codexAppUiInjection": "顯示 API 服務額度",
-      "codexAppUiInjectionDesc": "重新啟動 Codex 實例後，在輸入框下方顯示 Cockpit Tools API 服務的帳號數、週額度和 5 小時額度；綁定 DeepSeek 帳號的實例改為顯示該帳號餘額。需保持 Cockpit Tools 在背景執行；完全結束或網路無法使用時，額度不會繼續更新。",
+      "codexAppUiInjectionDesc": "重新啟動 Codex 實例後，輸入框下方的額度徽章會跟隨目前選用的模型：DeepSeek 顯示帳號餘額、Grok 顯示 Grok 額度、GPT 顯示週額度和 5 小時額度。需保持 Cockpit Tools 在背景執行；完全結束或網路無法使用時，額度不會繼續更新。",
       "codexAppUiInjectionPoolLabel": "帳號",
       "codexAppUiInjectionWeeklyLabel": "週",
       "codexAppUiInjectionFiveHourLabel": "5 小時",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL Codex 目錄",
       "codexWslConfigDirDesc": "填入 WSL 內的 .codex 目錄，支援 \\\\wsl.localhost\\ 路徑。",
       "codexWslConfigDirPlaceholder": "例如：\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} 個帳號 · {{scope}}",
       "summaryMetaUnconfigured": "未設定 · {{scope}}",
       "memberTitle": "集合成員",
+      "memberPlatformLabel": "平台",
+      "memberPlatformAll": "全部平台",
+      "memberPlatformGrok": "Grok 平台帳號",
       "imagePolicy": {
         "label": "生圖策略",
         "inherit": "生圖：自動",
@@ -3552,6 +3556,9 @@
         "requests": "請求",
         "cost": "費用"
       }
+    },
+    "grokAdd": {
+      "tab": "Grok 帳號"
     },
     "deepSeek": {
       "start": {

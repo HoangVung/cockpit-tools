@@ -161,6 +161,8 @@ export interface ProviderPageConfig<TAccount extends ProviderAccountBase> {
   oauthService?: OAuthService;
   /** 触发 OAuth 流程的 addTab key，默认 ['oauth'] */
   oauthTabKeys?: string[];
+  /** 打开添加弹框时默认选中的页签，默认 'oauth'。 */
+  defaultAddTab?: string;
   /** 是否在进入 OAuth 标签后自动开始；可用于需要先填写登录参数的平台。 */
   oauthAutoPrepare?: boolean | ((tabKey: string) => boolean);
   /** 数据服务 */
@@ -797,6 +799,7 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
     store,
     oauthService,
     oauthTabKeys: oauthTabKeysConfig,
+    defaultAddTab: defaultAddTabConfig,
     oauthAutoPrepare: oauthAutoPrepareConfig,
     dataService,
     initialSearchQuery: initialSearchQueryConfig,
@@ -804,6 +807,7 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
     onExternalImportCompleted,
   } = config;
   const defaultSortBy = defaultSortByConfig?.trim() || DEFAULT_SORT_BY;
+  const defaultAddTab = defaultAddTabConfig?.trim() || 'oauth';
 
   const oauthTabKeys = useMemo(() => {
     const normalized = (oauthTabKeysConfig || [])
@@ -1459,7 +1463,7 @@ export function useProviderAccountsPage<TAccount extends ProviderAccountBase>(
 
   // ─── Add Modal ────────────────────────────────────────────────────────
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addTab, setAddTab] = useState<string>('oauth');
+  const [addTab, setAddTab] = useState<string>(defaultAddTab);
   const [addStatus, setAddStatusState] = useState<AddModalStatus>('idle');
   const [addMessage, setAddMessage] = useState<string | null>(null);
   const [addErrorScrollKey, setAddErrorScrollKey] = useState(0);

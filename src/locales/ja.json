@@ -616,7 +616,7 @@
         "summary": "プレフィックスのないモデルは現在のサブスクリプションを使用し、cpa/gpt-5.5 などのプレフィックス付きモデルはサードパーティ API に転送されます。どちらもローカル ルーティング サービスに依存します。",
         "rowSummary": "プレフィックスのないモデルは現在のサブスクリプションを使用し、cpa/gpt-5.5 などのプレフィックス付きモデルはサードパーティ API に転送されます。どちらもローカル ルーティング サービスに依存します。",
         "confirmEnableTitle": "サードパーティ API ルーティングを有効にしますか？",
-        "confirmEnableMessage": "Codex モデルのリクエストはローカルの Cockpit Tools サービスを経由してルーティングされます。サービスが実行されていない場合、サブスクリプション モデルとサードパーティ モデルの両方が利用できなくなる可能性があります。保存時にログイン時起動が有効になります。\n\nルーティングを有効にしますか？",
+        "confirmEnableMessage": "Codex モデルのリクエストはローカルの Cockpit Tools サービスを経由してルーティングされます。サービスが実行されていない場合、サブスクリプション モデルとサードパーティ モデルの両方が利用できなくなる可能性があります。\n\nルーティングを有効にしますか？",
         "confirmEnableAction": "有効にする",
         "confirmDisableTitle": "サードパーティ API ルーティングを無効にしますか？",
         "confirmDisableMessage": "この変更が有効になると、ローカル ゲートウェイが停止し、ネイティブのサブスクリプション アクセスが復元され、サードパーティ モデルは利用できなくなります。\n\nルーティングを無効にしますか？",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Codex を WSL に同期",
       "codexSyncWslDesc": "既定の Codex アカウントを切り替えた後、auth.json と config.toml も WSL 内の Codex ディレクトリへ書き込みます。",
       "codexAppUiInjection": "API サービスのクォータ",
-      "codexAppUiInjectionDesc": "Codex インスタンスの再起動後、入力欄の下に Cockpit Tools API サービスのアカウント数、週間クォータ、5 時間クォータを表示します。DeepSeek アカウントをバインドしたインスタンスでは、代わりにそのアカウントの残高を表示します。Cockpit Tools をバックグラウンドで起動したままにしてください。完全に終了した場合やネットワークを利用できない場合は更新されません。",
+      "codexAppUiInjectionDesc": "Codex インスタンスの再起動後、入力欄の下のクォータバッジは選択中のモデルに合わせて切り替わります。DeepSeek はアカウント残高、Grok は Grok クォータ、GPT は週間クォータと 5 時間クォータを表示します。Cockpit Tools をバックグラウンドで起動したままにしてください。完全に終了した場合やネットワークを利用できない場合は更新されません。",
       "codexAppUiInjectionPoolLabel": "アカウント",
       "codexAppUiInjectionWeeklyLabel": "週",
       "codexAppUiInjectionFiveHourLabel": "5時間",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL Codex ディレクトリ",
       "codexWslConfigDirDesc": "WSL 内の .codex ディレクトリを入力します。\\\\wsl.localhost\\ のパスに対応しています。",
       "codexWslConfigDirPlaceholder": "例: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} 件のアカウント · {{scope}}",
       "summaryMetaUnconfigured": "未設定 · {{scope}}",
       "memberTitle": "集合メンバー",
+      "memberPlatformLabel": "プラットフォーム",
+      "memberPlatformAll": "すべてのプラットフォーム",
+      "memberPlatformGrok": "Grok プラットフォームのアカウント",
       "imagePolicy": {
         "label": "画像ポリシー",
         "inherit": "画像：自動",
@@ -3552,6 +3556,9 @@
           "message": "有効にすると、この OAuth 連携済み API Key アカウントの通常のテキスト対話はローカルゲートウェイ経由になり、転送前に image_generation ツール宣言を除外して「Image generation is not enabled」などのエラーを避けます。gpt-image などの画像モデルは削除しません。続行しますか？"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Grok アカウント"
     },
     "deepSeek": {
       "start": {

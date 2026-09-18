@@ -616,7 +616,7 @@
         "summary": "Ön eki olmayan modeller geçerli aboneliği kullanır; cpa/gpt-5.5 gibi ön ekli modeller üçüncü taraf bir API'ye iletilir. Her ikisi de yerel yönlendirme hizmetine bağlıdır.",
         "rowSummary": "Ön eki olmayan modeller geçerli aboneliği kullanır; cpa/gpt-5.5 gibi ön ekli modeller üçüncü taraf bir API'ye iletilir. Her ikisi de yerel yönlendirme hizmetine bağlıdır.",
         "confirmEnableTitle": "Üçüncü taraf API yönlendirmesi etkinleştirilsin mi?",
-        "confirmEnableMessage": "Codex model istekleri yerel Cockpit Tools hizmeti üzerinden yönlendirilecektir. Hizmet çalışmıyorsa hem abonelik hem de üçüncü taraf modelleri kullanılamayabilir. Kaydettiğinizde oturum açılışında başlatma etkinleştirilecektir.\n\nYönlendirme etkinleştirilsin mi?",
+        "confirmEnableMessage": "Codex model istekleri yerel Cockpit Tools hizmeti üzerinden yönlendirilecektir. Hizmet çalışmıyorsa hem abonelik hem de üçüncü taraf modelleri kullanılamayabilir.\n\nYönlendirme etkinleştirilsin mi?",
         "confirmEnableAction": "Etkinleştir",
         "confirmDisableTitle": "Üçüncü taraf API yönlendirmesi devre dışı bırakılsın mı?",
         "confirmDisableMessage": "Bu değişiklik yürürlüğe girdikten sonra yerel ağ geçidi durdurulacak, yerel abonelik erişimi geri yüklenecek ve üçüncü taraf modelleri kullanılamayacaktır.\n\nDevre dışı bırakılsın mı?",
@@ -847,10 +847,11 @@
       "codexSyncWsl": "Codex'i WSL ile eşitle",
       "codexSyncWslDesc": "Varsayılan Codex hesabı değiştirildikten sonra auth.json ve config.toml WSL içindeki Codex dizinine de yazılır.",
       "codexAppUiInjection": "API hizmeti kotası",
-      "codexAppUiInjectionDesc": "Codex örneği yeniden başlatıldıktan sonra Cockpit Tools API hizmetinin hesap sayısını, haftalık ve 5 saatlik kotasını oluşturucunun altında gösterir; DeepSeek hesabına bağlı örnekler bunun yerine o hesabın bakiyesini gösterir. Cockpit Tools arka planda çalışmaya devam etmelidir; uygulama tamamen kapatıldığında veya ağ kullanılamadığında güncellemeler durur.",
+      "codexAppUiInjectionDesc": "Codex örneği yeniden başlatıldıktan sonra oluşturucunun altındaki kota rozeti seçilen modeli izler: DeepSeek hesap bakiyesini, Grok kendi kotasını, GPT modelleri ise haftalık ve 5 saatlik kotayı gösterir. Cockpit Tools arka planda çalışmaya devam etmelidir; uygulama tamamen kapatıldığında veya ağ kullanılamadığında güncellemeler durur.",
       "codexAppUiInjectionPoolLabel": "Hesaplar",
       "codexAppUiInjectionWeeklyLabel": "Hafta",
       "codexAppUiInjectionFiveHourLabel": "5 sa",
+      "codexAppUiInjectionMissingLabel": "—",
       "codexWslConfigDir": "WSL Codex dizini",
       "codexWslConfigDirDesc": "WSL içindeki .codex dizinini girin. \\\\wsl.localhost\\ yolları desteklenir.",
       "codexWslConfigDirPlaceholder": "Örnek: \\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex",
@@ -2472,6 +2473,9 @@
       "summaryMeta": "{{count}} hesap · {{scope}}",
       "summaryMetaUnconfigured": "Yapılandırılmadı · {{scope}}",
       "memberTitle": "Koleksiyon üyeleri",
+      "memberPlatformLabel": "Platform seçimi",
+      "memberPlatformAll": "Tüm platformlar",
+      "memberPlatformGrok": "Grok platformu hesapları",
       "imagePolicy": {
         "label": "Görsel politikası",
         "inherit": "Görsel: Otomatik",
@@ -3552,6 +3556,9 @@
           "message": "Açılınca bu OAuth bağlı API Key hesabının normal metin sohbetleri yerel ağ geçidinden geçer; iletmeden önce image_generation araç bildirimi kaldırılarak \"Image generation is not enabled\" gibi hatalar önlenir. gpt-image ve diğer görsel modeller silinmez. Devam edilsin mi?"
         }
       }
+    },
+    "grokAdd": {
+      "tab": "Grok Hesabı"
     },
     "deepSeek": {
       "start": {

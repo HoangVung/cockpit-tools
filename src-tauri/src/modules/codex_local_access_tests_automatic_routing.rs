@@ -318,3 +318,36 @@ fn automatic_routing_pool_catalog_is_union_without_phantom_oauth_models() {
     // 客户端可见清单只包含客户端模型名；上游名（vendor/real）不参与展示。
     assert_eq!(models, vec!["shared", "deepseek-chat", "custom", "mapped-model"]);
 }
+
+/// 账号池里没有能承接官方 GPT 模型的账号时，官方推荐集与额度兜底条目都不应展示。
+#[test]
+fn automatic_routing_hides_official_gpt_and_reserve_without_gpt_capability() {
+    let fallback = vec![
+        "gpt-6-astra".to_string(),
+        "gpt-5.6-sol".to_string(),
+        "gpt-reserve".to_string(),
+        "gpt-image-2.5".to_string(),
+        "codex-auto-review".to_string(),
+    ];
+
+    // 空账号池：官方推荐集与 gpt-reserve 都不展示，图片/内部条目保留。
+    let empty_pool = super::automatic_api_service_pool_model_ids(&[], fallback.clone());
+    assert!(
+        !empty_pool
+            .iter()
+            .any(|model| model.eq_ignore_ascii_case("gpt-reserve")),
+        "空账号池不应显示额度兜底条目: {empty_pool:?}"
+    );
+    assert!(
+        !empty_pool
+            .iter()
+            .any(|model| model.eq_ignore_ascii_case("gpt-5.6-sol")),
+        "空账号池不应显示官方推荐集: {empty_pool:?}"
+    );
+    assert!(
+        empty_pool
+            .iter()
+            .any(|model| model.eq_ignore_ascii_case("gpt-image-2.5")),
+        "图片模型与内部条目仍需保留: {empty_pool:?}"
+    );
+}

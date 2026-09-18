@@ -2566,6 +2566,203 @@ Start-Process -FilePath $exe{argument_list} -ErrorAction Stop | Out-Null"#,
     Ok(())
 }
 
+/// 按 `CreateProcess` 的解析规则引用单个 Windows 命令行参数。
+///
+/// Electron 的启动参数常含空格与引号（`--user-data-dir=C:\Users\some user\...`），
+/// 拼进 `ProcessStartInfo.Arguments` 时必须按同一套规则转义，否则会被拆成多个参数。
+#[cfg(any(test, target_os = "windows"))]
+fn quote_windows_command_argument(argument: &str) -> String {
+    if !argument.is_empty() && !argument.contains([' ', '\t', '\n', '\u{b}', '"']) {
+        return argument.to_string();
+    }
+    let mut quoted = String::with_capacity(argument.len() + 2);
+    quoted.push('"');
+    let mut pending_backslashes = 0usize;
+    for ch in argument.chars() {
+        match ch {
+            '\\' => pending_backslashes += 1,
+            '"' => {
+                // 引号前的反斜杠要加倍，引号自身再转义一个。
+                for _ in 0..(pending_backslashes * 2 + 1) {
+                    quoted.push('\\');
+                }
+                quoted.push('"');
+                pending_backslashes = 0;
+            }
+            _ => {
+                for _ in 0..pending_backslashes {
+                    quoted.push('\\');
+                }
+                pending_backslashes = 0;
+                quoted.push(ch);
+            }
+        }
+    }
+    // 结尾反斜杠必须加倍，否则会把收尾引号转义掉。
+    for _ in 0..(pending_backslashes * 2) {
+        quoted.push('\\');
+    }
+    quoted.push('"');
+    quoted
+}
+
+/// 从商店包启动路径反推包的 `InstallLocation`。
+///
+/// 启动路径形如 `<InstallLocation>\app\ChatGPT.exe`，因此去掉两级即安装根目录；
+/// 非商店路径返回 `None`。
+///
+/// 这里按文本解析而不是 `Path::parent()`：该函数只处理 Windows 路径，而
+/// `Path::parent()` 在非 Windows 主机（单元测试）上不会把 `\` 当分隔符。
+#[cfg(any(test, target_os = "windows"))]
+fn windowsapps_install_location_from_launch_path(launch_path: &Path) -> Option<String> {
+    if !is_windowsapps_launch_path(launch_path) {
+        return None;
+    }
+    let normalized = launch_path.to_string_lossy().replace('/', "\\");
+    let trimmed = normalized.trim_end_matches('\\');
+    let install_location = trimmed.rsplitn(3, '\\').nth(2)?;
+    let text = install_location.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
+/// 把脚本编码成 `powershell.exe -EncodedCommand` 需要的 UTF-16LE + Base64。
+///
+/// 内层脚本里既有中文错误文案又有引号与反斜杠，直接用 `-Command` 传会被外层
+/// 解析一次、内层再解析一次，`-EncodedCommand` 可以完全绕开这层转义问题。
+#[cfg(target_os = "windows")]
+fn encode_powershell_encoded_command(script: &str) -> String {
+    use base64::{engine::general_purpose, Engine as _};
+    let mut bytes = Vec::with_capacity(script.len() * 2);
+    for unit in script.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    general_purpose::STANDARD.encode(bytes)
+}
+
+/// 用**包身份**（`Invoke-CommandInDesktopPackage`）启动商店版 Codex 受管实例。
+///
+/// Windows 会拒绝包外进程直接执行 `C:\Program Files\WindowsApps\...` 里的可执行文件
+/// （`os error 5` / `Access is denied`），PowerShell 的 `Start-Process` 同样被拒——两者
+/// 都是同一层内核检查，换启动器没有用。而 `shell:AppsFolder` 系统入口虽然能起进程，
+/// 却无法传递 `CODEX_HOME`，会把受管实例指到默认账号上（因此不能作为兜底）。
+///
+/// 这里的做法是：以该包的身份激活一个 `powershell.exe`，在其中设置好环境变量后，
+/// 用 `ProcessStartInfo`（`UseShellExecute = $false`）拉起官方客户端。子进程继承该
+/// 进程的环境，所以 `CODEX_HOME`、隔离的 user-data 目录以及临时登录注入用的
+/// `NODE_OPTIONS` 都能完整传到官方进程。
+///
+/// 注意：`Start-Process` 在这里**不可用**——它走 `ShellExecuteEx`，会丢掉自定义环境变量，
+/// 表现为客户端起来了但读的还是默认账号（实测注入脚本不执行、`CODEX_HOME` 为空）。
+#[cfg(target_os = "windows")]
+fn launch_codex_via_package_identity(
+    launch_path: &Path,
+    codex_home: &str,
+    app_user_data_dir: &Path,
+    extra_args: &[String],
+    extra_env: &[(String, String)],
+) -> Result<(), String> {
+    let Some(install_location) = windowsapps_install_location_from_launch_path(launch_path) else {
+        return Err("启动路径不在 WindowsApps 商店包目录内，无法使用包身份启动".to_string());
+    };
+
+    let mut env_pairs: Vec<(String, String)> = managed_proxy_env_pairs()
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
+    env_pairs.push(("CODEX_HOME".to_string(), codex_home.to_string()));
+    env_pairs.push((
+        "CODEX_ELECTRON_USER_DATA_PATH".to_string(),
+        app_user_data_dir.to_string_lossy().to_string(),
+    ));
+    // 临时登录的主进程注入（NODE_OPTIONS）必须一起传下去，否则官方客户端不会
+    // 把授权地址写进采集文件，用户点了「继续登录」只会看到浏览器被打开。
+    for (key, value) in extra_env {
+        env_pairs.push((key.clone(), value.clone()));
+    }
+
+    let mut launch_args = build_codex_app_launch_args(extra_args);
+    launch_args.push(format!(
+        "--user-data-dir={}",
+        app_user_data_dir.to_string_lossy()
+    ));
+    let argument_line = launch_args
+        .iter()
+        .map(|arg| quote_windows_command_argument(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let env_lines = env_pairs
+        .into_iter()
+        .map(|(key, value)| {
+            format!(
+                "$env:{} = '{}'",
+                key,
+                escape_powershell_single_quoted(&value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let inner_script = format!(
+        r#"$ErrorActionPreference = 'Stop'
+{env_lines}
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = '{exe}'
+$psi.UseShellExecute = $false
+$psi.Arguments = '{arguments}'
+[void][System.Diagnostics.Process]::Start($psi)"#,
+        env_lines = env_lines,
+        exe = escape_powershell_single_quoted(&launch_path.to_string_lossy()),
+        arguments = escape_powershell_single_quoted(&argument_line),
+    );
+    let encoded_command = encode_powershell_encoded_command(&inner_script);
+
+    // 外层按启动路径解析出真正注册的包与 AppId，避免版本目录与注册信息不一致时
+    // 起错包（与 refresh_registered_codex_store_launch_path 的取向一致）。
+    let outer_script = format!(
+        r#"$ErrorActionPreference = 'Stop'
+if (-not (Get-Command Invoke-CommandInDesktopPackage -ErrorAction SilentlyContinue)) {{
+  throw '当前系统不支持 Invoke-CommandInDesktopPackage（需要 Windows 10 1809 及以上）'
+}}
+$installLocation = '{install_location}'
+$pkg = Get-AppxPackage |
+  Where-Object {{ $_.InstallLocation -and ($_.InstallLocation.TrimEnd('\') -ieq $installLocation) }} |
+  Select-Object -First 1
+if (-not $pkg) {{ throw "未找到与启动路径匹配的已注册商店包: $installLocation" }}
+$appId = 'App'
+try {{
+  $application = (Get-AppxPackageManifest -Package $pkg).Package.Applications.Application |
+    Select-Object -First 1
+  if ($application -and -not [string]::IsNullOrWhiteSpace($application.Id)) {{
+    $appId = [string]$application.Id
+  }}
+}} catch {{}}
+Invoke-CommandInDesktopPackage -PackageFamilyName $pkg.PackageFamilyName -AppId $appId -Command 'powershell.exe' -Args '-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}'"#,
+        install_location = escape_powershell_single_quoted(&install_location),
+        encoded = encoded_command,
+    );
+
+    let output = powershell_output(&["-Command", &outer_script])
+        .map_err(|e| format!("包身份启动调用失败: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_head = stderr.trim().chars().take(400).collect::<String>();
+        return Err(format!(
+            "包身份启动失败: status={}, stderr={}",
+            output.status,
+            if stderr_head.is_empty() {
+                "<empty>".to_string()
+            } else {
+                stderr_head
+            }
+        ));
+    }
+    Ok(())
+}
+
 const CODEX_MANAGED_STORE_LAUNCH_UNSAFE_PREFIX: &str = "CODEX_MANAGED_STORE_LAUNCH_UNSAFE:";
 
 fn codex_managed_store_launch_unsafe_error(
