@@ -539,6 +539,22 @@
     "prefill": {
       "claudeDesktopReady": "已带入 APIKEY.FUN 配置，请确认后添加到 Claude。",
       "codexReady": "已带入 APIKEY.FUN 配置，请确认后添加到 Codex。"
+    },
+    "table": {
+      "name": "名称",
+      "usage": "用量",
+      "status": "状态",
+      "createdAt": "添加时间",
+      "actions": "操作",
+      "statusOk": "可用",
+      "statusBad": "错误",
+      "statusUnknown": "未检查"
+    },
+    "config": {
+      "title": "使用 API 密钥",
+      "family": "分组",
+      "platform": "当前平台",
+      "unsupportedGroup": "该分组暂时没有可一键写入的客户端。"
     }
   },
   "platformLayout": {

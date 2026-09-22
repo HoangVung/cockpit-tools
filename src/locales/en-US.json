@@ -539,6 +539,22 @@
     "prefill": {
       "claudeDesktopReady": "APIKEY.FUN settings are filled in. Confirm to add them to Claude.",
       "codexReady": "APIKEY.FUN configuration imported. Please confirm and add to Codex."
+    },
+    "table": {
+      "name": "Name",
+      "usage": "Usage",
+      "status": "Status",
+      "createdAt": "Added",
+      "actions": "Actions",
+      "statusOk": "Available",
+      "statusBad": "Error",
+      "statusUnknown": "Not checked"
+    },
+    "config": {
+      "title": "Use API key",
+      "family": "Group",
+      "platform": "Current platform",
+      "unsupportedGroup": "This group has no client available for one-click configuration yet."
     }
   },
   "platformLayout": {

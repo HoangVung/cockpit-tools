@@ -14,10 +14,11 @@ import { requestCodexOpenAddAccount } from "../utils/codexAddAccountRequest";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
- import {
-   DEFAULT_CODEX_INSTANCE_ID,
-   type CodexLaunchPreviewLaunchOptions,
- } from "../components/codex/CodexLaunchPreviewModal";
+import {
+  CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY,
+  persistCodexLaunchPreviewLastInstanceId,
+  readCodexLaunchPreviewLastInstanceId,
+} from "../utils/codexLaunchPreviewInstancePreference";
 import {
   DEFAULT_CODEX_INSTANCE_ID,
   type CodexLaunchPreviewLaunchOptions,

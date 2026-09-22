@@ -191,17 +191,17 @@ fn validate_custom_branch(repo_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn sync_steps() -> [SyncStep; 5] {
+fn sync_steps() -> [SyncStep; 6] {
     [
         SyncStep {
             program: "git",
             args: &["fetch", "upstream", "main"],
-            title: "1/5: Lấy cập nhật mới từ repo gốc (upstream)",
+            title: "1/6: Lấy cập nhật mới từ repo gốc (upstream)",
         },
         SyncStep {
             program: "git",
             args: &["push", "origin", "upstream/main:refs/heads/main"],
-            title: "2/5: Đồng bộ nhánh main lên fork GitHub",
+            title: "2/6: Đồng bộ nhánh main lên fork GitHub",
         },
         SyncStep {
             program: "git",
@@ -213,17 +213,31 @@ fn sync_steps() -> [SyncStep; 5] {
                 "-m",
                 CUSTOM_MERGE_MESSAGE,
             ],
-            title: "3/5: Gộp cập nhật main vào nhánh my-custom",
+            title: "3/6: Gộp cập nhật main vào nhánh my-custom",
+        },
+        SyncStep {
+            program: NPM_PROGRAM,
+            // The merged lockfile may introduce new test dependencies. Include dev
+            // packages even in production environments; regression tests do not
+            // need lifecycle scripts (such as Electron's binary download).
+            args: &[
+                "ci",
+                "--include=dev",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+            ],
+            title: "4/6: Chuẩn bị thư viện kiểm thử (npm ci)",
         },
         SyncStep {
             program: NPM_PROGRAM,
             args: &["test"],
-            title: "4/5: Chạy bộ kiểm thử regression (npm test)",
+            title: "5/6: Chạy bộ kiểm thử regression (npm test)",
         },
         SyncStep {
             program: "git",
             args: &["push", "origin", "HEAD:refs/heads/my-custom"],
-            title: "5/5: Đẩy lên GitHub để kích hoạt build matrix",
+            title: "6/6: Đẩy lên GitHub để kích hoạt build matrix",
         },
     ]
 }
@@ -235,6 +249,8 @@ pub async fn sync_and_trigger_custom_build(
     repo_path: Option<String>,
 ) -> Result<CustomSyncReport, String> {
     logger::log_info("[CustomUpdater] Bắt đầu quy trình đồng bộ repo tùy biến...");
+    let steps = sync_steps();
+    let total_steps = steps.len();
 
     let repo_dir = match resolve_repo_path(repo_path) {
         Ok(path) => path,
@@ -244,7 +260,7 @@ pub async fn sync_and_trigger_custom_build(
                 success: false,
                 message: err,
                 current_step: 0,
-                total_steps: 5,
+                total_steps,
                 logs: String::new(),
             });
         }
@@ -265,7 +281,7 @@ pub async fn sync_and_trigger_custom_build(
                 success: false,
                 message: err.clone(),
                 current_step: 0,
-                total_steps: 5,
+                total_steps,
                 logs: err,
             });
         }
@@ -278,13 +294,10 @@ pub async fn sync_and_trigger_custom_build(
             success: false,
             message: err,
             current_step: 0,
-            total_steps: 5,
+            total_steps,
             logs: all_logs.join("\n"),
         });
     }
-
-    let steps = sync_steps();
-    let total_steps = steps.len();
 
     for (index, step) in steps.iter().enumerate() {
         let step_num = index + 1;
@@ -413,7 +426,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            steps[4].args,
+            steps[5].args,
             ["push", "origin", "HEAD:refs/heads/my-custom"]
         );
     }

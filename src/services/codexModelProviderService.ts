@@ -25,6 +25,7 @@ import {
 import { moveCodexProviderApiKey } from '../utils/codexModelProviderApiKeyMove';
 import { reconcileCodexModelProviderOverview } from '../utils/codexModelProviderOverviewSync';
 import { buildCodexModelProviderAccountSnapshot } from '../utils/codexModelProviderAccountSync';
+import { expandLegacyProviderVisionCapabilities } from '../utils/codexModelProviderVision';
 import { addCodexAccountWithApiKey, listCodexAccounts } from './codexService';
 
 export interface CodexModelProviderApiKey {
