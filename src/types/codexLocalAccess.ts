@@ -125,6 +125,8 @@ export interface CodexLocalAccessCollection {
     string,
     CodexLocalAccessImageGenerationPolicy
   >;
+  /** 生图转发账号池：生图与图片编辑请求只交给这些 OAuth 账号执行。 */
+  imageGenerationAccountIds?: string[];
   gatewayMode: CodexLocalAccessGatewayMode;
   upstreamProxyUrl?: string | null;
   routingStrategy: CodexLocalAccessRoutingStrategy;
@@ -264,11 +266,19 @@ export interface CodexLocalAccessUsageEvent {
   /** 多开实例目录 ID（x-cockpit-instance-id） */
   clientInstanceId?: string;
   modelId: string;
+  /** 客户端请求的模型（保留路由命名空间前缀）。 */
+  requestedModel?: string;
+  /** 实际发送给上游的模型；与请求模型相同时前端只展示一行。 */
+  upstreamModel?: string;
   gatewayMode?: CodexLocalAccessGatewayMode | null;
   requestKind: CodexLocalAccessRequestKind;
   serviceTier?: string | null;
   /** Request reasoning effort (e.g. low/medium/high/xhigh/max), when present. */
   reasoningEffort?: string | null;
+  /** 上游响应头 `x-codex-turn-state` 长度；只记录长度，不保存 state 原文。 */
+  turnStateLength?: number | null;
+  /** state 长度分级：normal / renew / abnormal / missing。 */
+  turnStateClass?: string | null;
   success: boolean;
   httpStatus?: number | null;
   errorCategory: string;
@@ -524,4 +534,49 @@ export interface CodexInstanceGatewayView {
   managed: boolean;
   logApiKeyId: string;
   lastError: string | null;
+}
+
+/** normal=292/332；suspected=312；abnormal=其它长度；missing=未返回 state。 */
+export type CodexTurnStateClass = "normal" | "suspected" | "abnormal" | "missing";
+
+export type CodexAccountTurnStateStatusKind =
+  | "unknown"
+  | "normal"
+  | "abnormal"
+  | "suspected";
+
+/** 一次上游 state 观测（只保留长度与分级，不含 state 原文）。 */
+export interface CodexTurnStateObservation {
+  observedAt: number;
+  /** manual / wakeup / gateway */
+  source: string;
+  class: CodexTurnStateClass | string;
+  length?: number | null;
+  httpStatus?: number | null;
+  /** 判定依据代码（turnStateAbnormal / turnStateMissing / upstreamRiskForbidden 等），由前端本地化。 */
+  reason?: string | null;
+}
+
+/** 账号级风控状态：由最近若干次 state 观测推导。 */
+export interface CodexAccountTurnStateStatus {
+  accountId: string;
+  status: CodexAccountTurnStateStatusKind | string;
+  suspected: boolean;
+  reason?: string | null;
+  lastClass?: string | null;
+  lastLength?: number | null;
+  lastHttpStatus?: number | null;
+  lastObservedAt: number;
+  observations: CodexTurnStateObservation[];
+}
+
+/** 手动风控检测结果。 */
+export interface CodexTurnStateProbeResult {
+  accountId: string;
+  status: CodexAccountTurnStateStatus;
+  httpStatus?: number | null;
+  stateLength?: number | null;
+  stateClass: string;
+  errorMessage?: string | null;
+  latencyMs: number;
 }

@@ -621,6 +621,8 @@
             CodexLocalAccessRequestKind::Text,
             None,
             None,
+            None,
+            None,
             false,
             Some(502),
             Some("upstream_bad_gateway"),
@@ -700,6 +702,8 @@
             Some("gpt-5.4"),
             Some(CodexLocalAccessGatewayMode::Sidecar),
             CodexLocalAccessRequestKind::Text,
+            None,
+            None,
             None,
             None,
             true,
@@ -796,6 +800,93 @@
     }
 
     #[test]
+    fn request_log_db_keeps_requested_and_upstream_model_pair() {
+        let dir = make_temp_dir("codex-local-access-model-pair");
+        let db_path = dir.join("request_logs.sqlite");
+        let conn = open_local_access_logs_db_once(&db_path, true).expect("open logs db");
+        let mut events = Vec::new();
+        let event = append_usage_event(
+            &mut events,
+            1_700_000_000_000,
+            Some("req-model-pair"),
+            Some("acc-1"),
+            Some("user@example.com"),
+            Some("key-1"),
+            Some("Production Key"),
+            None,
+            Some("glm-5.3"),
+            Some(CodexLocalAccessGatewayMode::Sidecar),
+            CodexLocalAccessRequestKind::Text,
+            None,
+            None,
+            Some("cpa/gpt-5.5"),
+            Some("glm-5.3"),
+            true,
+            Some(200),
+            None,
+            None,
+            42,
+            None,
+            None,
+            1,
+            0.0,
+        );
+        insert_local_access_usage_event(&conn, &event).expect("insert request log");
+
+        let loaded: (String, String, String) = conn
+            .query_row(
+                "SELECT model_id, requested_model, upstream_model FROM request_logs WHERE request_id = ?1",
+                ["req-model-pair"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read request log");
+        assert_eq!(
+            loaded,
+            (
+                "glm-5.3".to_string(),
+                "cpa/gpt-5.5".to_string(),
+                "glm-5.3".to_string()
+            )
+        );
+
+        drop(conn);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn request_log_db_adds_model_pair_to_existing_schema() {
+        let dir = make_temp_dir("codex-local-access-model-pair-migration");
+        let db_path = dir.join("request_logs.sqlite");
+        let conn = open_local_access_logs_db_once(&db_path, false).expect("open legacy logs db");
+        conn.execute(
+            "INSERT INTO request_logs (event_key, timestamp, request_id) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["legacy-model-event", 1_700_000_000_000_i64, "legacy-model-request"],
+        )
+        .expect("insert legacy request log");
+        drop(conn);
+
+        let conn = open_local_access_logs_db_once(&db_path, true).expect("migrate logs db");
+        let migrated: (String, String, String) = conn
+            .query_row(
+                "SELECT request_id, requested_model, upstream_model FROM request_logs WHERE event_key = ?1",
+                ["legacy-model-event"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read migrated request log");
+        assert_eq!(
+            migrated,
+            (
+                "legacy-model-request".to_string(),
+                String::new(),
+                String::new()
+            )
+        );
+
+        drop(conn);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn request_log_reprice_updates_cost_and_pricing_version() {
         let dir = make_temp_dir("codex-local-access-reprice");
         let db_path = dir.join("request_logs.sqlite");
@@ -831,6 +922,8 @@
             Some("custom-model"),
             Some(CodexLocalAccessGatewayMode::Sidecar),
             CodexLocalAccessRequestKind::Text,
+            None,
+            None,
             None,
             None,
             true,
@@ -931,6 +1024,8 @@
                 Some("gpt-5.4"),
                 Some(CodexLocalAccessGatewayMode::Sidecar),
                 CodexLocalAccessRequestKind::Text,
+                None,
+                None,
                 None,
                 None,
                 true,
@@ -2107,6 +2202,8 @@ supports_websockets = false
                 Some("gpt-5.4"),
                 Some(CodexLocalAccessGatewayMode::Sidecar),
                 CodexLocalAccessRequestKind::Text,
+                None,
+                None,
                 None,
                 None,
                 true,

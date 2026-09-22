@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type {
   CodexExperimentalModelDefinition,
@@ -23,6 +24,7 @@ import {
   insertModelsBySource,
   moveModel,
 } from "../../utils/codexExperimentalModelOrder";
+import { validateModelContext } from "../../utils/codexModelContext";
 import "./CodexExperimentalModelEditor.css";
 
 export interface CodexExperimentalModelSource {
@@ -63,6 +65,193 @@ const REASONING_EFFORT_OPTIONS: CodexReasoningEffort[] = [
   "max",
   "ultra",
 ];
+const CONTEXT_PRESETS = {
+  preset_516k: { context_window: 516000, auto_compact_token_limit: 460000 },
+  preset_1m: { context_window: 1000000, auto_compact_token_limit: 900000 },
+} as const;
+type ContextPresetId = "default" | keyof typeof CONTEXT_PRESETS | "custom";
+
+interface CustomContextDraft {
+  index: number;
+  contextWindow: string;
+  autoCompactTokenLimit: string;
+}
+
+interface CustomContextDialogProps {
+  draft: CustomContextDraft;
+  contextWindow: number;
+  autoCompactTokenLimit: number;
+  error: string | null;
+  onContextWindowChange: (value: string) => void;
+  onAutoCompactTokenLimitChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}
+
+function CustomContextDialog({
+  draft,
+  contextWindow,
+  autoCompactTokenLimit,
+  error,
+  onContextWindowChange,
+  onAutoCompactTokenLimitChange,
+  onClose,
+  onSave,
+}: CustomContextDialogProps) {
+  const { t } = useTranslation();
+  return createPortal(
+    <div className="codex-experimental-model-custom-context-overlay">
+      <div
+        className="codex-experimental-model-custom-context-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="codex-experimental-model-custom-context-title"
+      >
+        <div className="codex-experimental-model-custom-context-modal__header">
+          <h3 id="codex-experimental-model-custom-context-title">
+            {t(
+              "codex.experimentalModelCatalog.models.contextCustomShort",
+              "自定义",
+            )}
+            {" · "}
+            {t(
+              "codex.experimentalModelCatalog.models.contextConfig",
+              "上下文与压缩",
+            )}
+          </h3>
+          <button
+            type="button"
+            className="codex-experimental-model-manager-modal__close"
+            onClick={onClose}
+            aria-label={t("common.close", "关闭")}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="codex-experimental-model-custom-context-modal__body">
+          <label>
+            <span>
+              {t(
+                "codex.experimentalModelCatalog.models.contextWindow",
+                "上下文窗口",
+              )}
+            </span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={draft.contextWindow}
+              onChange={(event) => onContextWindowChange(event.target.value)}
+              className={
+                !Number.isInteger(contextWindow) || contextWindow <= 0
+                  ? "has-error"
+                  : ""
+              }
+              autoFocus
+            />
+            {(!Number.isInteger(contextWindow) || contextWindow <= 0) && (
+              <small className="codex-experimental-model-editor__error">
+                {t(
+                  "codex.experimentalModelCatalog.models.validation.contextWindow",
+                  "上下文窗口必须是大于 0 的整数。",
+                )}
+              </small>
+            )}
+          </label>
+          <label>
+            <span>
+              {t(
+                "codex.experimentalModelCatalog.models.autoCompactLimit",
+                "压缩阈值",
+              )}
+            </span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={draft.autoCompactTokenLimit}
+              onChange={(event) =>
+                onAutoCompactTokenLimitChange(event.target.value)
+              }
+              className={
+                !Number.isInteger(autoCompactTokenLimit) ||
+                autoCompactTokenLimit <= 0 ||
+                autoCompactTokenLimit >= contextWindow
+                  ? "has-error"
+                  : ""
+              }
+            />
+            {(!Number.isInteger(autoCompactTokenLimit) ||
+              autoCompactTokenLimit <= 0) && (
+              <small className="codex-experimental-model-editor__error">
+                {t(
+                  "codex.experimentalModelCatalog.models.validation.autoCompact",
+                  "压缩阈值必须是大于 0 的整数。",
+                )}
+              </small>
+            )}
+            {Number.isInteger(autoCompactTokenLimit) &&
+              autoCompactTokenLimit > 0 &&
+              autoCompactTokenLimit >= contextWindow && (
+                <small className="codex-experimental-model-editor__error">
+                  {t(
+                    "codex.experimentalModelCatalog.models.validation.autoCompactRange",
+                    "压缩阈值必须小于上下文窗口。",
+                  )}
+                </small>
+              )}
+          </label>
+        </div>
+        {error && (
+          <p role="alert" className="codex-experimental-model-editor__error">
+            {error}
+          </p>
+        )}
+        <div className="codex-experimental-model-custom-context-modal__footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            {t("common.cancel", "取消")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={Boolean(error)}
+          >
+            {t("common.confirm", "确认")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function resolveContextPreset(
+  model: CodexExperimentalModelDefinition,
+): ContextPresetId {
+  if (
+    model.context_window === undefined &&
+    model.auto_compact_token_limit === undefined
+  ) {
+    return "default";
+  }
+  if (
+    model.context_window === CONTEXT_PRESETS.preset_516k.context_window &&
+    model.auto_compact_token_limit ===
+      CONTEXT_PRESETS.preset_516k.auto_compact_token_limit
+  ) {
+    return "preset_516k";
+  }
+  if (
+    model.context_window === CONTEXT_PRESETS.preset_1m.context_window &&
+    model.auto_compact_token_limit ===
+      CONTEXT_PRESETS.preset_1m.auto_compact_token_limit
+  ) {
+    return "preset_1m";
+  }
+  return "custom";
+}
+
 export function validateCodexExperimentalModels(
   models: CodexExperimentalModelDefinition[],
   translate: (key: string, fallback: string) => string,
@@ -95,6 +284,8 @@ export function validateCodexExperimentalModels(
         "模型 ID 不能重复。",
       );
     }
+    const contextError = validateModelContext(model);
+    if (contextError) return translate(contextError, contextError);
     seen.add(key);
   }
   return null;
@@ -134,11 +325,15 @@ export function CodexExperimentalModelEditor({
   const [openReasoningIndex, setOpenReasoningIndex] = useState<number | null>(
     null,
   );
+  const [openContextIndex, setOpenContextIndex] = useState<number | null>(null);
+  const [customContextDraft, setCustomContextDraft] =
+    useState<CustomContextDraft | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [draggingModelId, setDraggingModelId] = useState<string | null>(null);
   const [channelSearchQuery, setChannelSearchQuery] = useState("");
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const reasoningPickerRef = useRef<HTMLDivElement | null>(null);
+  const contextPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!addMenuOpen) return;
@@ -163,6 +358,18 @@ export function CodexExperimentalModelEditor({
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [openReasoningIndex]);
+
+  useEffect(() => {
+    if (openContextIndex === null) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!contextPickerRef.current?.contains(target)) {
+        setOpenContextIndex(null);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [openContextIndex]);
 
   useEffect(() => {
     if (draggingModelId === null) return;
@@ -214,6 +421,8 @@ export function CodexExperimentalModelEditor({
     onDefaultModelChange?.(resetDefaultModelId);
     setAddMenuOpen(false);
     setOpenReasoningIndex(null);
+    setOpenContextIndex(null);
+    setCustomContextDraft(null);
   };
 
   const handleReorderDragStart = (
@@ -334,6 +543,10 @@ export function CodexExperimentalModelEditor({
                 "请输入不超过 100 个字符的展示名。",
               )
             : null,
+        context: (() => {
+          const error = validateModelContext(model);
+          return error ? t(error, error) : null;
+        })(),
       };
     });
   }, [models, t]);
@@ -347,16 +560,20 @@ export function CodexExperimentalModelEditor({
   }, [onValidationChange, validationError]);
 
   useEffect(() => {
-    if (!managerOpen) return;
+    if (!managerOpen && !customContextDraft) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      if (customContextDraft) {
+        setCustomContextDraft(null);
+        return;
+      }
       setManagerOpen(false);
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [managerOpen]);
+  }, [customContextDraft, managerOpen]);
 
   const updateModel = (
     index: number,
@@ -399,6 +616,105 @@ export function CodexExperimentalModelEditor({
       }),
     );
     if (effort === "official") setOpenReasoningIndex(null);
+  };
+
+  const applyContextPreset = (
+    index: number,
+    preset: Exclude<ContextPresetId, "custom">,
+  ) => {
+    onChange(
+      models.map((model, modelIndex) => {
+        if (modelIndex !== index) return model;
+        if (preset === "default") {
+          const {
+            context_window: _context,
+            auto_compact_token_limit: _compact,
+            ...rest
+          } = model;
+          return rest;
+        }
+        return { ...model, ...CONTEXT_PRESETS[preset] };
+      }),
+    );
+    setOpenContextIndex(null);
+  };
+
+  const openCustomContextEditor = (index: number) => {
+    const model = models[index];
+    setOpenContextIndex(null);
+    setCustomContextDraft({
+      index,
+      contextWindow: String(
+        model.context_window ?? CONTEXT_PRESETS.preset_1m.context_window,
+      ),
+      autoCompactTokenLimit: String(
+        model.auto_compact_token_limit ??
+          CONTEXT_PRESETS.preset_1m.auto_compact_token_limit,
+      ),
+    });
+  };
+
+  const customContextWindow = customContextDraft
+    ? Number(customContextDraft.contextWindow.trim())
+    : Number.NaN;
+  const customAutoCompactTokenLimit = customContextDraft
+    ? Number(customContextDraft.autoCompactTokenLimit.trim())
+    : Number.NaN;
+  const customContextError = customContextDraft
+    ? validateModelContext({
+        context_window: Number.isInteger(customContextWindow)
+          ? customContextWindow
+          : Number.NaN,
+        auto_compact_token_limit: Number.isInteger(customAutoCompactTokenLimit)
+          ? customAutoCompactTokenLimit
+          : Number.NaN,
+      })
+    : null;
+  const customContextErrorText = customContextError
+    ? t(customContextError, customContextError)
+    : null;
+
+  const saveCustomContext = () => {
+    if (!customContextDraft || customContextError) return;
+    onChange(
+      models.map((model, index) =>
+        index === customContextDraft.index
+          ? {
+              ...model,
+              context_window: customContextWindow,
+              auto_compact_token_limit: customAutoCompactTokenLimit,
+            }
+          : model,
+      ),
+    );
+    setCustomContextDraft(null);
+  };
+
+  const formatTokenSize = (value?: number) => {
+    if (value === undefined) {
+      return t(
+        "codex.experimentalModelCatalog.models.contextDefault",
+        "跟随模型",
+      );
+    }
+    if (value === 1_000_000) return "1M";
+    if (value % 1_000 === 0) return `${value / 1_000}K`;
+    return value.toLocaleString();
+  };
+
+  const contextLabel = (model: CodexExperimentalModelDefinition) => {
+    const preset = resolveContextPreset(model);
+    if (preset === "default") {
+      return t(
+        "codex.experimentalModelCatalog.models.contextDefault",
+        "跟随模型",
+      );
+    }
+    if (preset === "preset_516k") return "516K/460K";
+    if (preset === "preset_1m") return "1M/900K";
+    return `${formatTokenSize(model.context_window)}/${formatTokenSize(
+      model.auto_compact_token_limit,
+    )}`;
   };
 
   const showModelSource = Boolean(resolveModelSource);
@@ -575,13 +891,21 @@ export function CodexExperimentalModelEditor({
           {t("codex.experimentalModelCatalog.models.reasoning", "推理强度")}
         </span>
         <span>
+          {t(
+            "codex.experimentalModelCatalog.models.contextConfig",
+            "上下文与压缩",
+          )}
+        </span>
+        <span>
           {t("codex.experimentalModelCatalog.models.operation", "操作")}
         </span>
       </div>
 
       <div
         className={`codex-experimental-model-editor__list${
-          openReasoningIndex !== null ? " has-open-menu" : ""
+          openReasoningIndex !== null || openContextIndex !== null
+            ? " has-open-menu"
+            : ""
         }${draggingModelId ? " is-sorting" : ""}`}
       >
         {models.map((model, index) => {
@@ -700,6 +1024,7 @@ export function CodexExperimentalModelEditor({
                     type="button"
                     className="codex-experimental-model-editor__reasoning-trigger"
                     onClick={() => {
+                      setOpenContextIndex(null);
                       setOpenReasoningIndex((current) =>
                         current === index ? null : index,
                       );
@@ -780,6 +1105,85 @@ export function CodexExperimentalModelEditor({
                     </div>
                   )}
                 </div>
+              </div>
+              <div
+                className="codex-experimental-model-editor__context"
+                ref={
+                  openContextIndex === index ? contextPickerRef : undefined
+                }
+              >
+                <span className="codex-experimental-model-editor__field-label">
+                  {t(
+                    "codex.experimentalModelCatalog.models.contextConfig",
+                    "上下文与压缩",
+                  )}
+                </span>
+                <div className="codex-experimental-model-editor__context-picker">
+                  <button
+                    type="button"
+                    className="codex-experimental-model-editor__context-trigger"
+                    onClick={() => {
+                      setOpenReasoningIndex(null);
+                      setOpenContextIndex((current) =>
+                        current === index ? null : index,
+                      );
+                    }}
+                    disabled={disabled}
+                    aria-expanded={openContextIndex === index}
+                    title={contextLabel(model)}
+                  >
+                    <span>{contextLabel(model)}</span>
+                    <ChevronDown size={14} />
+                  </button>
+                  {openContextIndex === index && (
+                    <div className="codex-experimental-model-editor__context-menu">
+                      {(
+                        [
+                          [
+                            "default",
+                            t(
+                              "codex.experimentalModelCatalog.models.contextDefaultShort",
+                              "默认",
+                            ),
+                          ],
+                          ["preset_516k", "516K/460K"],
+                          ["preset_1m", "1M/900K"],
+                          [
+                            "custom",
+                            t(
+                              "codex.experimentalModelCatalog.models.contextCustomShort",
+                              "自定义",
+                            ),
+                          ],
+                        ] as Array<[ContextPresetId, string]>
+                      ).map(([preset, label]) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          className={`codex-experimental-model-editor__context-option${
+                            resolveContextPreset(model) === preset
+                              ? " is-selected"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            if (preset === "custom") {
+                              openCustomContextEditor(index);
+                            } else {
+                              applyContextPreset(index, preset);
+                            }
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {rowErrors[index]?.context && (
+                  <small className="codex-experimental-model-editor__error">
+                    {rowErrors[index].context}
+                  </small>
+                )}
               </div>
               <div className="codex-experimental-model-editor__operation">
                 <span className="codex-experimental-model-editor__field-label">
@@ -890,6 +1294,12 @@ export function CodexExperimentalModelEditor({
               {t("codex.experimentalModelCatalog.models.reasoning", "推理强度")}
             </span>
             <span>
+              {t(
+                "codex.experimentalModelCatalog.models.contextConfig",
+                "上下文与压缩",
+              )}
+            </span>
+            <span>
               {t("codex.experimentalModelCatalog.models.default", "默认")}
             </span>
           </div>
@@ -949,6 +1359,9 @@ export function CodexExperimentalModelEditor({
                         "跟随官方",
                       )}
                 </span>
+                <span className="codex-experimental-model-summary__context">
+                  {contextLabel(model)}
+                </span>
                 <span
                   className={`codex-experimental-model-summary__default${
                     defaultModelId === model.model_id ? " is-active" : ""
@@ -988,9 +1401,53 @@ export function CodexExperimentalModelEditor({
             </div>
           </div>
         )}
+        {customContextDraft && (
+          <CustomContextDialog
+            draft={customContextDraft}
+            contextWindow={customContextWindow}
+            autoCompactTokenLimit={customAutoCompactTokenLimit}
+            error={customContextErrorText}
+            onContextWindowChange={(value) =>
+              setCustomContextDraft((current) =>
+                current ? { ...current, contextWindow: value } : current,
+              )
+            }
+            onAutoCompactTokenLimitChange={(value) =>
+              setCustomContextDraft((current) =>
+                current ? { ...current, autoCompactTokenLimit: value } : current,
+              )
+            }
+            onClose={() => setCustomContextDraft(null)}
+            onSave={saveCustomContext}
+          />
+        )}
       </>
     );
   }
 
-  return editorContent;
+  return (
+    <>
+      {editorContent}
+      {customContextDraft ? (
+        <CustomContextDialog
+          draft={customContextDraft}
+          contextWindow={customContextWindow}
+          autoCompactTokenLimit={customAutoCompactTokenLimit}
+          error={customContextErrorText}
+          onContextWindowChange={(value) =>
+            setCustomContextDraft((current) =>
+              current ? { ...current, contextWindow: value } : current,
+            )
+          }
+          onAutoCompactTokenLimitChange={(value) =>
+            setCustomContextDraft((current) =>
+              current ? { ...current, autoCompactTokenLimit: value } : current,
+            )
+          }
+          onClose={() => setCustomContextDraft(null)}
+          onSave={saveCustomContext}
+        />
+      ) : null}
+    </>
+  );
 }

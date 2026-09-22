@@ -191,6 +191,9 @@ pub struct UserConfig {
     /// 是否在启动后自动最小化主窗口
     #[serde(default = "default_startup_minimized")]
     pub startup_minimized: bool,
+    /// 是否已将「启动后自动最小化」一次性默认关闭
+    #[serde(default = "default_startup_minimized_default_off_migrated")]
+    pub startup_minimized_default_off_migrated: bool,
     /// 是否记住主窗口尺寸和位置
     #[serde(default = "default_remember_main_window_state")]
     pub remember_main_window_state: bool,
@@ -786,6 +789,9 @@ fn default_floating_card_show_on_startup() -> bool {
 fn default_startup_minimized() -> bool {
     false
 }
+fn default_startup_minimized_default_off_migrated() -> bool {
+    true
+}
 fn default_remember_main_window_state() -> bool {
     false
 }
@@ -1216,6 +1222,8 @@ impl Default for UserConfig {
             menu_bar_quota_platform: default_menu_bar_quota_platform(),
             floating_card_show_on_startup: default_floating_card_show_on_startup(),
             startup_minimized: default_startup_minimized(),
+            startup_minimized_default_off_migrated:
+                default_startup_minimized_default_off_migrated(),
             remember_main_window_state: default_remember_main_window_state(),
             startup_page: default_startup_page(),
             floating_card_always_on_top: default_floating_card_always_on_top(),
@@ -1719,6 +1727,13 @@ pub fn load_user_config() -> Result<UserConfig, String> {
             obj.insert(
                 "startup_minimized".to_string(),
                 json!(default_startup_minimized()),
+            );
+        }
+        if !obj.contains_key("startup_minimized_default_off_migrated") {
+            // 老配置没有该标记时，默认视为“尚未迁移”，以便执行一次默认关闭。
+            obj.insert(
+                "startup_minimized_default_off_migrated".to_string(),
+                json!(false),
             );
         }
 
@@ -2287,6 +2302,7 @@ pub fn load_user_config() -> Result<UserConfig, String> {
         }
         config.auto_backup_retention_days_migrated = true;
     }
+    let startup_minimized_migrated = apply_startup_minimized_default_off_migration(&mut config);
     config.auto_backup_retention_days =
         sanitize_auto_backup_retention_days(config.auto_backup_retention_days);
     config.webdav_sync_retention_days =
@@ -2300,7 +2316,25 @@ pub fn load_user_config() -> Result<UserConfig, String> {
         }
     });
 
+    if startup_minimized_migrated {
+        if let Err(error) = persist_user_config(&config) {
+            crate::modules::logger::log_warn(&format!(
+                "关闭启动后自动最小化失败，已在本次运行生效，下次启动将重试: {}",
+                error
+            ));
+        }
+    }
+
     Ok(config)
+}
+
+fn apply_startup_minimized_default_off_migration(config: &mut UserConfig) -> bool {
+    if config.startup_minimized_default_off_migrated {
+        return false;
+    }
+    config.startup_minimized = false;
+    config.startup_minimized_default_off_migrated = true;
+    true
 }
 
 /// 保存用户配置
@@ -2604,6 +2638,89 @@ mod tests {
             serde_json::from_value(serde_json::json!({})).expect("旧配置反序列化应成功");
         assert!(!migrated_cfg.grok_opencode_sync_on_switch);
         assert!(!migrated_cfg.grok_opencode_auth_overwrite_on_switch);
+    }
+
+    #[test]
+    fn startup_minimized_defaults_to_disabled() {
+        let default_cfg = UserConfig::default();
+        assert!(!default_cfg.startup_minimized);
+        assert!(default_cfg.startup_minimized_default_off_migrated);
+
+        let missing_field_cfg: UserConfig =
+            serde_json::from_value(serde_json::json!({})).expect("缺字段配置反序列化应成功");
+        assert!(!missing_field_cfg.startup_minimized);
+        assert!(missing_field_cfg.startup_minimized_default_off_migrated);
+    }
+
+    #[test]
+    fn startup_minimized_legacy_enabled_is_turned_off_once() {
+        let mut legacy_cfg: UserConfig = serde_json::from_value(serde_json::json!({
+            "startup_minimized": true,
+            "startup_minimized_default_off_migrated": false,
+        }))
+        .expect("旧配置反序列化应成功");
+
+        assert!(super::apply_startup_minimized_default_off_migration(
+            &mut legacy_cfg
+        ));
+        assert!(!legacy_cfg.startup_minimized);
+        assert!(legacy_cfg.startup_minimized_default_off_migrated);
+
+        legacy_cfg.startup_minimized = true;
+        assert!(!super::apply_startup_minimized_default_off_migration(
+            &mut legacy_cfg
+        ));
+        assert!(legacy_cfg.startup_minimized);
+        assert!(legacy_cfg.startup_minimized_default_off_migrated);
+    }
+
+    #[test]
+    fn load_user_config_turns_off_legacy_startup_minimized_once() {
+        let _lock = crate::modules::test_support::env_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let data_dir = make_temp_dir("config_startup_minimized_migrate");
+        std::env::set_var("COCKPIT_TOOLS_TEST_DATA_DIR", &data_dir);
+
+        let config_path = data_dir.join("config.json");
+        fs::write(
+            &config_path,
+            r#"{
+  "startup_minimized": true
+}
+"#,
+        )
+        .expect("write legacy config");
+
+        let loaded = super::load_user_config().expect("load legacy config");
+        assert!(!loaded.startup_minimized);
+        assert!(loaded.startup_minimized_default_off_migrated);
+
+        let persisted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config_path).expect("read persisted config"))
+                .expect("parse persisted config");
+        assert_eq!(
+            persisted.get("startup_minimized").and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            persisted
+                .get("startup_minimized_default_off_migrated")
+                .and_then(|value| value.as_bool()),
+            Some(true)
+        );
+
+        let mut persisted_cfg: UserConfig =
+            serde_json::from_value(persisted).expect("deserialize persisted config");
+        persisted_cfg.startup_minimized = true;
+        persist_test_config(&config_path, &persisted_cfg).expect("rewrite user-enabled config");
+
+        let reloaded = super::load_user_config().expect("reload user-enabled config");
+        assert!(reloaded.startup_minimized);
+        assert!(reloaded.startup_minimized_default_off_migrated);
+
+        std::env::remove_var("COCKPIT_TOOLS_TEST_DATA_DIR");
+        fs::remove_dir_all(data_dir).expect("remove temp dir");
     }
 
     #[test]

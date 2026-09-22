@@ -279,6 +279,8 @@
             model_id: "gpt-5".to_string(),
             display_name: "GPT-5".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         let result = super::save_model_catalog_for_base_dir_preserving_context(
@@ -367,13 +369,18 @@
             result.experimental_model_catalog_reset_default_model_id.as_deref(),
             Some("gpt-5.6-sol")
         );
+        let expected_shipped_models = super::SHIPPED_VISIBLE_CODEX_MODEL_IDS
+            .iter()
+            .filter(|model_id| !crate::modules::codex_wakeup::is_codex_model_before_5_5(model_id))
+            .copied()
+            .collect::<Vec<_>>();
         assert_eq!(
             result
                 .experimental_model_catalog_reset_models
                 .iter()
                 .map(|model| model.model_id.as_str())
                 .collect::<Vec<_>>(),
-            super::SHIPPED_VISIBLE_CODEX_MODEL_IDS
+            expected_shipped_models
         );
         assert!(base_dir
             .join(super::CODEX_EXPERIMENTAL_MODEL_POLICY_FILE)
@@ -397,13 +404,19 @@
             "gpt-5.6-terra",
             "gpt-5.6-luna",
             "gpt-5.5",
+        ] {
+            assert!(models.iter().any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some(expected)
+            }));
+        }
+        for legacy in [
             "gpt-5.4",
             "gpt-5.4-mini",
             "gpt-5.3-codex",
             "gpt-5.3-codex-spark",
         ] {
-            assert!(models.iter().any(|model| {
-                model.get("slug").and_then(serde_json::Value::as_str) == Some(expected)
+            assert!(!models.iter().any(|model| {
+                model.get("slug").and_then(serde_json::Value::as_str) == Some(legacy)
             }));
         }
         assert!(!models.iter().any(|model| {
@@ -434,7 +447,7 @@
             .map(|model| model.model_id.as_str())
             .collect::<Vec<_>>();
         assert!(model_ids.contains(&"gpt-5.6-sol"));
-        assert!(model_ids.contains(&"gpt-5.3-codex"));
+        assert!(!model_ids.contains(&"gpt-5.3-codex"));
         assert!(!model_ids.contains(&"gpt-5.6-sol-wm"));
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
@@ -530,6 +543,8 @@
             model_id: model_id.to_string(),
             display_name: model_id.to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         })
         .collect::<Vec<_>>();
         let saved = serde_json::json!({
@@ -613,6 +628,10 @@
         assert!(before_save
             .experimental_model_catalog_models
             .iter()
+            .any(|model| model.model_id == "gpt-5.6-sol"));
+        assert!(!before_save
+            .experimental_model_catalog_models
+            .iter()
             .any(|model| model.model_id == "gpt-5.3-codex"));
         assert!(!before_save
             .experimental_model_catalog_models
@@ -646,11 +665,15 @@
                 model_id: "custom-model-a".to_string(),
                 display_name: "Custom Model A".to_string(),
                 reasoning_efforts: None,
+                context_window: None,
+                auto_compact_token_limit: None,
             },
             CodexExperimentalModelDefinition {
                 model_id: "custom-model-b".to_string(),
                 display_name: "Custom Model B".to_string(),
                 reasoning_efforts: None,
+                context_window: None,
+                auto_compact_token_limit: None,
             },
         ];
 
@@ -668,6 +691,8 @@
             model_id: "gpt-reserve".to_string(),
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         });
         assert_eq!(result.experimental_model_catalog_models, expected);
         assert_eq!(
@@ -713,6 +738,8 @@
             model_id: "custom-reasoning-model".to_string(),
             display_name: "Custom Reasoning Model".to_string(),
             reasoning_efforts: Some(vec!["low".to_string(), "high".to_string()]),
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         write_quick_config_to_config_toml(&base_dir, None, None, Some(true), Some(models))
@@ -742,7 +769,7 @@
     }
 
     #[test]
-    fn quick_config_discards_legacy_context_settings_per_visible_model() {
+    fn quick_config_without_model_overrides_keeps_official_catalog_context() {
         let base_dir = make_temp_dir("codex-visible-model-context-test");
         fs::write(
             base_dir.join("config.toml"),
@@ -753,6 +780,8 @@
             model_id: "gpt-5.6-sol".to_string(),
             display_name: "5.6 Sol".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         write_quick_config_to_config_toml(&base_dir, None, None, Some(true), Some(models))
@@ -792,7 +821,7 @@
     }
 
     #[test]
-    fn reading_model_management_removes_saved_legacy_context_overrides() {
+    fn reading_model_management_preserves_saved_context_overrides_without_writing() {
         let base_dir = make_temp_dir("codex-model-context-migration-test");
         fs::write(
             base_dir.join(super::CODEX_EXPERIMENTAL_MODEL_CONFIG_FILE),
@@ -813,21 +842,83 @@
         )
         .expect("write legacy model configuration");
 
+        let original = fs::read_to_string(base_dir.join(super::CODEX_EXPERIMENTAL_MODEL_CONFIG_FILE)).unwrap();
         let models = super::read_experimental_model_definitions(&base_dir);
         let model = models
             .iter()
             .find(|model| model.model_id == "custom-model")
             .expect("find migrated model");
         assert_eq!(model.display_name, "Custom Model");
+        assert_eq!(model.context_window, Some(1_000_000));
+        assert_eq!(model.auto_compact_token_limit, Some(900_000));
 
         let migrated = fs::read_to_string(
             base_dir.join(super::CODEX_EXPERIMENTAL_MODEL_CONFIG_FILE),
         )
         .expect("read migrated model configuration");
-        assert!(!migrated.contains("context_window"));
-        assert!(!migrated.contains("auto_compact_token_limit"));
+        assert_eq!(migrated, original, "reading must not rewrite the model configuration");
+        assert!(migrated.contains("\"context_window\": 1000000"));
+        assert!(migrated.contains("\"auto_compact_token_limit\": 900000"));
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn model_context_overrides_round_trip_and_decorate_only_enabled_profiles() {
+        let base_dir = make_temp_dir("codex-model-context-round-trip");
+        let original = "model_context_window = 516000\nmodel_auto_compact_token_limit = 460000\n";
+        fs::write(base_dir.join("config.toml"), original).unwrap();
+        let definition = CodexExperimentalModelDefinition {
+            model_id: "gpt-5.6-sol".into(),
+            display_name: "Sol".into(),
+            reasoning_efforts: None,
+            context_window: Some(800_000),
+            auto_compact_token_limit: Some(700_000),
+        };
+        let saved = super::save_model_catalog_for_base_dir_preserving_context(
+            &base_dir, true, vec![definition.clone()], Some(definition.model_id.clone()),
+        ).unwrap();
+        assert!(saved.experimental_model_catalog_models.contains(&definition));
+        let config = fs::read_to_string(base_dir.join("config.toml")).unwrap();
+        assert!(config.contains("model_context_window = 516000"));
+        assert!(config.contains("model_auto_compact_token_limit = 460000"));
+        let catalog: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(base_dir.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)).unwrap(),
+        ).unwrap();
+        let model = catalog["models"].as_array().unwrap().iter()
+            .find(|model| model["slug"] == definition.model_id).unwrap();
+        assert_eq!(model["context_window"], 800_000);
+        assert_eq!(model["max_context_window"], 800_000);
+        assert_eq!(model["auto_compact_token_limit"], 700_000);
+
+        let temporary = r#"{"models":[{"slug":"GPT-5.6-SOL","context_window":516000},{"slug":"other","context_window":100000}]}"#;
+        let decorated: serde_json::Value = serde_json::from_str(
+            &super::decorate_managed_model_catalog_for_profile(&base_dir, temporary).unwrap(),
+        ).unwrap();
+        assert_eq!(decorated["models"][0]["context_window"], 800_000);
+        assert_eq!(decorated["models"][0]["auto_compact_token_limit"], 700_000);
+        assert_eq!(decorated["models"][1]["context_window"], 100_000);
+        super::persist_experimental_model_policy(&base_dir, false).unwrap();
+        assert_eq!(super::decorate_managed_model_catalog_for_profile(&base_dir, temporary).unwrap(), temporary);
+        fs::remove_dir_all(&base_dir).unwrap();
+    }
+
+    #[test]
+    fn model_context_overrides_require_positive_pairs_and_strict_compact_limit() {
+        for (window, compact, error) in [
+            (Some(0), Some(1), "EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID"),
+            (None, Some(1), "EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID"),
+            (Some(100), None, "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID"),
+            (Some(100), Some(-1), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID"),
+            (Some(100), Some(100), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID"),
+            (Some(100), Some(101), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID"),
+        ] {
+            let definition = CodexExperimentalModelDefinition {
+                model_id: "custom-model".into(), display_name: "Custom".into(),
+                reasoning_efforts: None, context_window: window, auto_compact_token_limit: compact,
+            };
+            assert_eq!(super::normalize_experimental_model_definitions(vec![definition]).unwrap_err(), error);
+        }
     }
 
     #[test]
@@ -838,6 +929,8 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         let result = write_quick_config_to_config_toml_with_default(
@@ -855,6 +948,8 @@
             model_id: "gpt-reserve".to_string(),
             display_name: "GPT-5.6 Reserve".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         });
         assert_eq!(result.experimental_model_catalog_models, expected);
         assert_eq!(
@@ -884,6 +979,8 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         write_quick_config_to_config_toml_with_default(
@@ -914,6 +1011,8 @@
             model_id: "custom-model".to_string(),
             display_name: "Custom Model".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
 
         write_quick_config_to_config_toml_with_default(
@@ -1257,6 +1356,8 @@
             model_id: "bad model id".to_string(),
             display_name: String::new(),
             reasoning_efforts: Some(vec!["not-a-real-effort".to_string()]),
+            context_window: None,
+            auto_compact_token_limit: None,
         }];
         write_quick_config_to_config_toml_with_default(
             &base_dir,

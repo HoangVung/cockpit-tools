@@ -7,6 +7,60 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [Unreleased]
+
+## [1.3.58] - 2026-09-22
+
+### Added
+
+- **Account risk checks**: the accounts overview gains a Risk check entry that reads the official upstream `x-codex-turn-state` length: a `state` length of 312 marks the account card as Suspected risk right away, 292/332 count as normal and clear that mark, and any other length only reports an abnormal length. Checks, wakeups and API-service forwarding all record observations, and opening an account shows the time, state length and reason. Only the length is stored, never the raw state, and API key accounts are not included.
+- **API-service request logs show the state length and suspected risk**: every request row carries the upstream state length, flags Suspected risk when `state` is 312, shows other lengths as-is, and marks No state returned when the header is missing.
+- **Relay keys are now a horizontal table and can write the official configs to your machine**: the key list shows Name / API key / Models / Usage / Status / Added / Actions using only locally stored or queried data, and each row opens a "Use API key" dialog that detects the group from the key's real model list, renders the official Codex App, Codex CLI, Claude Code and Claude Desktop configs, and can write `~/.codex/config.toml`, `~/.codex/auth.json` and `~/.claude/settings.json` directly (existing files are backed up and merged, never overwritten). The previous Add to Codex / Add to Claude / Add to Claude CLI entries remain as buttons in the same row.
+- **Codex launch preview remembers the target instance per card**: account cards, the API Service card, and model-provider cards each keep the last instance chosen in launch preview. Reopening the preview selects that instance again, and a deleted instance falls back to the default instance.
+- **API Service can hand image generation to selected GPT accounts**: the launch preview gets the same Enable GPT image generation row as DeepSeek. Once enabled with GPT accounts chosen, image generation and image editing run on those accounts and consume their quota; chat requests keep using the service account pool. Leaving it disabled keeps the previous routing.
+- **DeepSeek and Grok models now support Codex sub-agent collaboration**: dispatching, messaging and follow-ups work, and `wait_agent` can wait for results; Grok model catalog entries now declare multi-agent capability so new Grok sessions receive the collaboration tools. Official models are unchanged.
+- **API-service request details show the requested and upstream model**: each log row keeps the client-requested model on the first line and always marks the model sent upstream on a second line; only rows without a recorded upstream model stay on a single line.
+- **macOS DMG now ships the "app is damaged" troubleshooting note**: the installer window places a bilingual `"已损坏"急救说明 (README).txt` next to the app icon, explaining the Gatekeeper warning (the release pipeline does not use Apple Developer ID signing or notarization yet) and giving both the `xattr` command and the System Settings "Open Anyway" path.
+
+### Changed
+
+- **"Start minimized" is now off by default**: upgrading turns the switch off once and writes that to config; if you turn it back on later, it stays on.
+- **Model management now follows the account pool and hides official models older than 5.5**: the default list only includes models the instance or API-service pool can actually serve. Official models below `gpt-5.5` are no longer listed by default, and official GPT / `gpt-reserve` stay hidden when the pool has no GPT capability. Grok provider accounts, plus accounts that only serve non-GPT models such as DeepSeek / GLM / Kimi (including mappings that borrow GPT shell names), never count as official GPT capability; third-party GPT relay keys provide official GPT models based on their own model list. Legacy catalogs that were never explicitly saved fall back to following the pool; only a user-saved list stops automatic updates, and an explicit reset returns to following the pool.
+- **Third-party GPT relay keys now append their own model list to the available models**: GPT / Codex models fetched from the upstream (`gpt-5.5`, `gpt-5.6-*`, `gpt-6-astra`, …) are merged into that key's visible models and routing, keeping the client picker, launch preview, `/v1/models` and request validation in sync. GPT names outside the official set (such as `gpt-4o`) and DeepSeek-style shell aliases stay hidden.
+- **Grok (xAI) models now use the Codex edit-file tool**: new Grok windows edit files through the native tool instead of falling back to shell commands.
+- **Codex wakeups always run through the host-side API path**: the host sends the selected account credentials straight to the official endpoint, so no local Codex CLI is required and the API Service does not need to be running. There is no longer a CLI execution option. API key accounts cannot wake up; Agent Identity accounts use this direct path.
+- **Wakeup now defaults to GPT-5.6 Luna and hides models older than 5.5**: wakeup tasks and manual tests no longer offer pre-5.5 presets (including `gpt-5.4`, `gpt-5.4-mini` and earlier custom presets). Existing tasks that pointed at those models move to GPT-5.6 Luna with the default reasoning effort.
+- **Model catalog can set context per model**: choose model defaults, 516K / 460K, 1M / 900K, or custom context windows and compact limits. Settings are saved per model. In launch preview, Apply context writes immediately, and switching to custom opens the input fields while keeping the current values.
+- **Removed the Codex Ultrafast option**: speed controls now offer only Standard and Fast. Previously saved Ultrafast preferences fall back to Standard.
+- **Removed Pelican intelligence testing**: the testing entry and its background functionality are no longer available; existing local test history is not deleted.
+- **Models in the same catalog now share one compaction hash**: switching models is less likely to trigger compaction solely because the hash changed.
+
+### Fixed
+
+- **Fixed Windows freezing after an account switch while the tray menu rebuilt**: Cockpit now reads tray labels in the background and applies the native menu in one UI-thread pass, so switching accounts no longer waits on dozens of tray `set_menu` round-trips.
+- **Fixed official GPT models appearing with only DeepSeek / Grok accounts in the pool**: an OAuth account bound solely for GPT image-generation forwarding no longer counts as GPT capability, so the API Service launch preview and profile model catalog only list models the chat accounts can actually serve, while the image-forwarding account keeps its credentials.
+- **Fixed third-party upstreams rejecting the same thread after switching models**: DeepSeek, Grok and similar upstreams no longer fail the next turn on replayed history.
+- **Fixed strict Responses upstreams such as DeepSeek rejecting replayed tool calls**: missing tool-call IDs no longer cause the upstream to reject the request.
+- **Fixed scrolling in Codex account forms moving the dialog off screen**: adding or editing API Keys and switching providers now keep their dialogs anchored, with long forms scrolling inside and action buttons remaining reachable.
+- **Fixed unresponsive Codex launch previews when reopened**: background configuration loading no longer blocks closing the dialog or unrelated actions; slow reads offer a timeout and retry.
+- **Fixed context-limit errors through the Codex gateway being treated as disconnects**: overflow is handed to the client for normal context-limit handling instead of reconnect loops.
+- **Fixed Antigravity personal-account quotas showing 100%, incorrect window rows, and incorrect GCP ToS badges**: personal subscriptions are no longer treated as GCP accounts based solely on their plan; accounts without a real project query quotas with an empty payload, aligned with the official IDE, and stale placeholder projects or orphaned GCP tags are cleared. Account cards show only the Claude and Gemini 5h / weekly windows; missing windows render as no data instead of full, distant reset times no longer turn quotas into 100%, and model variants are no longer mistaken for hourly or weekly windows. Failed window-summary refreshes keep eligible cached windows with a stale-data indication; manual batch refresh bypasses the short-lived API cache. ([#2326](https://github.com/jlcodes99/cockpit-tools/pull/2326))
+- **Disabled update reminders now suppress automatic popups** even if remote policy requests one or an update check is already running; manual update checks remain available.
+- **Fixed ordinary Responses providers losing per-model image-input controls**, including model IDs with uppercase characters.
+- **`gpt-5.5` and later models now default to image input**: namespaced or suffixed IDs such as `openai/gpt-5.6-sol` are covered too, so the Provider Gateway no longer treats them as text-only and drops images when the per-model capability table is empty. `gpt-5.4` and earlier, `gpt-reserve`, `gpt-image-*` and non-GPT models keep their previous behaviour, and explicit switches (including a manual off) still win.
+- **Fixed legacy vision settings of custom Responses providers being lost after an upgrade**: upgrades expand the provider-level vision switch into per-model capabilities and persist them, and gateway config generation also backfills the per-model table from the account/provider switch, so images are no longer silently removed.
+- **Fixed missing quota progress tracks on stacked dashboard cards**, without changing horizontal layouts or quota values.
+- **Transient connection failures no longer masquerade as account-pool exhaustion**: TLS, EOF and connection-reset failures retry within the configured limit, while genuine authentication, quota and pool failures keep their existing handling.
+- **API-service background maintenance no longer overwrites Codex configuration you changed yourself**: it stops updating profiles whose managed connection fields were changed externally and preserves user model and context choices. Stopping the service restores credentials still owned by its takeover without replacing a later login or an externally modified profile.
+- **Fixed Grok requests failing in mixed model routing**: requests use the route's bound Grok account without falling back to another account.
+- **Fixed Grok requests failing with "no available account (1 candidate, 0 for every other reason)"**: the host and the local gateway disagreed on the Grok provider name, so Grok models were registered on Codex accounts and then filtered out by API-key scope; provider names are now normalized so Grok requests only match Grok accounts.
+- **Fixed managed model catalogs not refreshing after an app upgrade**: managed catalogs now carry a generator version stamp plus a content hash, and startup rebuilds a stale or unstamped catalog in the background instead of waiting for an account switch; the rebuild keeps the existing model list and display names.
+- **Deleting a Grok account no longer prevents other API-service members from serving requests**.
+- **Fixed missing Grok accounts and empty platform-filter results in the API-service members dialog**: asynchronously loaded accounts appear immediately, and switching platforms updates the list correctly.
+- **Fixed inconsistent Grok streaming tool names and arguments**.
+- **Fixed Codex quota refresh dropping already-refreshed credentials when a Grok query is slow or cancelled**, and the badge now updates when the refresh finishes.
+- **Fixed Grok gateway credentials keeping the wrong expiry and, after a failed sync, retaining an old token or restoring a deleted account**.
+
 ## [1.3.57] - 2026-09-18
 
 ### Added

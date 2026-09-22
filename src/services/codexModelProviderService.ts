@@ -501,13 +501,20 @@ async function ensureProvidersLoaded(): Promise<CodexModelProvider[]> {
   const migration = migrateApiKeyFunProvider(loaded);
   loaded = migration.providers;
   let migratedDeepSeek = false;
+  let migratedLegacyVision = false;
   for (const provider of loaded) {
     migratedDeepSeek = enforceDeepSeekProvider(provider) || migratedDeepSeek;
+    // 旧版本的供应商级识图开关展开成逐模型能力，避免网关把图片当 text-only 丢弃。
+    if (expandLegacyProviderVisionCapabilities(provider)) {
+      provider.updatedAt = Date.now();
+      migratedLegacyVision = true;
+    }
   }
   if (
     loaded.length !== loadedProviders.length ||
     migration.changed ||
     migratedDeepSeek ||
+    migratedLegacyVision ||
     loadResult.removedImageGenerationSetting ||
     loadResult.migratedSupportsWebsockets
   ) {

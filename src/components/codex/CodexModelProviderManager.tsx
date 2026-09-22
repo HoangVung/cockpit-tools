@@ -126,6 +126,7 @@ import {
   shouldSyncCodexModelProviderAccountName,
 } from "../../utils/codexModelProviderAccountName";
 import { findCodexAccountsReferencingModelProvider } from "../../utils/codexModelProviderAccountSync";
+import { providerModelDefaultsToVisionInput } from "../../utils/codexModelProviderVision";
 import { CodexModelProviderManagerView } from "./CodexModelProviderManagerView";
 
 
@@ -2377,7 +2378,14 @@ export function useCodexModelProviderManagerController({
       if (!key) continue;
       // 未操作过的关闭状态不写，交给供应商级默认值决定；已保存过的显式值原样保留。
       const baseline = form.visionModelStatesBaseline[key];
-      if (baseline === undefined && !supportsVision) continue;
+      // gpt-5.5+ 默认支持识图，显式关闭必须落盘，否则会被默认值覆盖。
+      if (
+        baseline === undefined &&
+        !supportsVision &&
+        !providerModelDefaultsToVisionInput(key)
+      ) {
+        continue;
+      }
       modelCapabilities[key] = { supportsVision };
     }
     const visionRoutingModel = form.visionRoutingModel.trim();

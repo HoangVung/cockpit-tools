@@ -398,7 +398,25 @@ pub fn load_account(account_id: &str) -> Result<Account, String> {
     let content =
         fs::read_to_string(&account_path).map_err(|e| format!("读取账号数据失败: {}", e))?;
 
-    deserialize_account_from_storage(&account_path, &content)
+    let mut account = deserialize_account_from_storage(&account_path, &content)?;
+    if account.token.project_id.as_deref() == Some("aicode-consumers") {
+        account.token.project_id = None;
+    }
+    if let Some(ref mut q) = account.quota {
+        if q.project_id.as_deref() == Some("aicode-consumers") {
+            q.project_id = None;
+        }
+    }
+    // 若账号没有真实 project_id，清洗掉历史残留的 is_gcp_tos 假标记
+    if account.token.project_id.is_none() {
+        account.token.is_gcp_tos = None;
+    }
+    if let Some(ref mut q) = account.quota {
+        if q.project_id.is_none() {
+            q.is_gcp_tos = None;
+        }
+    }
+    Ok(account)
 }
 
 /// 保存账号数据
@@ -914,13 +932,18 @@ fn save_current_account_file(email: &str) -> Result<(), String> {
 }
 
 /// 更新账号配额
-pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), String> {
+pub fn update_account_quota(account_id: &str, mut quota: QuotaData) -> Result<(), String> {
     let mut account = load_account(account_id)?;
+    modules::quota::preserve_failed_quota_summary(&mut quota, account.quota.as_ref());
 
     // 容错：如果新获取的 models 为空，但之前有数据，保留原来的 models
     if quota.models.is_empty() {
         if let Some(ref existing_quota) = account.quota {
-            if !existing_quota.models.is_empty() {
+            if !existing_quota.models.is_empty()
+                && !quota.is_forbidden && !existing_quota.is_forbidden
+                && existing_quota.project_id == quota.project_id
+                && existing_quota.subscription_tier == quota.subscription_tier
+            {
                 modules::logger::log_warn(&format!(
                     "⚠️ 新配额 models 为空，保留原有 {} 个模型数据",
                     existing_quota.models.len()
@@ -930,6 +953,9 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
                 merged_quota.subscription_tier = quota.subscription_tier.clone();
                 merged_quota.is_forbidden = quota.is_forbidden;
                 merged_quota.last_updated = quota.last_updated;
+                merged_quota.quota_summary_stale = true;
+                merged_quota.quota_summary_updated_at = existing_quota.quota_summary_updated_at
+                    .or_else(|| (!existing_quota.quota_summary_stale).then_some(existing_quota.last_updated));
                 account.update_quota(merged_quota);
                 account.usage_updated_at = Some(chrono::Utc::now().timestamp());
                 save_account(&account)?;
@@ -959,6 +985,22 @@ pub struct RefreshStats {
 pub enum QuotaRefreshTrigger {
     ManualBatch,
     Auto,
+}
+
+impl QuotaRefreshTrigger {
+    fn skip_cache(self) -> bool {
+        matches!(self, Self::ManualBatch)
+    }
+}
+
+#[cfg(test)]
+mod quota_refresh_cache_tests {
+    use super::QuotaRefreshTrigger;
+    #[test]
+    fn manual_batch_bypasses_cache_while_automatic_refresh_reuses_it() {
+        assert!(QuotaRefreshTrigger::ManualBatch.skip_cache());
+        assert!(!QuotaRefreshTrigger::Auto.skip_cache());
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1914,7 +1956,7 @@ pub async fn refresh_all_quotas_logic(
             let permit = semaphore.clone();
             async move {
                 let _guard = permit.acquire().await.unwrap();
-                match fetch_quota_with_fresh_token(&mut account, false).await {
+                match fetch_quota_with_fresh_token(&mut account, trigger.skip_cache()).await {
                     Ok(quota) => {
                         if let Err(e) = update_account_quota(&account_id, quota) {
                             let msg = format!("Account {}: Save quota failed - {}", email, e);
@@ -2015,11 +2057,25 @@ pub async fn fetch_quota_with_fresh_token(
                 if account.token.is_gcp_tos != Some(gcp_tos) {
                     account.token.is_gcp_tos = Some(gcp_tos);
                 }
+            } else if account.token.is_gcp_tos == Some(true) {
+                // 若配额不再标识 GCP ToS，重置先前误标的状态
+                account.token.is_gcp_tos = None;
+            }
+            // 清理历史残留的 aicode-consumers 脏数据
+            if account.token.project_id.as_deref() == Some("aicode-consumers") {
+                account.token.project_id = None;
             }
             if let Some(ref project_id) = payload.quota.project_id {
-                if account.token.project_id.as_deref() != Some(project_id.as_str()) {
-                    account.token.project_id = Some(project_id.clone());
+                let trimmed = project_id.trim();
+                if trimmed != "aicode-consumers" && !trimmed.is_empty() {
+                    if account.token.project_id.as_deref() != Some(trimmed) {
+                        account.token.project_id = Some(trimmed.to_string());
+                    }
+                } else {
+                    account.token.project_id = None;
                 }
+            } else {
+                account.token.project_id = None;
             }
             account.quota_error = payload.error.map(|err| QuotaErrorInfo {
                 code: err.code,

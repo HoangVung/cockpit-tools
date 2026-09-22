@@ -785,3 +785,113 @@ mod windows_launch_fallback_tests {
         )));
     }
 }
+
+#[cfg(test)]
+mod codex_store_gui_exe_tests {
+    use super::{appx_manifest_gui_executable_from_text, is_chatgpt_store_gui_exe};
+    use std::path::Path;
+
+    /// 真实清单的精简版：`App` 是桌面端入口，`CodexCoreCommandRunner` 是另一个应用。
+    const REAL_MANIFEST: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
+  <Applications>
+    <Application Id="App" Executable="app/ChatGPT.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ChatGPT" />
+    </Application>
+    <Application Id="CodexCoreCommandRunner" Executable="app/resources/codex-command-runner.exe" EntryPoint="Windows.FullTrustApplication" />
+  </Applications>
+</Package>"#;
+
+    #[test]
+    fn picks_the_app_application_executable() {
+        assert_eq!(
+            appx_manifest_gui_executable_from_text(REAL_MANIFEST).as_deref(),
+            Some("app/ChatGPT.exe")
+        );
+    }
+
+    #[test]
+    fn ignores_other_applications_and_missing_executable() {
+        // Id 顺序对调也要命中 App，而不是第一个 Application 节点。
+        let other_first = r#"<Application Id="CodexCoreCommandRunner" Executable="app/resources/codex-command-runner.exe" /><Application Id="App" Executable="app/ChatGPT.exe" />"#;
+        assert_eq!(
+            appx_manifest_gui_executable_from_text(other_first).as_deref(),
+            Some("app/ChatGPT.exe")
+        );
+        assert_eq!(
+            appx_manifest_gui_executable_from_text(r#"<Application Id="App" />"#),
+            None
+        );
+        assert_eq!(appx_manifest_gui_executable_from_text("<Package />"), None);
+        assert_eq!(appx_manifest_gui_executable_from_text(""), None);
+    }
+
+    #[test]
+    fn only_accepts_the_chatgpt_gui_binary() {
+        assert!(is_chatgpt_store_gui_exe(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\ChatGPT.exe"
+        )));
+        assert!(is_chatgpt_store_gui_exe(Path::new(
+            r"E:\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\chatgpt.EXE"
+        )));
+        // 同包目录里的另外两个 exe 都不是桌面端入口。
+        assert!(!is_chatgpt_store_gui_exe(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\Codex.exe"
+        )));
+        assert!(!is_chatgpt_store_gui_exe(Path::new(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0.0_x64__8wekyb3d8bbwe\app\resources\codex.exe"
+        )));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolves_gui_exe_from_manifest_and_falls_back_to_convention() {
+        use super::codex_store_gui_exe_in;
+
+        let root = std::env::temp_dir().join(format!(
+            "cockpit-tools-codex-store-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+
+        // 1) 清单声明 app/ChatGPT.exe 且文件存在 → 采信清单
+        let with_manifest = root.join("with-manifest");
+        std::fs::create_dir_all(with_manifest.join("app")).expect("create app dir");
+        std::fs::write(with_manifest.join("AppxManifest.xml"), REAL_MANIFEST)
+            .expect("write manifest");
+        std::fs::write(with_manifest.join("app").join("ChatGPT.exe"), b"stub")
+            .expect("write exe");
+        assert_eq!(
+            codex_store_gui_exe_in(&with_manifest),
+            Some(with_manifest.join("app").join("ChatGPT.exe"))
+        );
+
+        // 2) 读不到清单 → 退回约定路径 app\ChatGPT.exe
+        let no_manifest = root.join("no-manifest");
+        std::fs::create_dir_all(no_manifest.join("app")).expect("create app dir");
+        std::fs::write(no_manifest.join("app").join("ChatGPT.exe"), b"stub").expect("write exe");
+        assert_eq!(
+            codex_store_gui_exe_in(&no_manifest),
+            Some(no_manifest.join("app").join("ChatGPT.exe"))
+        );
+
+        // 3) 只有 Codex.exe → 不再猜其它 exe
+        let only_codex = root.join("only-codex");
+        std::fs::create_dir_all(only_codex.join("app")).expect("create app dir");
+        std::fs::write(only_codex.join("app").join("Codex.exe"), b"stub").expect("write exe");
+        assert_eq!(codex_store_gui_exe_in(&only_codex), None);
+
+        // 4) 清单指向非 ChatGPT.exe → 不接受
+        let manifest_other = root.join("manifest-other");
+        std::fs::create_dir_all(manifest_other.join("app")).expect("create app dir");
+        std::fs::write(
+            manifest_other.join("AppxManifest.xml"),
+            br#"<Application Id="App" Executable="app/Codex.exe" />"#,
+        )
+        .expect("write manifest");
+        std::fs::write(manifest_other.join("app").join("Codex.exe"), b"stub").expect("write exe");
+        assert_eq!(codex_store_gui_exe_in(&manifest_other), None);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

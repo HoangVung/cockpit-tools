@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SingleSelectDropdown } from "../SingleSelectDropdown";
 
@@ -62,7 +62,12 @@ export function CodexContextOverrideEditor({
   onChange,
 }: CodexContextOverrideEditorProps) {
   const { t } = useTranslation();
-  const preset = resolveCodexContextOverridePreset(
+  // Editing intent must not be inferred from numbers that may still match a preset.
+  const [customEditing, setCustomEditing] = useState(false);
+  useEffect(() => {
+    if (!enabled) setCustomEditing(false);
+  }, [enabled]);
+  const preset = enabled && customEditing ? "custom" : resolveCodexContextOverridePreset(
     enabled,
     contextWindow,
     compactLimit,
@@ -84,6 +89,7 @@ export function CodexContextOverrideEditor({
   );
 
   const handlePresetChange = (nextPreset: string) => {
+    setCustomEditing(nextPreset === "custom");
     if (nextPreset === "official") {
       onChange({ enabled: false, contextWindow, compactLimit });
       return;
@@ -118,13 +124,14 @@ export function CodexContextOverrideEditor({
               min={1}
               step={1}
               value={contextWindow}
-              onChange={(event) =>
+              onChange={(event) => {
+                setCustomEditing(true);
                 onChange({
                   enabled: true,
                   contextWindow: event.target.value,
                   compactLimit,
-                })
-              }
+                });
+              }}
               disabled={disabled}
             />
           </label>
@@ -139,13 +146,14 @@ export function CodexContextOverrideEditor({
               step={1}
               value={compactLimit}
               placeholder={t("codex.contextOverride.automatic", "自动")}
-              onChange={(event) =>
+              onChange={(event) => {
+                setCustomEditing(true);
                 onChange({
                   enabled: true,
                   contextWindow,
                   compactLimit: event.target.value,
-                })
-              }
+                });
+              }}
               disabled={disabled}
             />
           </label>

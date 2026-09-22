@@ -1,5 +1,6 @@
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 const REASONING_ENCRYPTED_CONTENT_INCLUDE: &str = "reasoning.encrypted_content";
@@ -9,6 +10,13 @@ const CODEX_RESERVE_TEMPLATE_MODEL_ID: &str = "gpt-5.6-luna";
 /// 额度兜底模型对客户端展示的名称（跟随官方 5.6 命名）。
 pub(crate) const CODEX_RESERVE_DISPLAY_NAME: &str = "GPT-5.6 Reserve";
 const CODEX_MODEL_CATALOG_TEMPLATE_SLUG: &str = "gpt-5.5";
+const CODEX_INPUT_ITEM_ID_LIMIT: usize = 64;
+/// Codex 客户端模型目录统一的压缩格式哈希（comp_hash）。
+///
+/// 各模型带不同 comp_hash 时，客户端在切换模型后会触发 PreTurn 自动压缩
+/// （`run_auto_compact{reason=CompHashChanged}`），与当前 token 用量无关；
+/// 统一为最新官方值即可避免混合模型目录内切换模型被强制重建上下文。
+pub(crate) const CODEX_CLIENT_COMP_HASH: &str = "3000";
 const CODEX_CLIENT_MODEL_TEMPLATES_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../sidecars/cockpit-cliproxy/third_party/CLIProxyAPI/internal/registry/models/codex_client_models.json"
@@ -472,6 +480,19 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         );
         object.insert("service_tiers".to_string(), Value::Array(Vec::new()));
         inherit_routed_gpt_capabilities(object, model_id);
+        // Grok 平台模型由第三方 executor 承接，官方模型目录没有对应条目。
+        // 缺少 multi_agent_version 时 Codex 客户端不会为这些模型注入子智能体
+        // 协作工具（spawn/send/wait 等），会话里就表现为「找不到协作工具」。
+        if is_grok_codex_model(model_id) {
+            object.insert(
+                "multi_agent_version".to_string(),
+                json!(GROK_MULTI_AGENT_VERSION),
+            );
+            object.insert(
+                "minimal_client_version".to_string(),
+                json!(GROK_MINIMAL_CLIENT_VERSION),
+            );
+        }
     }
     if visibility == "hide" || !object.contains_key("visibility") {
         object.insert(
@@ -482,6 +503,10 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
     object.insert("supported_in_api".to_string(), Value::Bool(true));
     object.insert("availability_nux".to_string(), Value::Null);
     object.insert("upgrade".to_string(), Value::Null);
+    object.insert(
+        "comp_hash".to_string(),
+        Value::String(CODEX_CLIENT_COMP_HASH.to_string()),
+    );
     model
 }
 
@@ -516,6 +541,18 @@ fn inherit_routed_gpt_capabilities(object: &mut Map<String, Value>, model_id: &s
             object.insert(field.to_string(), value.clone());
         }
     }
+}
+
+/// Grok 平台模型沿用的官方多智能体协议版本；与官方 DeepSeek 条目保持一致。
+const GROK_MULTI_AGENT_VERSION: &str = "v2";
+/// 声明 v2 协作能力所需的最低客户端版本，取官方同代模型的值。
+const GROK_MINIMAL_CLIENT_VERSION: &str = "0.144.0";
+
+fn is_grok_codex_model(model_id: &str) -> bool {
+    let model_id = model_id.trim();
+    crate::modules::codex_account::GROK_CODEX_MODELS
+        .iter()
+        .any(|id| id.eq_ignore_ascii_case(model_id))
 }
 
 fn codex_client_model_template(model_id: &str) -> (Value, bool) {
@@ -656,6 +693,7 @@ fn normalize_responses_input(obj: &mut Map<String, Value>) -> bool {
         }
         Value::Array(items) => {
             let mut changed = false;
+            changed |= normalize_responses_item_ids(items);
             for item in items.iter_mut() {
                 changed |= normalize_responses_input_item(item);
             }
@@ -663,13 +701,110 @@ fn normalize_responses_input(obj: &mut Map<String, Value>) -> bool {
             changed
         }
         Value::Object(_) => {
-            let mut item = input.clone();
-            normalize_responses_input_item(&mut item);
-            *input = Value::Array(vec![item]);
+            let item = input.clone();
+            let mut items = vec![item];
+            normalize_responses_item_ids(&mut items);
+            normalize_responses_input_item(&mut items[0]);
+            *input = Value::Array(items);
             true
         }
         _ => false,
     }
+}
+
+/// Repair item IDs written by providers that used the `function_call` prefix
+/// for a `custom_tool_call`. Official Responses validates the prefix against
+/// the item type when replaying a conversation, so this must happen before
+/// both direct official requests and gateway requests.
+fn normalize_responses_item_ids(items: &mut [Value]) -> bool {
+    let mut replacements = HashMap::new();
+    let mut used = HashSet::new();
+    for item in items.iter() {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let Some(id) = obj.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        if id.is_empty() {
+            continue;
+        }
+        let Some(item_type) = obj.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        let prefix = match item_type {
+            "function_call" => "fc",
+            "custom_tool_call" => "ctc",
+            "custom_tool_call_output" => "ctco",
+            "message" => "msg",
+            "reasoning" => "rs",
+            _ => continue,
+        };
+        let mut candidate = if id.starts_with(&format!("{prefix}_")) {
+            id.to_string()
+        } else {
+            format!("{prefix}_{id}")
+        };
+        if candidate.chars().count() > CODEX_INPUT_ITEM_ID_LIMIT {
+            candidate = shorten_codex_item_id(&candidate, 0);
+        }
+        if used.contains(&candidate) {
+            for attempt in 1.. {
+                let shortened = shorten_codex_item_id(&candidate, attempt);
+                if used.insert(shortened.clone()) {
+                    candidate = shortened;
+                    break;
+                }
+            }
+        } else {
+            used.insert(candidate.clone());
+        }
+        if candidate != id {
+            replacements.insert(id.to_string(), candidate);
+        }
+    }
+
+    if replacements.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    for item in items.iter_mut() {
+        let Some(obj) = item.as_object_mut() else {
+            continue;
+        };
+        for key in ["id", "item_id"] {
+            let Some(value) = obj
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            if let Some(replacement) = replacements.get(&value) {
+                obj.insert(key.to_string(), Value::String(replacement.clone()));
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+fn shorten_codex_item_id(id: &str, attempt: usize) -> String {
+    let mut input = id.to_string();
+    if attempt > 0 {
+        input.push('\0');
+        input.push_str(&attempt.to_string());
+    }
+    let digest = Sha256::digest(input.as_bytes());
+    let suffix = format!(
+        "_{}",
+        digest[..8]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let prefix_len = CODEX_INPUT_ITEM_ID_LIMIT.saturating_sub(suffix.len());
+    id.chars().take(prefix_len).collect::<String>() + &suffix
 }
 
 fn normalize_responses_input_item(item: &mut Value) -> bool {
@@ -971,6 +1106,32 @@ fn remove_unsupported_responses_fields(obj: &mut Map<String, Value>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grok_models_declare_multi_agent_capability() {
+        let catalog = build_codex_client_models_response(&[
+            "grok-4.6".into(),
+            "grok-4.5".into(),
+            "grok-4.3".into(),
+            "unknown-third-party".into(),
+        ]);
+        let models = catalog["models"].as_array().expect("models");
+        for slug in ["grok-4.6", "grok-4.5", "grok-4.3"] {
+            let model = models
+                .iter()
+                .find(|model| model["slug"] == json!(slug))
+                .unwrap_or_else(|| panic!("missing {slug}"));
+            assert_eq!(model["multi_agent_version"], json!("v2"), "{slug}");
+            assert_eq!(model["minimal_client_version"], json!("0.144.0"), "{slug}");
+        }
+        // 其它第三方模型仍保持模板默认值，避免误开协作能力。
+        let unknown = models
+            .iter()
+            .find(|model| model["slug"] == json!("unknown-third-party"))
+            .expect("unknown model");
+        assert_eq!(unknown["multi_agent_version"], Value::Null);
+        assert_eq!(unknown["minimal_client_version"], json!("0.124.0"));
+    }
 
     #[test]
     fn routed_gpt_models_preserve_capabilities_and_dispatch_identity() {
@@ -1337,6 +1498,56 @@ mod tests {
     }
 
     #[test]
+    fn repairs_mismatched_custom_tool_call_item_ids() {
+        let mut body = json!({
+            "model": "gpt-6-astra",
+            "input": [
+                {
+                    "type": "custom_tool_call",
+                    "id": "fc_legacy_0",
+                    "call_id": "call-legacy",
+                    "name": "apply_patch",
+                    "input": "patch"
+                },
+                {
+                    "type": "custom_tool_call_output",
+                    "id": "fc_legacy_output_0",
+                    "item_id": "fc_legacy_0",
+                    "call_id": "call-legacy",
+                    "output": "ok"
+                }
+            ]
+        });
+
+        assert!(normalize_responses_body_for_codex(&mut body));
+        assert_eq!(body["input"][0]["id"], "ctc_fc_legacy_0");
+        assert_eq!(body["input"][1]["id"], "ctco_fc_legacy_output_0");
+        assert_eq!(body["input"][1]["item_id"], "ctc_fc_legacy_0");
+    }
+
+    #[test]
+    fn shortens_long_and_colliding_response_item_ids() {
+        let long_id = format!("fc_{}", "x".repeat(80));
+        let mut body = json!({
+            "model": "gpt-6-astra",
+            "input": [
+                {"type": "function_call", "id": long_id, "call_id": "call-1"},
+                {"type": "function_call", "id": "fc_same", "call_id": "call-2"},
+                {"type": "function_call", "id": "same", "call_id": "call-3"}
+            ]
+        });
+
+        assert!(normalize_responses_body_for_codex(&mut body));
+        let items = body["input"].as_array().expect("input array");
+        let ids = items
+            .iter()
+            .map(|item| item["id"].as_str().expect("item id"))
+            .collect::<Vec<_>>();
+        assert!(ids.iter().all(|id| id.starts_with("fc_") && id.len() <= 64));
+        assert_eq!(ids.len(), ids.iter().collect::<HashSet<_>>().len());
+    }
+
+    #[test]
     fn synthesizes_missing_call_ids_for_replayed_tool_items() {
         let mut body = json!({
             "model": "deepseek-v4-flash",
@@ -1504,6 +1715,7 @@ mod tests {
         assert!(response.get("models").and_then(Value::as_array).is_some());
         assert!(response.get("object").is_none());
         assert!(response.get("data").is_none());
+
         assert_eq!(
             response.pointer("/models/0/slug").and_then(Value::as_str),
             Some("gpt-5.4")
@@ -1530,6 +1742,30 @@ mod tests {
             .pointer("/models/0/input_modalities")
             .and_then(Value::as_array)
             .is_some());
+    }
+
+    #[test]
+    fn codex_client_models_share_unified_compaction_hash() {
+        let response = build_codex_client_models_response(&[
+            "gpt-5.5".to_string(),
+            "gpt-5.6-sol".to_string(),
+            "gpt-6-astra".to_string(),
+            "deepseek-flash".to_string(),
+            "custom-third-party".to_string(),
+        ]);
+        let models = response
+            .get("models")
+            .and_then(Value::as_array)
+            .expect("models should be an array");
+        assert_eq!(models.len(), 5);
+        for model in models {
+            assert_eq!(
+                model.get("comp_hash").and_then(Value::as_str),
+                Some(CODEX_CLIENT_COMP_HASH),
+                "model {:?} should share the unified compaction hash",
+                model.get("slug").and_then(Value::as_str)
+            );
+        }
     }
 
     #[test]

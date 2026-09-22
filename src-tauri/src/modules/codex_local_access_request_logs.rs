@@ -160,8 +160,12 @@ fn create_request_logs_table(
             api_key_label TEXT NOT NULL DEFAULT '',
             client_instance_id TEXT NOT NULL DEFAULT '',
             model_id TEXT NOT NULL DEFAULT '',
+            requested_model TEXT NOT NULL DEFAULT '',
+            upstream_model TEXT NOT NULL DEFAULT '',
             gateway_mode TEXT NOT NULL DEFAULT '',
             request_kind TEXT NOT NULL DEFAULT 'other',{service_tier_column}
+            turn_state_length INTEGER,
+            turn_state_class TEXT NOT NULL DEFAULT '',
             success INTEGER NOT NULL DEFAULT 0,
             http_status INTEGER,
             error_category TEXT NOT NULL DEFAULT '',
@@ -215,6 +219,16 @@ fn open_local_access_logs_db_once(
     ensure_request_logs_column(&conn, "model_id", "model_id TEXT NOT NULL DEFAULT ''")?;
     ensure_request_logs_column(
         &conn,
+        "requested_model",
+        "requested_model TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_request_logs_column(
+        &conn,
+        "upstream_model",
+        "upstream_model TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_request_logs_column(
+        &conn,
         "gateway_mode",
         "gateway_mode TEXT NOT NULL DEFAULT ''",
     )?;
@@ -234,6 +248,12 @@ fn open_local_access_logs_db_once(
         &conn,
         "reasoning_effort",
         "reasoning_effort TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_request_logs_column(&conn, "turn_state_length", "turn_state_length INTEGER")?;
+    ensure_request_logs_column(
+        &conn,
+        "turn_state_class",
+        "turn_state_class TEXT NOT NULL DEFAULT ''",
     )?;
     ensure_request_logs_column(&conn, "success", "success INTEGER NOT NULL DEFAULT 0")?;
     ensure_request_logs_column(&conn, "http_status", "http_status INTEGER")?;
@@ -513,6 +533,9 @@ fn insert_local_access_usage_event(
         .as_deref()
         .and_then(normalize_recorded_reasoning_effort)
         .unwrap_or_default();
+    // state 只记录长度与分级，原文不入库。
+    let turn_state_length = event.turn_state_length.filter(|value| *value > 0);
+    let turn_state_class = normalize_turn_state_class(event.turn_state_class.as_deref()).unwrap_or_default();
     let token_breakdown_json = serialize_token_breakdown_for_db(event.token_breakdown.as_ref());
     if has_service_tier_column && has_reasoning_effort_column {
         conn.execute(
@@ -527,6 +550,8 @@ fn insert_local_access_usage_event(
                 api_key_label,
                 client_instance_id,
                 model_id,
+                requested_model,
+                upstream_model,
                 gateway_mode,
                 request_kind,
                 service_tier,
@@ -546,8 +571,10 @@ fn insert_local_access_usage_event(
                 model_pricing_version,
                 input_usd_per_million,
                 output_usd_per_million,
-                cached_input_usd_per_million
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+                cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)
             "#,
             params![
                 local_access_log_event_key(event),
@@ -559,6 +586,8 @@ fn insert_local_access_usage_event(
                 event.api_key_label.trim(),
                 event.client_instance_id.trim(),
                 event.model_id.trim(),
+                event.requested_model.trim(),
+                event.upstream_model.trim(),
                 event
                     .gateway_mode
                     .map(gateway_mode_to_db_value)
@@ -582,6 +611,8 @@ fn insert_local_access_usage_event(
                 event.input_usd_per_million,
                 event.output_usd_per_million,
                 event.cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class,
             ],
         )
         .map_err(|e| format!("写入 API 服务请求日志失败: {}", e))?;
@@ -598,6 +629,8 @@ fn insert_local_access_usage_event(
                 api_key_label,
                 client_instance_id,
                 model_id,
+                requested_model,
+                upstream_model,
                 gateway_mode,
                 request_kind,
                 service_tier,
@@ -616,8 +649,10 @@ fn insert_local_access_usage_event(
                 model_pricing_version,
                 input_usd_per_million,
                 output_usd_per_million,
-                cached_input_usd_per_million
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
+                cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)
             "#,
             params![
                 local_access_log_event_key(event),
@@ -629,6 +664,8 @@ fn insert_local_access_usage_event(
                 event.api_key_label.trim(),
                 event.client_instance_id.trim(),
                 event.model_id.trim(),
+                event.requested_model.trim(),
+                event.upstream_model.trim(),
                 event
                     .gateway_mode
                     .map(gateway_mode_to_db_value)
@@ -651,6 +688,8 @@ fn insert_local_access_usage_event(
                 event.input_usd_per_million,
                 event.output_usd_per_million,
                 event.cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class,
             ],
         )
         .map_err(|e| format!("写入 API 服务请求日志失败: {}", e))?;
@@ -667,6 +706,8 @@ fn insert_local_access_usage_event(
                 api_key_label,
                 client_instance_id,
                 model_id,
+                requested_model,
+                upstream_model,
                 gateway_mode,
                 request_kind,
                 success,
@@ -684,8 +725,10 @@ fn insert_local_access_usage_event(
                 model_pricing_version,
                 input_usd_per_million,
                 output_usd_per_million,
-                cached_input_usd_per_million
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+                cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)
             "#,
             params![
                 local_access_log_event_key(event),
@@ -697,6 +740,8 @@ fn insert_local_access_usage_event(
                 event.api_key_label.trim(),
                 event.client_instance_id.trim(),
                 event.model_id.trim(),
+                event.requested_model.trim(),
+                event.upstream_model.trim(),
                 event
                     .gateway_mode
                     .map(gateway_mode_to_db_value)
@@ -718,6 +763,8 @@ fn insert_local_access_usage_event(
                 event.input_usd_per_million,
                 event.output_usd_per_million,
                 event.cached_input_usd_per_million,
+                turn_state_length,
+                turn_state_class,
             ],
         )
         .map_err(|e| format!("写入 API 服务请求日志失败: {}", e))?;
@@ -1468,6 +1515,13 @@ fn usage_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodexLocalA
     let request_kind: String = row.get("request_kind")?;
     let service_tier: String = row.get("service_tier")?;
     let reasoning_effort: String = row.get::<_, String>("reasoning_effort").unwrap_or_default();
+    // 旧库或旧 SELECT 可能没有这两列，读取失败时按「无观测」处理。
+    let turn_state_length: Option<i64> = row
+        .get::<_, Option<i64>>("turn_state_length")
+        .unwrap_or(None);
+    let turn_state_class: String = row
+        .get::<_, String>("turn_state_class")
+        .unwrap_or_default();
     let success: i64 = row.get("success")?;
     let http_status: Option<i64> = row.get("http_status")?;
     let gateway_mode: String = row.get("gateway_mode")?;
@@ -1487,10 +1541,17 @@ fn usage_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodexLocalA
             .get::<_, String>("client_instance_id")
             .unwrap_or_else(|_| String::new()),
         model_id: row.get("model_id")?,
+        requested_model: row
+            .get::<_, String>("requested_model")
+            .unwrap_or_default(),
+        upstream_model: row.get::<_, String>("upstream_model").unwrap_or_default(),
         gateway_mode: gateway_mode_from_db_value(gateway_mode.as_str()),
         request_kind: request_kind_from_db_value(request_kind.as_str()),
         service_tier: normalize_proxy_service_tier(service_tier.as_str()).map(str::to_string),
         reasoning_effort: normalize_recorded_reasoning_effort(reasoning_effort.as_str())
+            .map(str::to_string),
+        turn_state_length: turn_state_length.filter(|value| *value > 0),
+        turn_state_class: normalize_turn_state_class(Some(turn_state_class.as_str()))
             .map(str::to_string),
         success: success != 0,
         http_status: http_status.and_then(|value| u16::try_from(value).ok()),
@@ -1555,10 +1616,14 @@ where
                 api_key_label,
                 client_instance_id,
                 model_id,
+                requested_model,
+                upstream_model,
                 gateway_mode,
                 request_kind,
                 {service_tier_select},
                 {reasoning_effort_select},
+                turn_state_length,
+                turn_state_class,
                 success,
                 http_status,
                 error_category,
@@ -1667,7 +1732,18 @@ fn query_local_access_usage_events_blocking(
         clauses.push("timestamp <= ?".to_string());
         params.push(SqlValue::Integer(end_at));
     }
-    push_like_filter(&mut clauses, &mut params, "model_id LIKE ?", model_query);
+    // 模型筛选同时匹配客户端请求模型与实际上游模型：
+    // 例如用 `cpa/gpt-5.5` 或 `glm-5.3` 都能命中同一条路由日志。
+    push_like_filter(
+        &mut clauses,
+        &mut params,
+        "(model_id LIKE ? OR requested_model LIKE ? OR upstream_model LIKE ?)",
+        model_query.clone(),
+    );
+    if let Some(model_query) = normalize_log_filter(model_query) {
+        params.push(SqlValue::Text(format!("%{}%", model_query)));
+        params.push(SqlValue::Text(format!("%{}%", model_query)));
+    }
     push_like_filter(
         &mut clauses,
         &mut params,
@@ -1786,10 +1862,14 @@ fn query_local_access_usage_events_blocking(
             api_key_label,
             client_instance_id,
             model_id,
+            requested_model,
+            upstream_model,
             gateway_mode,
             request_kind,
             {service_tier_select},
             {reasoning_effort_select},
+            turn_state_length,
+            turn_state_class,
             success,
             http_status,
             error_category,
@@ -1913,7 +1993,7 @@ fn query_local_access_stats_window_blocking(
     };
     let sql = format!(
         r#"SELECT timestamp, request_id, account_id, email, api_key_id, api_key_label,
-                  client_instance_id, model_id, gateway_mode, request_kind, {service_tier_select}, {reasoning_effort_select}, success,
+                  client_instance_id, model_id, requested_model, upstream_model, gateway_mode, request_kind, {service_tier_select}, {reasoning_effort_select}, turn_state_length, turn_state_class, success,
                   http_status, error_category, error_message, latency_ms, input_tokens,
                   output_tokens, total_tokens, cached_tokens, reasoning_tokens, token_breakdown_json,
                   estimated_cost_usd, model_pricing_version, input_usd_per_million,
@@ -2212,6 +2292,7 @@ fn reprice_request_logs_for_collection(
     reprice_request_logs_with_model_ids(conn, Some(collection), None).map(|changes| changes.len())
 }
 
+#[cfg(test)]
 fn append_usage_event(
     events: &mut Vec<CodexLocalAccessUsageEvent>,
     now: i64,
@@ -2226,6 +2307,8 @@ fn append_usage_event(
     request_kind: CodexLocalAccessRequestKind,
     service_tier: Option<&str>,
     reasoning_effort: Option<&str>,
+    requested_model: Option<&str>,
+    upstream_model: Option<&str>,
     success: bool,
     http_status: Option<u16>,
     error_category: Option<&str>,
@@ -2236,7 +2319,66 @@ fn append_usage_event(
     model_pricing_version: u64,
     estimated_cost_usd: f64,
 ) -> CodexLocalAccessUsageEvent {
+    append_usage_event_with_turn_state(
+        events,
+        now,
+        request_id,
+        account_id,
+        account_email,
+        api_key_id,
+        api_key_label,
+        client_instance_id,
+        model_id,
+        gateway_mode,
+        request_kind,
+        service_tier,
+        reasoning_effort,
+        requested_model,
+        upstream_model,
+        success,
+        http_status,
+        error_category,
+        error_message,
+        latency_ms,
+        usage,
+        pricing,
+        model_pricing_version,
+        estimated_cost_usd,
+        None,
+        None,
+    )
+}
+
+fn append_usage_event_with_turn_state(
+    events: &mut Vec<CodexLocalAccessUsageEvent>,
+    now: i64,
+    request_id: Option<&str>,
+    account_id: Option<&str>,
+    account_email: Option<&str>,
+    api_key_id: Option<&str>,
+    api_key_label: Option<&str>,
+    client_instance_id: Option<&str>,
+    model_id: Option<&str>,
+    gateway_mode: Option<CodexLocalAccessGatewayMode>,
+    request_kind: CodexLocalAccessRequestKind,
+    service_tier: Option<&str>,
+    reasoning_effort: Option<&str>,
+    requested_model: Option<&str>,
+    upstream_model: Option<&str>,
+    success: bool,
+    http_status: Option<u16>,
+    error_category: Option<&str>,
+    error_message: Option<&str>,
+    latency_ms: u64,
+    usage: Option<&UsageCapture>,
+    pricing: Option<&CodexLocalAccessModelPricing>,
+    model_pricing_version: u64,
+    estimated_cost_usd: f64,
+    turn_state_length: Option<i64>,
+    turn_state_class: Option<&str>,
+) -> CodexLocalAccessUsageEvent {
     let usage = usage.cloned().unwrap_or_default();
+    let model_id = model_id.unwrap_or_default().trim().to_string();
     let event = CodexLocalAccessUsageEvent {
         timestamp: now,
         request_id: request_id.unwrap_or_default().trim().to_string(),
@@ -2245,7 +2387,17 @@ fn append_usage_event(
         api_key_id: api_key_id.unwrap_or_default().trim().to_string(),
         api_key_label: api_key_label.unwrap_or_default().trim().to_string(),
         client_instance_id: client_instance_id.unwrap_or_default().trim().to_string(),
-        model_id: model_id.unwrap_or_default().trim().to_string(),
+        requested_model: requested_model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(model_id.as_str())
+            .to_string(),
+        upstream_model: upstream_model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(model_id.as_str())
+            .to_string(),
+        model_id,
         gateway_mode,
         request_kind,
         service_tier: service_tier
@@ -2254,6 +2406,9 @@ fn append_usage_event(
         reasoning_effort: reasoning_effort
             .and_then(normalize_recorded_reasoning_effort)
             .map(str::to_string),
+        // 只保留长度与分级；state 原文（含观测到的那一份）不进入任何持久化结构。
+        turn_state_length: turn_state_length.filter(|value| *value > 0),
+        turn_state_class: normalize_turn_state_class(turn_state_class).map(str::to_string),
         success,
         http_status,
         error_category: error_category.unwrap_or_default().trim().to_string(),

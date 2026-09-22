@@ -1002,14 +1002,17 @@ fn push_app_launch_candidate(
         return;
     }
 
-    let normalized_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let target = normalized_path.to_string_lossy().to_string();
-    let dedupe_key = target.to_lowercase();
+    // canonicalize 只用于去重：它会加上 \\?\ 前缀并把 junction 解析成真实卷路径
+    // （C:\Program Files\WindowsApps\... → \\?\E:\WindowsApps\...），
+    // 不能拿它的结果去做展示或写回配置。
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let target = normalize_windows_user_facing_path(&path.to_string_lossy());
+    let dedupe_key = canonical_path.to_string_lossy().to_lowercase();
     if !seen.insert(dedupe_key) {
         return;
     }
 
-    let file_name = normalized_path
+    let file_name = canonical_path
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("");

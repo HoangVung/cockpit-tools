@@ -373,6 +373,77 @@
     }
 
     #[tokio::test]
+    async fn local_access_context_overrides_survive_takeover_and_maintenance() {
+        let profile = make_temp_dir("local-access-context-overrides");
+        let definitions = vec![
+            crate::models::codex::CodexExperimentalModelDefinition {
+                model_id: "gpt-5.5".into(),
+                display_name: "GPT-5.5".into(),
+                reasoning_efforts: None,
+                context_window: Some(516_000),
+                auto_compact_token_limit: Some(460_000),
+            },
+            crate::models::codex::CodexExperimentalModelDefinition {
+                model_id: "custom-third-party".into(),
+                display_name: "Custom".into(),
+                reasoning_efforts: None,
+                context_window: Some(123_456),
+                auto_compact_token_limit: Some(111_111),
+            },
+        ];
+        codex_account::save_model_catalog_for_base_dir_preserving_context(
+            &profile, true, definitions.clone(), None,
+        ).unwrap();
+        let mut collection = realtime_mixed_test_collection();
+        collection.enabled = true;
+        write_local_access_profile_takeover(&profile, &collection, None, true).await.unwrap();
+        for pass in 0..3 {
+            if pass > 0 {
+                super::maintain_local_access_profile(&profile, &collection).unwrap();
+            }
+            let catalog: Value = serde_json::from_str(
+                &fs::read_to_string(profile.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)).unwrap(),
+            ).unwrap();
+            for definition in &definitions {
+                let model = catalog["models"].as_array().unwrap().iter()
+                    .find(|model| model["slug"] == definition.model_id).unwrap();
+                assert_eq!(model["context_window"].as_i64(), definition.context_window);
+                assert_eq!(model["max_context_window"].as_i64(), definition.context_window);
+                assert_eq!(model["auto_compact_token_limit"].as_i64(), definition.auto_compact_token_limit);
+                assert_eq!(model["comp_hash"], "3000");
+            }
+        }
+        // The mixed-route writer shares the final sink, including template defaults
+        // for models without an override.
+        super::write_local_access_profile_model_catalog_with_definitions(
+            &profile, false, Some(vec![
+                ("gpt-5.5".into(), "GPT-5.5".into()),
+                ("gpt-6-astra".into(), "GPT-6 Astra".into()),
+            ]),
+        ).unwrap();
+        let catalog: Value = serde_json::from_str(
+            &fs::read_to_string(profile.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)).unwrap(),
+        ).unwrap();
+        let models = catalog["models"].as_array().unwrap();
+        assert_eq!(models.iter().find(|model| model["slug"] == "gpt-5.5").unwrap()["context_window"], 516_000);
+        let defaults = super::codex_protocol::build_codex_client_models_response(&["gpt-6-astra".into()]);
+        assert_eq!(models.iter().find(|model| model["slug"] == "gpt-6-astra").unwrap()["context_window"], defaults["models"][0]["context_window"]);
+        // Disabling model management must stop applying persisted overrides.
+        codex_account::save_model_catalog_for_base_dir_preserving_context(
+            &profile, false, Vec::new(), None,
+        ).unwrap();
+        super::write_local_access_profile_model_catalog_with_definitions(
+            &profile, false, Some(vec![("gpt-5.5".into(), "GPT-5.5".into())]),
+        ).unwrap();
+        let catalog: Value = serde_json::from_str(
+            &fs::read_to_string(profile.join(super::CODEX_MANAGED_MODEL_CATALOG_FILE)).unwrap(),
+        ).unwrap();
+        let defaults = super::codex_protocol::build_codex_client_models_response(&["gpt-5.5".into()]);
+        assert_eq!(catalog["models"][0]["context_window"], defaults["models"][0]["context_window"]);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[tokio::test]
     async fn local_access_takeover_preserves_enabled_model_catalog() {
         let profile_dir = make_temp_dir("codex-local-access-model-catalog-test");
         fs::write(
@@ -728,6 +799,11 @@
             .expect("serialize custom catalog"),
         )
         .expect("write custom catalog");
+        fs::write(
+            profile_dir.join(".cockpit-experimental-model-catalog-user-customized"),
+            "customized\n",
+        )
+        .expect("mark user-customized catalog");
 
         let collection = test_local_access_collection(Vec::new());
         write_local_access_profile_takeover(&profile_dir, &collection, None, true)

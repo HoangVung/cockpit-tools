@@ -154,6 +154,18 @@ fn experimental_model_config_path(base_dir: &Path) -> PathBuf {
     base_dir.join(CODEX_EXPERIMENTAL_MODEL_CONFIG_FILE)
 }
 
+fn user_customized_model_catalog_marker_path(base_dir: &Path) -> PathBuf {
+    base_dir.join(CODEX_EXPERIMENTAL_MODEL_USER_CUSTOMIZED_FILE)
+}
+
+/// 用户是否主动接管了该 profile 的模型清单。
+///
+/// 只有 UI 保存清单时才会写标记；系统自动生成的清单（默认、迁移、重置）不带标记，
+/// 因此仍会跟随账号池。旧版本遗留的清单没有标记，会被视为系统生成并重新跟随池。
+pub(crate) fn has_saved_experimental_model_definitions(base_dir: &Path) -> bool {
+    user_customized_model_catalog_marker_path(base_dir).is_file()
+}
+
 fn experimental_model_previous_catalog_path(base_dir: &Path) -> PathBuf {
     base_dir.join(CODEX_EXPERIMENTAL_MODEL_PREVIOUS_CATALOG_FILE)
 }
@@ -274,48 +286,6 @@ fn read_experimental_model_catalog_config(
 ) -> Option<ExperimentalModelCatalogConfig> {
     let content = fs::read_to_string(experimental_model_config_path(base_dir)).ok()?;
     serde_json::from_str::<ExperimentalModelCatalogConfig>(&content).ok()
-}
-
-fn strip_legacy_model_context_fields(base_dir: &Path) -> Result<bool, String> {
-    let path = experimental_model_config_path(base_dir);
-    let Ok(content) = fs::read_to_string(&path) else {
-        return Ok(false);
-    };
-    let mut config = serde_json::from_str::<serde_json::Value>(&content).map_err(|error| {
-        format!(
-            "解析 Codex 模型配置缓存失败: path={}, error={}",
-            path.display(),
-            error
-        )
-    })?;
-    let mut changed = false;
-    if let Some(models) = config
-        .get_mut("models")
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        for model in models {
-            let Some(model) = model.as_object_mut() else {
-                continue;
-            };
-            changed |= model.remove("context_window").is_some();
-            changed |= model.remove("max_context_window").is_some();
-            changed |= model.remove("auto_compact_token_limit").is_some();
-        }
-    }
-    if !changed {
-        return Ok(false);
-    }
-    let mut content = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("序列化 Codex 模型配置缓存失败: {}", error))?;
-    content.push('\n');
-    write_string_atomic(&path, &content).map_err(|error| {
-        format!(
-            "清理 Codex 模型级上下文配置失败: path={}, error={}",
-            path.display(),
-            error
-        )
-    })?;
-    Ok(true)
 }
 
 fn experimental_model_catalog_has_migration(base_dir: &Path, migration_id: &str) -> bool {
@@ -611,6 +581,10 @@ fn default_experimental_model_definitions(
                     if model_id.is_empty() {
                         return None;
                     }
+                    // 默认清单不再提供 5.5 之前的官方模型；用户手动添加不受此限制。
+                    if crate::modules::codex_wakeup::is_codex_model_before_5_5(model_id) {
+                        return None;
+                    }
                     let display_name = model
                         .get("display_name")
                         .and_then(serde_json::Value::as_str)
@@ -621,6 +595,8 @@ fn default_experimental_model_definitions(
                         model_id: model_id.to_string(),
                         display_name: model_catalog_display_name(model_id, display_name),
                         reasoning_efforts: None,
+                        context_window: None,
+                        auto_compact_token_limit: None,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -633,6 +609,8 @@ fn default_experimental_model_definitions(
                 display_name: model_id.clone(),
                 model_id,
                 reasoning_efforts: None,
+                context_window: None,
+                auto_compact_token_limit: None,
             })
             .collect()
     } else {
@@ -660,6 +638,8 @@ fn maybe_add_gpt_6_astra_to_previous_shipped_model_definitions(
         .collect::<HashSet<_>>();
     if !PRE_ASTRA_SHIPPED_VISIBLE_CODEX_MODEL_IDS
         .iter()
+        // 默认清单已不再包含 5.5 之前的模型，迁移判定也只要求当前仍在售的条目存在。
+        .filter(|model_id| !crate::modules::codex_wakeup::is_codex_model_before_5_5(model_id))
         .all(|model_id| existing_ids.contains(&model_id.to_ascii_lowercase()))
     {
         return models;
@@ -742,10 +722,27 @@ pub(crate) fn normalize_experimental_model_definitions(
         if !seen.insert(key) {
             return Err("EXPERIMENTAL_MODEL_CATALOG_MODEL_ID_DUPLICATE".to_string());
         }
+        if model.context_window.is_some_and(|value| value <= 0)
+            || (model.context_window.is_none() && model.auto_compact_token_limit.is_some())
+        {
+            return Err("EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID".to_string());
+        }
+        if model.auto_compact_token_limit.is_some_and(|value| value <= 0)
+            || (model.context_window.is_some() && model.auto_compact_token_limit.is_none())
+        {
+            return Err("EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID".to_string());
+        }
+        if let (Some(window), Some(compact)) = (model.context_window, model.auto_compact_token_limit) {
+            if compact >= window {
+                return Err("EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID".to_string());
+            }
+        }
         normalized.push(CodexExperimentalModelDefinition {
             model_id: model_id.to_string(),
             display_name: display_name.to_string(),
             reasoning_efforts: normalize_reasoning_efforts(model.reasoning_efforts.clone())?,
+            context_window: model.context_window,
+            auto_compact_token_limit: model.auto_compact_token_limit,
         });
     }
     Ok(normalized)
@@ -754,12 +751,6 @@ pub(crate) fn normalize_experimental_model_definitions(
 pub(crate) fn read_experimental_model_definitions(
     base_dir: &Path,
 ) -> Vec<CodexExperimentalModelDefinition> {
-    if let Err(error) = strip_legacy_model_context_fields(base_dir) {
-        logger::log_warn(&format!(
-            "[Codex模型管理] 清理历史模型级上下文配置失败，已忽略该字段: {}",
-            error
-        ));
-    }
     let path = experimental_model_config_path(base_dir);
     let Ok(content) = fs::read_to_string(&path) else {
         return default_experimental_model_definitions(base_dir);
@@ -803,6 +794,8 @@ pub(crate) fn read_experimental_model_definitions(
             model_id: "gpt-reserve".to_string(),
             display_name: crate::modules::codex_protocol::CODEX_RESERVE_DISPLAY_NAME.to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         });
     }
     models
@@ -893,6 +886,39 @@ fn persist_experimental_model_policy(base_dir: &Path, enabled: bool) -> Result<(
     }
 }
 
+fn apply_model_context_config_to_catalog(
+    catalog: &mut serde_json::Value,
+    models: &[CodexExperimentalModelDefinition],
+) {
+    let definitions = models
+        .iter()
+        .map(|model| (
+            model.model_id.clone(),
+            model.context_window,
+            model.auto_compact_token_limit,
+        ))
+        .collect::<Vec<_>>();
+    crate::modules::codex_protocol::apply_model_context_overrides(catalog, &definitions);
+}
+
+pub(crate) fn decorate_managed_model_catalog_for_profile(
+    base_dir: &Path,
+    catalog_json: &str,
+) -> Result<String, String> {
+    if !experimental_model_policy_enabled(base_dir) {
+        return Ok(catalog_json.to_string());
+    }
+    let models = read_experimental_model_definitions(base_dir);
+    if !models.iter().any(|model| model.context_window.is_some()) {
+        return Ok(catalog_json.to_string());
+    }
+    let mut catalog = serde_json::from_str::<serde_json::Value>(catalog_json)
+        .map_err(|error| format!("解析 Codex 受管模型目录失败: {}", error))?;
+    apply_model_context_config_to_catalog(&mut catalog, &models);
+    serde_json::to_string_pretty(&catalog)
+        .map_err(|error| format!("序列化 Codex 受管模型目录失败: {}", error))
+}
+
 fn build_experimental_model_catalog(base_dir: &Path) -> Result<String, String> {
     let model_definitions = read_experimental_model_definitions(base_dir);
     let definitions = model_definitions
@@ -908,6 +934,7 @@ fn build_experimental_model_catalog(base_dir: &Path) -> Result<String, String> {
     let mut catalog =
         crate::modules::codex_protocol::build_codex_client_models_response_with_model_definitions_and_reasoning(&definitions);
     crate::modules::codex_protocol::ensure_codex_reserve_fallback(&mut catalog);
+    apply_model_context_config_to_catalog(&mut catalog, &model_definitions);
     serde_json::to_string_pretty(&catalog)
         .map(|mut content| {
             content.push('\n');
@@ -1035,10 +1062,24 @@ fn read_catalog_model_definitions(
                 .map(str::trim)
                 .filter(|value| !value.is_empty() && value.chars().count() <= 100)
                 .unwrap_or(model_id);
+            let context = model.get("context_window").and_then(serde_json::Value::as_i64);
+            let compact = model.get("auto_compact_token_limit").and_then(serde_json::Value::as_i64);
+            let official = crate::modules::codex_protocol::build_codex_client_models_response(
+                &[model_id.to_string()],
+            );
+            let (context_window, auto_compact_token_limit) = match (context, compact) {
+                (Some(window), Some(limit)) if window > limit && limit > 0
+                    && (official["models"][0]["context_window"].as_i64() != Some(window)
+                        || official["models"][0]["auto_compact_token_limit"].as_i64() != Some(limit)) =>
+                    (Some(window), Some(limit)),
+                _ => (None, None),
+            };
             Some(CodexExperimentalModelDefinition {
                 model_id: model_id.to_string(),
                 display_name: model_catalog_display_name(model_id, display_name),
                 reasoning_efforts: None,
+                context_window,
+                auto_compact_token_limit,
             })
         })
         .collect()
@@ -1049,10 +1090,15 @@ fn merge_model_definitions(
     extra: Vec<CodexExperimentalModelDefinition>,
 ) -> Vec<CodexExperimentalModelDefinition> {
     for model in extra {
-        if !definitions
-            .iter()
-            .any(|existing| existing.model_id.eq_ignore_ascii_case(&model.model_id))
+        if let Some(existing) = definitions
+            .iter_mut()
+            .find(|existing| existing.model_id.eq_ignore_ascii_case(&model.model_id))
         {
+            if model.context_window.is_some() {
+                existing.context_window = model.context_window;
+                existing.auto_compact_token_limit = model.auto_compact_token_limit;
+            }
+        } else {
             definitions.push(model);
         }
     }
@@ -1136,7 +1182,11 @@ fn apply_experimental_model_catalog_to_doc(
     let has_saved_model_definitions = experimental_model_config_path(base_dir).is_file();
     let migrate_saved_model_definitions = has_saved_model_definitions
         && experimental_model_config_requires_catalog_migration(base_dir);
-    let mut experimental_models = read_experimental_model_definitions(base_dir);
+    let mut experimental_models =
+        crate::modules::codex_local_access::overlay_rendered_pool_models_on_experimental_catalog(
+            base_dir,
+            read_experimental_model_definitions(base_dir),
+        );
     let user_catalog_reference = configured_catalog
         .as_deref()
         .filter(|catalog| !catalog_ref_targets_cockpit_managed_file(catalog, base_dir));
@@ -1375,7 +1425,16 @@ pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickC
     let context_management_experimental_mode =
         read_context_management_experimental_mode_from_doc(&doc);
     let experimental = inspect_experimental_model_catalog(base_dir, &doc)?;
-    let experimental_models = read_experimental_model_definitions(base_dir);
+    let saved_model_definitions = read_experimental_model_definitions(base_dir);
+    let experimental_models = if has_saved_experimental_model_definitions(base_dir) {
+        // 用户已接管模型清单：只读取用户定义，不再叠加账号池模型或移除官方条目。
+        saved_model_definitions
+    } else {
+        crate::modules::codex_local_access::overlay_rendered_pool_models_on_experimental_catalog(
+            base_dir,
+            saved_model_definitions,
+        )
+    };
     let experimental_default_model_id =
         read_experimental_model_default_model_id(base_dir).or_else(|| {
             if !experimental.enabled {
@@ -1394,6 +1453,24 @@ pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickC
                 .find(|model| model.model_id.eq_ignore_ascii_case(configured_model))
                 .map(|model| model.model_id.clone())
         });
+    let experimental_default_model_id = experimental_default_model_id.and_then(|model_id| {
+        experimental_models
+            .iter()
+            .find(|model| model.model_id.eq_ignore_ascii_case(&model_id))
+            .map(|model| model.model_id.clone())
+    }).or_else(|| {
+        experimental.enabled.then(|| experimental_models.first().map(|model| model.model_id.clone())).flatten()
+    });
+    let experimental_reset_models =
+        crate::modules::codex_local_access::overlay_rendered_pool_models_on_experimental_catalog(
+            base_dir,
+            default_experimental_model_definitions(base_dir),
+        );
+    let experimental_reset_default_model_id = experimental_reset_models
+        .iter()
+        .find(|model| model.model_id.eq_ignore_ascii_case(DEFAULT_CODEX_MODEL_ID))
+        .or_else(|| experimental_reset_models.first())
+        .map(|model| model.model_id.clone());
 
     Ok(CodexQuickConfig {
         context_window_1m: detected_model_context_window == Some(CODEX_CONTEXT_WINDOW_1M_VALUE),
@@ -1407,8 +1484,8 @@ pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickC
         experimental_model_catalog_conflict: experimental.conflict,
         experimental_model_catalog_models: experimental_models,
         experimental_model_catalog_default_model_id: experimental_default_model_id,
-        experimental_model_catalog_reset_models: default_experimental_model_definitions(base_dir),
-        experimental_model_catalog_reset_default_model_id: Some(DEFAULT_CODEX_MODEL_ID.to_string()),
+        experimental_model_catalog_reset_models: experimental_reset_models,
+        experimental_model_catalog_reset_default_model_id: experimental_reset_default_model_id,
         context_management_experimental_mode,
     })
 }
@@ -1538,9 +1615,15 @@ fn write_quick_config_to_config_toml_with_default_mode(
     {
         persist_experimental_model_definitions(
             base_dir,
-            models,
+            crate::modules::codex_local_access::overlay_rendered_pool_models_on_experimental_catalog(
+                base_dir,
+                models,
+            ),
             experimental_model_catalog_default_model_id.as_deref(),
         )?;
+        // 用户通过 UI 保存了清单：从这里开始系统不再自动增删条目。
+        write_string_atomic(&user_customized_model_catalog_marker_path(base_dir), "customized\n")
+            .map_err(|error| format!("写入模型清单自定义标记失败: {}", error))?;
     }
 
     let effective_experimental_enabled = experimental_model_catalog_enabled
@@ -1590,6 +1673,7 @@ fn write_quick_config_to_config_toml_with_default_mode(
         cleanup_legacy_managed_model_catalogs(base_dir);
         clear_previous_experimental_catalog_reference(base_dir)?;
         clear_experimental_model_catalog_config(base_dir)?;
+        let _ = fs::remove_file(user_customized_model_catalog_marker_path(base_dir));
     }
 
     read_quick_config_from_config_toml(base_dir)
@@ -2006,6 +2090,8 @@ fn sync_api_key_model_catalog_to_dir(
     if !account_syncs_model_catalog_to_codex(account) {
         return Ok(false);
     }
+    // 官方 DeepSeek 使用官方 DeepSeek 目录/工具声明，避免客户端发出上游不认的
+    // GPT 专属字段（如 web_search 的 search_content_types）。
     if is_deepseek_responses_account(account) {
         return sync_deepseek_shell_remap_catalog_to_dir(base_dir, account);
     }
@@ -2033,7 +2119,9 @@ fn sync_api_key_model_catalog_to_dir(
     }
 
     let upstream_models = normalize_api_model_catalog(account.api_model_catalog.clone());
-    let slots = crate::modules::codex_local_access::allocate_provider_model_slots(&upstream_models);
+    // 直连上游 / CDP 注入用上游真实模型 ID；其余按官方壳位分配。
+    let slots =
+        crate::modules::codex_local_access::provider_model_slots_for_account(account, &upstream_models);
     let client_models = slots
         .iter()
         .map(|slot| slot.client_model.clone())
@@ -2060,6 +2148,7 @@ fn sync_api_key_model_catalog_to_dir(
         account,
         crate::modules::codex_local_access::read_toml_model_context_window(&doc),
     )?;
+    let content = decorate_managed_model_catalog_for_profile(base_dir, &content)?;
     let catalog_path = base_dir.join(CODEX_MANAGED_MODEL_CATALOG_FILE);
     write_string_atomic(&catalog_path, &content).map_err(|e| {
         format!(
@@ -2068,6 +2157,17 @@ fn sync_api_key_model_catalog_to_dir(
             e
         )
     })?;
+    if let Err(err) =
+        crate::modules::codex_managed_model_catalog_version::write_managed_catalog_meta(
+            &catalog_path,
+        )
+    {
+        logger::log_warn(&format!(
+            "[Codex模型目录] 写入版本戳失败: path={}, error={}",
+            catalog_path.display(),
+            err
+        ));
+    }
     cleanup_legacy_managed_model_catalogs(base_dir);
 
     doc[CODEX_CONFIG_MODEL_CATALOG_JSON_KEY] = value(CODEX_MANAGED_MODEL_CATALOG_FILE);
@@ -2107,6 +2207,12 @@ fn sync_or_cleanup_account_model_catalog_for_dir(
     }
     let _ = cleanup_deepseek_official_model_catalog_for_dir(base_dir)?;
     if account_syncs_model_catalog_to_codex(account) {
+        // 第三方 CDP 注入：模型清单由注入脚本写入官方客户端，不再写壳位目录，
+        // 否则客户端会同时看到注入列表与壳位列表。
+        if crate::modules::codex_account::account_uses_cdp_model_injection(account) {
+            let _ = cleanup_managed_model_catalog_for_dir(base_dir)?;
+            return Ok(());
+        }
         let _ = sync_api_key_model_catalog_to_dir(base_dir, account)?;
     } else {
         let _ = cleanup_managed_model_catalog_for_dir(base_dir)?;
@@ -2163,6 +2269,9 @@ fn cleanup_managed_model_catalog_for_dir(base_dir: &Path) -> Result<bool, String
                     e
                 )
             })?;
+            crate::modules::codex_managed_model_catalog_version::remove_managed_catalog_meta(
+                &catalog_path,
+            );
             changed = true;
         }
     }
@@ -2184,6 +2293,100 @@ fn cleanup_managed_model_catalog_for_dir(base_dir: &Path) -> Result<bool, String
         changed = true;
     }
     Ok(changed)
+}
+
+/// 启动时按版本戳重建落后的受管模型目录。
+///
+/// 目录内容用「旧目录里的模型清单 + 当前生成逻辑」重建，只刷新结构/能力字段，
+/// 不改变用户实际可用的模型集合；展示名沿用旧目录，避免界面名称漂移。
+pub(crate) fn rebuild_stale_managed_model_catalogs() -> usize {
+    let mut rebuilt = 0usize;
+    for base_dir in managed_catalog_profile_dirs() {
+        let catalog_path = base_dir.join(CODEX_MANAGED_MODEL_CATALOG_FILE);
+        if !crate::modules::codex_managed_model_catalog_version::managed_catalog_needs_rebuild(
+            &catalog_path,
+        ) {
+            continue;
+        }
+        match rebuild_managed_catalog_from_existing(&catalog_path) {
+            Ok(()) => {
+                rebuilt += 1;
+                logger::log_info(&format!(
+                    "[Codex模型目录] 已按当前版本重建模型目录: path={}",
+                    catalog_path.display()
+                ));
+            }
+            Err(err) => logger::log_warn(&format!(
+                "[Codex模型目录] 重建模型目录失败: path={}, error={}",
+                catalog_path.display(),
+                err
+            )),
+        }
+    }
+    rebuilt
+}
+
+fn managed_catalog_profile_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![get_codex_home()];
+    if let Ok(data_dir) = crate::modules::account::get_data_dir() {
+        let root = data_dir.join("instances").join("codex");
+        if let Ok(entries) = fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                }
+            }
+        }
+    }
+    dirs
+}
+
+fn rebuild_managed_catalog_from_existing(catalog_path: &Path) -> Result<(), String> {
+    use serde_json::Value as JsonValue;
+
+    let existing =
+        fs::read_to_string(catalog_path).map_err(|e| format!("读取现有模型目录失败: {}", e))?;
+    let parsed: JsonValue =
+        serde_json::from_str(&existing).map_err(|e| format!("解析现有模型目录失败: {}", e))?;
+    let old_models = parsed
+        .get("models")
+        .and_then(JsonValue::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let model_ids = old_models
+        .iter()
+        .filter_map(|model| model.get("slug").and_then(JsonValue::as_str).map(str::to_string))
+        .collect::<Vec<_>>();
+    if model_ids.is_empty() {
+        return Err("现有模型目录没有可重建的模型条目".to_string());
+    }
+    let mut rebuilt =
+        crate::modules::codex_protocol::build_codex_client_models_response(&model_ids);
+    if let Some(new_models) = rebuilt.get_mut("models").and_then(JsonValue::as_array_mut) {
+        for model in new_models.iter_mut() {
+            let Some(slug) = model.get("slug").and_then(JsonValue::as_str).map(str::to_string)
+            else {
+                continue;
+            };
+            let Some(old) = old_models
+                .iter()
+                .find(|item| item.get("slug").and_then(JsonValue::as_str) == Some(slug.as_str()))
+            else {
+                continue;
+            };
+            for field in ["display_name", "description"] {
+                if let Some(value) = old.get(field).filter(|value| value.is_string()) {
+                    model[field] = value.clone();
+                }
+            }
+        }
+    }
+    let mut content = serde_json::to_string_pretty(&rebuilt)
+        .map_err(|e| format!("序列化重建后的模型目录失败: {}", e))?;
+    content.push('\n');
+    crate::modules::atomic_write::write_string_atomic(catalog_path, &content)?;
+    crate::modules::codex_managed_model_catalog_version::write_managed_catalog_meta(catalog_path)
 }
 
 fn collect_managed_api_key_provider_ids() -> HashSet<String> {

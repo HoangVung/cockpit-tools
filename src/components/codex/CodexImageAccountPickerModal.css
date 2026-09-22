@@ -1,6 +1,49 @@
-/* 选择生图账号：沿用「绑定 OAuth 账号」弹框样式，选项改为多选复选框。 */
-.modal.codex-image-account-picker {
-  width: min(720px, calc(100vw - 32px));
+/* 选择生图账号：沿用「绑定 OAuth 账号」弹框样式，选项改为多选复选框。
+   尺寸与其它账号弹框对齐，并用三段式(头/滚动正文/底)保证内容再长也能操作。 */
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker {
+  width: min(760px, calc(100vw - 32px));
+  max-width: 760px;
+  max-height: min(760px, calc(100vh - 32px));
+}
+
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker .modal-body {
+  overflow-y: auto;
+}
+
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker .add-section {
+  overflow: visible;
+}
+
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker
+  .codex-oauth-binding-picker {
+  overflow: visible;
+}
+
+/* 正文自身滚动，账号列表不再单独滚动，避免出现两层滚动条。 */
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker
+  .codex-oauth-binding-list {
+  max-height: none;
+}
+
+/* 底部操作区固定在弹框底部：正文滚动时取消/保存始终可见。 */
+.modal-content.codex-oauth-binding-modal.codex-image-account-picker
+  .codex-image-account-picker-actions {
+  padding: 13px 24px 18px;
+  background: rgba(236, 244, 250, 0.46);
+}
+
+[data-theme="dark"]
+  .modal-content.codex-oauth-binding-modal.codex-image-account-picker
+  .codex-image-account-picker-actions {
+  background: rgba(2, 6, 23, 0.22);
+}
+
+@media (max-width: 640px) {
+  .modal-content.codex-oauth-binding-modal.codex-image-account-picker
+    .codex-image-account-picker-actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 
 .codex-image-account-picker .codex-oauth-binding-row input[type="checkbox"] {

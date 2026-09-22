@@ -83,6 +83,7 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
 		var outputItemsFallback [][]byte
 		responseFilter := newXAIInternalXSearchResponseFilter(prepared.filterInternalXSearch, prepared.clientDeclaredTools)
 		namespaceRestorer := newXAINamespaceRestorer(prepared.namespaceTools)
+		applyPatchRestorer := newXAIApplyPatchRestorer(prepared.restoreApplyPatch)
 		var pendingEventLine []byte
 		emitTranslatedLine := func(translatedLine []byte) bool {
 			chunks := helps.TranslateStreamWithClaudeInputTokens(ctx, prepared.to, prepared.responseFormat, req.Model, prepared.originalPayload, prepared.body, translatedLine, &param, claudeInputTokens)
@@ -108,10 +109,23 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
 			}
 
 			if bytes.HasPrefix(line, xaiDataTag) {
-				eventDataList := xaiNormalizeReasoningSummaryDataEvents(bytes.TrimSpace(line[len(xaiDataTag):]))
+				var eventDataList [][]byte
+				for _, eventData := range xaiNormalizeReasoningSummaryDataEvents(bytes.TrimSpace(line[len(xaiDataTag):])) {
+					eventDataList = append(eventDataList, namespaceRestorer.restoreStream(eventData)...)
+				}
 				hasPendingEventLine := pendingEventLine != nil
+				if len(eventDataList) == 0 {
+					pendingEventLine = nil
+				}
 				for i, eventData := range eventDataList {
-					eventData = namespaceRestorer.restore(eventData)
+					eventData = applyPatchRestorer.applyStream(eventData)
+					if len(eventData) == 0 {
+						if hasPendingEventLine && i == 0 {
+							pendingEventLine = nil
+						}
+						continue
+					}
+					eventData = helps.NormalizeCodexCollaborationToolCalls(eventData)
 					eventData = responseFilter.apply(eventData)
 					if len(eventData) == 0 {
 						if hasPendingEventLine && i == 0 {
@@ -128,6 +142,7 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
 							reporter.Publish(ctx, detail)
 						}
 						eventData = xaiPatchCompletedOutput(eventData, outputItemsByIndex, outputItemsFallback)
+						eventData = applyPatchRestorer.restore(eventData)
 						eventData = xaiNormalizeReasoningSummaryData(eventData)
 						if normalizedEventName == "response.completed" {
 							// A truncated turn carries no replayable terminal state, so only a

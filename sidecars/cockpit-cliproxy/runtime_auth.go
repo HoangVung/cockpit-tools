@@ -46,11 +46,23 @@ type sidecarRuntime struct {
 // codex 走官方 Codex/ChatGPT 执行器，xai 走 Grok(xAI) 执行器（Cockpit 的 Grok
 // 平台账号以 xai OAuth auth 文件形式交给 sidecar），其它 provider 一律拒绝。
 func sidecarOAuthProviderSupported(provider string) bool {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch normalizedSidecarProvider(provider) {
 	case "codex", "xai":
 		return true
 	default:
 		return false
+	}
+}
+
+// normalizedSidecarProvider 把宿主 manifest 中沿用的平台名归一化为 sidecar 的
+// provider ID。Grok 账号在宿主侧写作 "grok"，而 sidecar 的执行器与模型注册
+// 统一使用 "xai"；这里必须归一化，否则模型归属判定会漏掉这些账号。
+func normalizedSidecarProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "grok":
+		return "xai"
+	default:
+		return strings.ToLower(strings.TrimSpace(provider))
 	}
 }
 
@@ -394,6 +406,7 @@ func readManifestCodexTokenAuth(account *accountSpec, authDir, path string) (*co
 	if provider == "" {
 		provider = "codex"
 	}
+	provider = normalizedSidecarProvider(provider)
 	if !sidecarOAuthProviderSupported(provider) {
 		return nil, fmt.Errorf("manifest token auth file %s has unsupported provider %q", path, provider)
 	}

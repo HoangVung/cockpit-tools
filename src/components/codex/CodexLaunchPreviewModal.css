@@ -5,10 +5,18 @@
   backdrop-filter: blur(12px) saturate(110%);
 }
 
-.codex-launch-preview-image-model .codex-local-access-config-card {
-  width: 100%;
-  min-width: 0;
-  background: var(--bg-card);
+.codex-launch-preview-config-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.codex-launch-preview-config-status > svg {
+  flex-shrink: 0;
 }
 
 .codex-launch-preview-refresh-overlay {
@@ -665,6 +673,37 @@
 .codex-launch-preview-tool-meta > span.is-enabled {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 9%, transparent);
+}
+
+.codex-launch-preview-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.codex-launch-preview-model-chips > span {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.codex-launch-preview-context-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  color: var(--danger, #ef4444);
+  background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .codex-launch-preview-tool-row .codex-launch-preview-tool-action {

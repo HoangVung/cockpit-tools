@@ -3659,10 +3659,7 @@ export function InstancesManager<TAccount extends AccountLike>({
                               const enabled = event.target.checked;
                               if (enabled) {
                                 void confirmDialog(
-                                  t(
-                                    "codex.modelManagement.enableConfirmDescription",
-                                    "开启后，Codex 将以这里配置的模型目录为准。你可以添加、删除和调整模型，但模型列表不会再自动跟随官方变化。",
-                                  ),
+                                  t("codex.modelManagement.enableConfirmDescription"),
                                   {
                                     title: t(
                                       "codex.modelManagement.enableConfirmTitle",

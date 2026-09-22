@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SingleSelectDropdown } from "../SingleSelectDropdown";
+import { providerModelDefaultsToVisionInput } from "../../utils/codexModelProviderVision";
 
 interface CodexModelContextWindowTableProps {
   models: string[];
@@ -140,7 +141,10 @@ export function CodexModelContextWindowTable({
                 <label className="api-model-vision-toggle">
                   <input
                     type="checkbox"
-                    checked={visionStates?.[model] ?? false}
+                    checked={
+                      visionStates?.[model] ??
+                      providerModelDefaultsToVisionInput(model)
+                    }
                     onChange={(event) =>
                       onVisionChange?.(model, event.target.checked)
                     }

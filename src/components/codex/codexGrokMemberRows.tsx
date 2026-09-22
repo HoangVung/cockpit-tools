@@ -4,11 +4,43 @@ import {
   type GrokAccount,
 } from "../../types/grok";
 import { getCodexPlanFilterKey, type CodexAccount } from "../../types/codex";
+import {
+  getCodexLocalAccessAccountIneligibleReason,
+  isCodexLocalAccessEligibleAccount,
+} from "../../utils/codexLocalAccessAccounts";
 
 const GROK_MEMBER_ROW_ID_PREFIX = "grok:";
 
 export function isGrokMemberRowId(accountId: string): boolean {
   return accountId.startsWith(GROK_MEMBER_ROW_ID_PREFIX);
+}
+
+/** 每次渲染合并最新的跨平台行，源账号已删除的代理行保留用于移除成员。 */
+export function selectCodexLocalAccessMemberRows(input: {
+  codexAccounts: CodexAccount[];
+  grokRows: CodexAccount[];
+  grokAccounts: GrokAccount[];
+  manageGrok: boolean;
+  showCodexPlatform: boolean;
+  showGrokPlatform: boolean;
+  restrictFreeAccounts: boolean;
+  selected: ReadonlySet<string>;
+}): CodexAccount[] {
+  const sourceIds = new Set(input.grokAccounts.map((account) => account.id));
+  return [...input.codexAccounts, ...input.grokRows].filter((account) => {
+    const isGrokRow = isGrokMemberRowId(account.id);
+    if (isGrokRow ? !input.showGrokPlatform : !input.showCodexPlatform) {
+      return false;
+    }
+    const upstreamId = account.upstream_grok_account_id?.trim();
+    if (input.manageGrok && !isGrokRow && upstreamId && sourceIds.has(upstreamId)) {
+      return false;
+    }
+    const reason = getCodexLocalAccessAccountIneligibleReason(account, input.restrictFreeAccounts);
+    return reason === "pending_oauth" || reason === "web_session_quota_only"
+      || isCodexLocalAccessEligibleAccount(account, input.restrictFreeAccounts)
+      || input.selected.has(account.id);
+  });
 }
 
 /**

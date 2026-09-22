@@ -150,9 +150,11 @@ export async function updateInstance(payload: {
 
 export async function getCodexInstanceQuickConfig(
   instanceId: string,
+  apiServicePreview = false,
 ): Promise<CodexQuickConfig> {
   return await invoke("codex_get_instance_quick_config", {
     instanceId,
+    apiServicePreview,
   });
 }
 

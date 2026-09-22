@@ -1531,8 +1531,12 @@ func isConnectionLifecycleMessage(message string) bool {
 		"connection refused",
 		"connection reset by peer",
 		"connection aborted",
+		"forcibly closed by the remote host",
 		"i/o timeout",
 		"tls handshake timeout",
+		"tls handshake: eof",
+		"server closed connection abruptly",
+		"protocol_error; received from peer",
 		"dial tcp",
 	} {
 		if strings.Contains(lower, pattern) {

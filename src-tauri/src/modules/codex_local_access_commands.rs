@@ -783,6 +783,58 @@ pub async fn update_local_access_image_generation_model(
     snapshot_state().await
 }
 
+/// 更新 API 服务的生图转发账号池。
+///
+/// 生图转发账号池只接收仍然有效的 OAuth 账号（带 refresh_token，sidecar 自行续期）；
+/// 设置后图片生成 / 图片编辑请求只交给这些账号执行，对话请求仍按服务账号池调度。
+pub async fn update_local_access_image_generation_accounts(
+    account_ids: Vec<String>,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded().await?;
+
+    let maybe_collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime.collection.clone()
+    };
+    let Some(mut collection) = maybe_collection else {
+        return Err("本地接入集合尚未创建".to_string());
+    };
+
+    let accounts = codex_account::list_accounts_checked()?;
+    let mut next_account_ids: Vec<String> = Vec::new();
+    for raw_id in account_ids {
+        let account_id = raw_id.trim();
+        if account_id.is_empty() || next_account_ids.iter().any(|item| item == account_id) {
+            continue;
+        }
+        let Some(account) = accounts.iter().find(|item| item.id == account_id) else {
+            continue;
+        };
+        if account.is_api_key_auth()
+            || account.is_agent_identity_auth()
+            || !codex_account::account_has_refresh_token(account)
+        {
+            continue;
+        }
+        next_account_ids.push(account_id.to_string());
+    }
+
+    if collection.image_generation_account_ids != next_account_ids {
+        collection.image_generation_account_ids = next_account_ids;
+        collection.updated_at = now_ms();
+        let collection_to_save = collection.clone();
+        tauri::async_runtime::spawn_blocking(move || save_collection_to_disk(&collection_to_save))
+            .await
+            .map_err(|error| format!("保存生图转发账号任务失败: {}", error))??;
+        {
+            let mut runtime = gateway_runtime().lock().await;
+            sync_runtime_collection(&mut runtime, collection);
+        }
+    }
+    ensure_gateway_matches_runtime().await?;
+    snapshot_state().await
+}
+
 pub async fn update_local_access_scope(
     access_scope: CodexLocalAccessScope,
 ) -> Result<CodexLocalAccessState, String> {
@@ -1264,6 +1316,7 @@ pub async fn update_local_access_bound_oauth_account(
     let Some(mut collection) = maybe_collection else {
         return Err("本地接入集合尚未创建".to_string());
     };
+    let previous_collection = collection.clone();
 
     let normalized_bound_id = normalize_optional_account_ref(bound_oauth_account_id.as_deref());
     let has_bound_oauth = normalized_bound_id.is_some();
@@ -1296,6 +1349,7 @@ pub async fn update_local_access_bound_oauth_account(
     collection.updated_at = now_ms();
     save_collection_to_disk(&collection)?;
     let bound_account_id_for_quota_reserve = collection.bound_oauth_account_id.clone();
+    let next_collection = collection.clone();
 
     {
         let mut runtime = gateway_runtime().lock().await;
@@ -1306,7 +1360,11 @@ pub async fn update_local_access_bound_oauth_account(
     }
 
     ensure_gateway_matches_runtime().await?;
-    ensure_local_access_profile_takeovers_from_runtime().await?;
+    refresh_owned_takeovers_after_explicit_oauth_binding(
+        collect_local_access_profile_takeover_dirs(),
+        &previous_collection,
+        &next_collection,
+    ).await?;
     snapshot_state().await
 }
 
@@ -1469,11 +1527,7 @@ pub async fn set_local_access_enabled(enabled: bool) -> Result<CodexLocalAccessS
         ensure_local_access_profile_takeovers(&next_collection).await?;
         snapshot_state().await
     } else {
-        if internal_api_service_required() {
-            ensure_gateway_matches_runtime().await?;
-        } else {
-            stop_gateway().await;
-        }
+        stop_gateway().await;
         restore_takeover_profiles_after_disable(&next_collection)?;
         snapshot_state_without_gateway_reload().await
     }

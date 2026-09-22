@@ -45,6 +45,10 @@ pub struct CodexExperimentalModelDefinition {
     /// None 表示跟随官方推理强度；Some 表示用户自定义可选推理强度集合。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_efforts: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_compact_token_limit: Option<i64>,
 }
 
 /// Codex config.toml 快捷配置
@@ -84,10 +88,10 @@ pub struct CodexQuickConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CodexAppSpeed {
+    /// 兼容已移除的自定义档位，旧账号、实例及速度偏好统一回落标准速度。
+    #[serde(alias = "ultrafast")]
     Standard,
     Fast,
-    /// 官方新增的“超高速”档位（service tier id: `ultrafast`）。
-    Ultrafast,
 }
 
 impl Default for CodexAppSpeed {

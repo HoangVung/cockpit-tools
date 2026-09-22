@@ -135,3 +135,32 @@ func OptimizeCodexMultiAgentV2RequestForAuth(ctx context.Context, headers http.H
 func RestoreCodexMultiAgentV2Response(payload []byte, optimized bool) []byte {
 	return multiagentv2.RestoreCodexMultiAgentV2Response(payload, optimized)
 }
+
+// PrepareCodexMultiAgentV2Tools refreshes the collaboration tool declarations at
+// the Responses API boundary without renaming the collaboration namespace.
+// Executors that perform their own namespace folding (for example the xAI
+// executor) use it to refresh spawn_agent model details and to drop encrypted
+// message parameters before the tools reach a third-party upstream.
+func PrepareCodexMultiAgentV2Tools(ctx context.Context, headers http.Header, payload []byte, cfg *config.Config) []byte {
+	if cfg == nil {
+		return payload
+	}
+	updated, _ := multiagentv2.PrepareCodexMultiAgentV2Tools(ctx, headers, payload, cfg.Codex.OptimizeMultiAgentV2, cfg.Home.Enabled)
+	return updated
+}
+
+// NormalizeCodexCollaborationToolNames rewrites flat collaboration tool names
+// (for example `collaboration::spawn_agent` or `collaboration.spawn_agent`)
+// emitted by third-party models into the structured {name, namespace} shape
+// Codex clients register.
+func NormalizeCodexCollaborationToolNames(payload []byte) []byte {
+	return multiagentv2.RestoreCodexCollaborationFlatToolNames(payload)
+}
+
+// NormalizeCodexCollaborationToolCalls normalizes flat collaboration tool names
+// and integer-valued floating point arguments produced by third-party models
+// into the strictly typed shape Codex clients accept.
+func NormalizeCodexCollaborationToolCalls(payload []byte) []byte {
+	payload = multiagentv2.RestoreCodexCollaborationFlatToolNames(payload)
+	return multiagentv2.NormalizeCodexCollaborationArguments(payload)
+}

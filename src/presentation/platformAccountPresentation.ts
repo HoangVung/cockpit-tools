@@ -202,11 +202,12 @@ export interface QuotaPreviewLine {
   title: string;
 }
 
-type AgQuotaDisplayItem = {
+export type AgQuotaDisplayItem = {
   key: string;
   label: string;
   percentage: number;
   resetTime: string;
+  stale?: boolean;
 };
 
 export type CreditMetrics = {
@@ -505,122 +506,29 @@ export function getAntigravityQuotaDisplayItems(
   _displayGroups: DisplayGroup[],
 ): AgQuotaDisplayItem[] {
   const models = account.quota?.models || [];
+  const buckets = [
+    { key: 'claude:5h', label: 'Claude (5h)', names: ['3p-5h', 'claude:5h'] },
+    { key: 'claude:weekly', label: 'Claude (Weekly)', names: ['3p-weekly', 'claude:weekly'] },
+    { key: 'gemini:5h', label: 'Gemini (5h)', names: ['gemini-5h', 'gemini:5h'] },
+    { key: 'gemini:weekly', label: 'Gemini (Weekly)', names: ['gemini-weekly', 'gemini:weekly'] },
+  ];
   const result: AgQuotaDisplayItem[] = [];
-
-  // Claude 5h
-  // Claude 5h
-  let claude5h = models.find(m => m.name === '3p-5h' || m.name === 'claude:5h');
-  if (!claude5h) {
-    claude5h = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('claude') && (name.includes('high') || !name.includes('low'));
-    });
-  }
-  if (!claude5h) {
-    claude5h = models.find(m => m.name.toLowerCase().includes('claude'));
-  }
-
-  // Claude Weekly
-  let claudeWeekly = models.find(m => m.name === '3p-weekly' || m.name === 'claude:weekly');
-  if (!claudeWeekly) {
-    claudeWeekly = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('claude') && name.includes('low');
-    });
-  }
-
-  // Gemini 5h
-  let gemini5h = models.find(m => m.name === 'gemini-5h' || m.name === 'gemini:5h');
-  if (!gemini5h) {
-    gemini5h = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && name.includes('pro') && name.includes('high');
-    });
-  }
-  if (!gemini5h) {
-    gemini5h = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && name.includes('high');
-    });
-  }
-  if (!gemini5h) {
-    gemini5h = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && name.includes('flash');
-    });
-  }
-  if (!gemini5h) {
-    gemini5h = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && !name.includes('low');
-    });
-  }
-
-  // Gemini Weekly
-  let geminiWeekly = models.find(m => m.name === 'gemini-weekly' || m.name === 'gemini:weekly');
-  if (!geminiWeekly) {
-    geminiWeekly = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && name.includes('pro') && name.includes('low');
-    });
-  }
-  if (!geminiWeekly) {
-    geminiWeekly = models.find(m => {
-      const name = m.name.toLowerCase();
-      return name.includes('gemini') && name.includes('low');
-    });
-  }
-
-  if (claude5h) {
-    result.push({
-      key: 'claude:5h',
-      label: 'Claude (5h)',
-      percentage: claude5h.percentage,
-      resetTime: claude5h.reset_time,
-    });
-  }
-  if (claudeWeekly) {
-    result.push({
-      key: 'claude:weekly',
-      label: 'Claude (Weekly)',
-      percentage: claudeWeekly.percentage,
-      resetTime: claudeWeekly.reset_time,
-    });
-  }
-  if (gemini5h) {
-    let percentage = gemini5h.percentage;
-    let resetTime = gemini5h.reset_time;
-
-    if (resetTime) {
-      const resetTs = new Date(resetTime).getTime();
-      if (!isNaN(resetTs)) {
-        const diffHours = (resetTs - Date.now()) / (1000 * 60 * 60);
-        // If the reset time is > 5 hours in the future (e.g. weekly reset),
-        // it means the weekly limit is active and capping the 5h limit.
-        // We override the 5h display remaining to 100% and clear the reset time.
-        if (diffHours > 5) {
-          percentage = 100;
-          resetTime = '';
-        }
-      }
+  for (const bucket of buckets) {
+    const model = models.find((entry) => bucket.names.includes(entry.name));
+    if (model) {
+      result.push({
+        key: bucket.key,
+        label: bucket.label,
+        percentage: model.percentage,
+        resetTime: model.reset_time,
+        stale: account.quota?.quota_summary_stale || undefined,
+      });
     }
-
-    result.push({
-      key: 'gemini:5h',
-      label: 'Gemini (5h)',
-      percentage,
-      resetTime,
-    });
-  }
-  if (geminiWeekly) {
-    result.push({
-      key: 'gemini:weekly',
-      label: 'Gemini (Weekly)',
-      percentage: geminiWeekly.percentage,
-      resetTime: geminiWeekly.reset_time,
-    });
   }
 
+  // 卡片只展示 Claude / Gemini 的 5h 与周窗口这 4 个服务器窗口。
+  // 其余模型条目（high/low 变体、具体模型名）不是时间窗口，逐条列出会把卡片撑成
+  // 一长串模型行，因此不再进入卡片；窗口缺失时由展示层渲染为“无数据”。
   return result;
 }
 
@@ -639,7 +547,11 @@ export function buildAntigravityAccountPresentation(
     percentage: item.percentage,
     quotaClass: getAntigravityQuotaClass(item.percentage),
     valueText: `${item.percentage}%`,
-    resetText: item.resetTime ? formatResetTimeDisplay(item.resetTime, t) : "",
+    hintText: item.stale ? t('common.shared.quota.cachedRefreshFailed') : undefined,
+    resetText: [
+      item.stale ? t('common.shared.quota.cachedRefreshFailed') : '',
+      item.resetTime ? formatResetTimeDisplay(item.resetTime, t) : '',
+    ].filter(Boolean).join(' · '),
     resetAt: item.resetTime,
   }));
 

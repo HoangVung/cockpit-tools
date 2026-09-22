@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SingleSelectDropdown } from "./SingleSelectDropdown";
@@ -14,59 +14,47 @@ interface Props {
   onSave: (model: string) => Promise<unknown> | unknown;
 }
 
-// API Service collection setting; shared by the service page and account dialog.
-// General Codex client settings do not own this gateway's image endpoint model.
-export function CodexImageModelConfig({ model, disabled, onSave }: Props) {
+/**
+ * 紧凑版生图模型选择：与「选择生图账号」同排，选中预设立即保存；
+ * 选择「自定义」时才展开输入框与保存按钮，避免占用一整个卡片的高度。
+ */
+export function CodexImageModelSelect({ model, disabled, onSave }: Props) {
   const { t } = useTranslation();
   const initialModel = model?.trim() || PRESETS[0];
-  const [selection, setSelection] = useState(PRESETS.includes(initialModel) ? initialModel : CUSTOM);
-  const [customModel, setCustomModel] = useState(PRESETS.includes(initialModel) ? "" : initialModel);
+  const [selection, setSelection] = useState(
+    PRESETS.includes(initialModel) ? initialModel : CUSTOM,
+  );
+  const [customModel, setCustomModel] = useState(
+    PRESETS.includes(initialModel) ? "" : initialModel,
+  );
+  const [customOpen, setCustomOpen] = useState(!PRESETS.includes(initialModel));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [fieldError, setFieldError] = useState(false);
-  const [notice, setNotice] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const feedbackRef = useRef<HTMLDivElement>(null);
   const savingRef = useRef(false);
-  const feedbackId = useId();
   const busy = disabled || pending;
 
   useEffect(() => {
-    setSelection(PRESETS.includes(initialModel) ? initialModel : CUSTOM);
-    setCustomModel(PRESETS.includes(initialModel) ? "" : initialModel);
-  }, [initialModel]);
+    const next = model?.trim() || PRESETS[0];
+    const isPreset = PRESETS.includes(next);
+    setSelection(isPreset ? next : CUSTOM);
+    setCustomModel(isPreset ? "" : next);
+    setCustomOpen(!isPreset);
+  }, [model]);
 
-  useEffect(() => {
-    if (!error) return;
-    feedbackRef.current?.scrollIntoView({ block: "nearest" });
-    if (fieldError) inputRef.current?.focus();
-  }, [error, fieldError]);
-
-  const clearFeedback = () => {
-    setError("");
-    setFieldError(false);
-    setNotice("");
-  };
-
-  const save = async () => {
+  const save = async (nextModel: string) => {
     if (busy || savingRef.current) return;
-    clearFeedback();
-    const nextModel = (selection === CUSTOM ? customModel : selection).trim();
-    if (!nextModel) {
-      setFieldError(true);
+    const normalized = nextModel.trim();
+    if (!normalized) {
       setError(t(`${keyPrefix}.required`));
       return;
     }
     savingRef.current = true;
     setPending(true);
+    setError("");
     try {
-      await onSave(nextModel);
-      setNotice(t(`${keyPrefix}.saveSuccess`));
+      await onSave(normalized);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      const isFieldError = message === `${keyPrefix}.required` || message === `${keyPrefix}.tooLong`;
-      setFieldError(isFieldError);
-      setError(isFieldError ? t(message) : message);
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       savingRef.current = false;
       setPending(false);
@@ -74,57 +62,70 @@ export function CodexImageModelConfig({ model, disabled, onSave }: Props) {
   };
 
   return (
-    <div className="codex-local-access-config-card codex-local-access-config-card-image-model">
-      <div className="codex-local-access-config-head">
-        <span className="codex-local-access-config-label">{t(`${keyPrefix}.label`)}</span>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => void save()} disabled={busy}>
-          {pending && <RefreshCw size={14} className="loading-spinner" />}
-          {t(`${keyPrefix}.save`)}
-        </button>
-      </div>
+    <div className="codex-image-model-inline">
+      <span className="codex-image-model-inline-label">
+        {t(`${keyPrefix}.label`)}
+      </span>
       <SingleSelectDropdown
         value={selection}
         options={[
           ...PRESETS.map((value) => ({ value, label: value })),
           { value: CUSTOM, label: t(`${keyPrefix}.custom`) },
         ]}
-        onChange={(value) => {
-          setSelection(value);
-          clearFeedback();
-        }}
+        className="codex-image-model-inline-select"
+        menuWidth={190}
+        menuMaxHeight={200}
         disabled={busy}
         ariaLabel={t(`${keyPrefix}.label`)}
-        menuPlacement="up"
+        onChange={(value) => {
+          setError("");
+          setSelection(value);
+          if (value === CUSTOM) {
+            setCustomOpen(true);
+            return;
+          }
+          setCustomOpen(false);
+          void save(value);
+        }}
       />
-      {selection === CUSTOM && (
-        <input
-          ref={inputRef}
-          className="codex-local-access-image-model-input"
-          type="text"
-          value={customModel}
-          aria-label={t(`${keyPrefix}.placeholder`)}
-          aria-invalid={fieldError}
-          aria-describedby={feedbackId}
-          onChange={(event) => {
-            setCustomModel(event.target.value);
-            clearFeedback();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void save();
-            }
-          }}
-          maxLength={200}
-          placeholder={t(`${keyPrefix}.placeholder`)}
-          disabled={busy}
-        />
+      {customOpen && (
+        <>
+          <input
+            className="codex-image-model-inline-input"
+            type="text"
+            value={customModel}
+            maxLength={200}
+            placeholder={t(`${keyPrefix}.placeholder`)}
+            aria-label={t(`${keyPrefix}.placeholder`)}
+            aria-invalid={Boolean(error)}
+            disabled={busy}
+            onChange={(event) => {
+              setCustomModel(event.target.value);
+              setError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void save(customModel);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void save(customModel)}
+            disabled={busy || !customModel.trim()}
+          >
+            {pending && <RefreshCw size={14} className="loading-spinner" />}
+            {t(`${keyPrefix}.save`)}
+          </button>
+        </>
       )}
-      <div ref={feedbackRef} id={feedbackId}>
-        {error && <small role="alert" className="codex-local-access-image-model-error">{error}</small>}
-        {notice && <small role="status" className="codex-local-access-config-hint">{notice}</small>}
-      </div>
-      <small className="codex-local-access-config-hint">{t(`${keyPrefix}.description`)}</small>
+      {error && (
+        <small role="alert" className="codex-local-access-image-model-error">
+          {error}
+        </small>
+      )}
     </div>
   );
 }

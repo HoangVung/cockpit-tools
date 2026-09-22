@@ -1133,6 +1133,8 @@ mod tests {
             model_id: "gpt-5".to_string(),
             display_name: "GPT-5".to_string(),
             reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
         }]
     }
 
@@ -1988,10 +1990,35 @@ pub async fn codex_list_instances() -> Result<Vec<CodexInstanceProfileView>, Str
 #[tauri::command]
 pub async fn codex_get_instance_quick_config(
     instance_id: String,
+    api_service_preview: Option<bool>,
 ) -> Result<crate::models::codex::CodexQuickConfig, String> {
     let base_dir = resolve_instance_base_dir(instance_id.as_str())?;
+    let api_service_instance = api_service_preview.unwrap_or(false)
+        || (instance_id != DEFAULT_INSTANCE_ID && {
+            modules::codex_instance::load_instance_store()
+                .ok()
+                .and_then(|store| {
+                    store
+                        .instances
+                        .into_iter()
+                        .find(|item| item.id == instance_id)
+                })
+                .and_then(|instance| instance.bind_account_id)
+                .is_some_and(|account_id| {
+                    modules::codex_instance::is_api_service_bind_account_id(&account_id)
+                })
+        });
     tauri::async_runtime::spawn_blocking(move || {
         let mut config = modules::codex_account::read_quick_config_from_config_toml(&base_dir)?;
+        if api_service_instance {
+            // 启动预览属于 API 服务时，清单直接按账号池能力计算，
+            // 这样实例尚未接管也能看到本次真正会渲染的模型。
+            if let Some(models) =
+                modules::codex_local_access::api_service_preview_model_definitions(&base_dir)
+            {
+                config.experimental_model_catalog_models = models;
+            }
+        }
         if let Some(draft) = read_pending_model_catalog(&base_dir)? {
             draft.apply_to_view(&mut config);
         }
@@ -2102,7 +2129,8 @@ pub async fn codex_save_instance_configuration(
     let profile = resolve_instance_base_dir(&instance_id)?;
     if defer_bind_account_application == Some(true) && model_routing.is_some() {
         let previous_pending_catalog = read_pending_model_catalog(&profile)?;
-        let previous_quick_config = codex_get_instance_quick_config(instance_id.clone()).await?;
+        let previous_quick_config =
+            codex_get_instance_quick_config(instance_id.clone(), None).await?;
         let mut quick_config = save_pending_model_catalog(
             &profile, experimental_model_catalog_enabled,
             experimental_model_catalog_models, experimental_model_catalog_default_model_id,
@@ -2176,7 +2204,7 @@ pub async fn codex_save_instance_configuration(
             }
         };
     }
-    let previous_quick_config = codex_get_instance_quick_config(instance_id.clone()).await?;
+    let previous_quick_config = codex_get_instance_quick_config(instance_id.clone(), None).await?;
     let saved_quick_config = if update_context_override == Some(true) {
         codex_save_instance_quick_config(
             instance_id.clone(),

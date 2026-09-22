@@ -2346,6 +2346,39 @@ fn adopt_live_tokens_from_account_home(account: &mut GrokAccount) -> Result<bool
 }
 
 async fn refresh_credentials(account: &mut GrokAccount, force: bool) -> Result<(), String> {
+    refresh_credentials_with_exchange(account, force, |token, endpoint, client_id| {
+        Box::pin(grok_oauth::refresh_token(token, endpoint, client_id))
+    })
+    .await
+}
+
+type GrokTokenExchange = for<'a> fn(
+    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
+) -> futures::future::BoxFuture<'a, Result<grok_oauth::GrokTokenResponse, String>>;
+
+type GrokQuotaQuery =
+    for<'a> fn(&'a mut GrokAccount) -> futures::future::BoxFuture<'a, Result<(), String>>;
+
+fn persist_refreshed_credentials(
+    account: &GrokAccount,
+    previous_access_token: &str,
+) -> Result<(), String> {
+    // There must be no await between receiving a rotating token and this durable checkpoint.
+    // Quota requests are optional and may be cancelled independently; retain their existing cache.
+    save_refreshed_account(account, previous_access_token)?;
+    crate::modules::codex_local_access::sync_grok_upstream_auth_files_in_background(
+        account.id.clone(),
+    );
+    Ok(())
+}
+
+async fn refresh_credentials_with_exchange(
+    account: &mut GrokAccount,
+    force: bool,
+    exchange: GrokTokenExchange,
+) -> Result<(), String> {
     // 先在多源中找同账号「最新可用」凭据（官方 CLI / 受管 home / 库可能已轮换 RT）
     let _ = adopt_best_live_credentials(account);
     let now = now_ts();
@@ -2365,7 +2398,7 @@ async fn refresh_credentials(account: &mut GrokAccount, force: bool) -> Result<(
         .refresh_token
         .clone()
         .ok_or_else(|| "Grok refresh_token 为空，请重新授权".to_string())?;
-    match grok_oauth::refresh_token(
+    match exchange(
         &refresh_token,
         account.token_endpoint.as_deref(),
         account.oidc_client_id.as_deref(),
@@ -2388,7 +2421,7 @@ async fn refresh_credentials(account: &mut GrokAccount, force: bool) -> Result<(
                             if !force && access_still_usable(account.expires_at, now_ts()) {
                                 return Ok(());
                             }
-                            let token = grok_oauth::refresh_token(
+                            let token = exchange(
                                 &rotated,
                                 account.token_endpoint.as_deref(),
                                 account.oidc_client_id.as_deref(),
@@ -2523,6 +2556,15 @@ fn save_refreshed_account(
     {
         let _guard = ACCOUNT_LOCK.lock().map_err(|_| "获取 Grok 账号锁失败")?;
         let _store_guard = acquire_store_lock()?;
+        // Deletion uses these same locks. A quota/refresh request that started earlier must
+        // never recreate a removed source account and reactivate its sidecar credential.
+        let path = account_path(&account.id)?;
+        if !path
+            .try_exists()
+            .map_err(|error| format!("检查 Grok 账号文件失败: {}", error))?
+        {
+            return Err(format!("Grok 账号已删除，取消刷新保存: {}", account.id));
+        }
         save_account_locked(account)?;
     }
 
@@ -2595,6 +2637,21 @@ async fn refresh_account_inner(
     account_id: &str,
     force_credentials: bool,
 ) -> Result<GrokAccountView, String> {
+    refresh_account_inner_with_io(
+        account_id,
+        force_credentials,
+        |token, endpoint, client_id| Box::pin(grok_oauth::refresh_token(token, endpoint, client_id)),
+        |account| Box::pin(query_quota(account)),
+    )
+    .await
+}
+
+async fn refresh_account_inner_with_io(
+    account_id: &str,
+    force_credentials: bool,
+    exchange: GrokTokenExchange,
+    query: GrokQuotaQuery,
+) -> Result<GrokAccountView, String> {
     let token_lock = token_lock_for(account_id)?;
     let _token_guard = token_lock.lock().await;
     let _file_guard = acquire_token_refresh_file_lock(account_id)?;
@@ -2616,15 +2673,19 @@ async fn refresh_account_inner(
         save_account_locked(&account)?;
         return Ok(GrokAccountView::from(&account));
     }
-    let previous_access_token = account.access_token.clone();
-    if let Err(error) = refresh_credentials(&mut account, force_credentials).await {
+    let mut previous_access_token = account.access_token.clone();
+    if let Err(error) =
+        refresh_credentials_with_exchange(&mut account, force_credentials, exchange).await
+    {
         account.status = Some(refresh_error_status(&error).to_string());
         account.status_reason = Some(error.clone());
         save_refreshed_account(&account, &previous_access_token)?;
         return Err(error);
     }
+    persist_refreshed_credentials(&account, &previous_access_token)?;
+    previous_access_token = account.access_token.clone();
 
-    let mut quota_result = query_quota(&mut account).await;
+    let mut quota_result = query(&mut account).await;
     let mut quota_auth_retries = 0;
     while should_retry_quota_after_unauthorized(
         force_credentials,
@@ -2632,8 +2693,12 @@ async fn refresh_account_inner(
         &quota_result,
     ) {
         quota_auth_retries += 1;
-        match refresh_credentials(&mut account, true).await {
-            Ok(()) => quota_result = query_quota(&mut account).await,
+        match refresh_credentials_with_exchange(&mut account, true, exchange).await {
+            Ok(()) => {
+                persist_refreshed_credentials(&account, &previous_access_token)?;
+                previous_access_token = account.access_token.clone();
+                quota_result = query(&mut account).await;
+            }
             Err(error) => {
                 account.status = Some(refresh_error_status(&error).to_string());
                 account.status_reason = Some(error.clone());
@@ -3620,6 +3685,10 @@ mod tests {
 
     mod index_recovery {
         include!("grok_account_index_tests.rs");
+    }
+    #[cfg(unix)]
+    mod refresh_cancellation {
+        include!("grok_account_refresh_cancellation_tests.rs");
     }
     #[cfg(unix)]
     #[test]

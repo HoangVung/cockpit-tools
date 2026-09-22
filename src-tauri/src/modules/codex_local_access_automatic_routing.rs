@@ -93,7 +93,7 @@ fn automatic_api_service_vision_routing_model(
     vision_model.cloned()
 }
 
-/// 单个模型的识图能力：用户显式开关优先，其次取官方 DeepSeek 默认值。
+/// 单个模型的识图能力：用户显式开关优先，其次 gpt-5.5+ 默认支持，最后取官方 DeepSeek 默认值。
 fn automatic_api_service_account_model_vision(account: &CodexAccount, model: &str) -> bool {
     let key = model.trim();
     if let Some(value) = account
@@ -103,6 +103,9 @@ fn automatic_api_service_account_model_vision(account: &CodexAccount, model: &st
         .map(|(_, value)| *value)
     {
         return value;
+    }
+    if codex_account::model_defaults_to_vision_input(key) {
+        return true;
     }
     is_official_deepseek_account(account)
         && codex_account::deepseek_model_effective_vision(account, key)
@@ -150,25 +153,40 @@ fn provider_gateway_has_vision_support(gateway: &CodexLocalAccessProviderGateway
         == 1
 }
 
-/// 账号池里是否有账号能承接官方 GPT / Codex 模型。
+/// 模型名是否属于 GPT / Codex 命名空间（第三方中转可能带 `vendor/` 前缀，按最后一段判断）。
+fn is_gpt_or_codex_namespace_model(model: &str) -> bool {
+    let key = model.trim().to_ascii_lowercase();
+    let segment = key.rsplit('/').next().unwrap_or_default().trim();
+    segment.starts_with("gpt-") || segment.starts_with("codex-")
+}
+
+/// 单个账号是否提供官方 GPT / Codex 对话模型。
 ///
-/// - OAuth(订阅) 账号：直接承接官方模型；
-/// - API Key 账号：只有自己的模型槽位里出现 GPT / Codex 名称（例如 DeepSeek 的目录壳位）
-///   才算；目录为空但按 Responses 直通时仍按官方名称透传。
+/// - OAuth(订阅) / 官方身份账号：直接承接官方模型；
+/// - Grok 供应商账号：不提供；
+/// - API Key 账号：按账号自己的模型清单判断，且只认「上游也是 GPT / Codex 家族」的槽位——
+///   官方 DeepSeek 目录壳位（客户端名 `gpt-5.5`、上游 `deepseek-flash`）不算，第三方 GPT
+///   中转（客户端名与上游名都是 `gpt-5.5`）才算；目录为空但按 Responses 直通时仍按官方
+///   名称透传。
+fn account_provides_gpt_models(account: &CodexAccount) -> bool {
+    if account.upstream_grok_account_id.is_some() {
+        return false;
+    }
+    if !account.is_api_key_auth() {
+        return true;
+    }
+    let slots = automatic_api_service_account_model_slots(account);
+    if slots.is_empty() {
+        return provider_gateway_wire_api_for_account(account) == "responses";
+    }
+    slots
+        .into_iter()
+        .any(|(_, upstream)| is_gpt_or_codex_namespace_model(&upstream))
+}
+
+/// 账号池里是否有账号能承接官方 GPT / Codex 模型。
 fn pool_provides_gpt_models(accounts: &[CodexAccount]) -> bool {
-    accounts.iter().any(|account| {
-        if !account.is_api_key_auth() {
-            return true;
-        }
-        let slots = automatic_api_service_account_model_slots(account);
-        if slots.is_empty() {
-            return provider_gateway_wire_api_for_account(account) == "responses";
-        }
-        slots.into_iter().any(|(client, _)| {
-            let key = client.trim().to_ascii_lowercase();
-            key.starts_with("gpt-") || key.starts_with("codex-")
-        })
-    })
+    accounts.iter().any(account_provides_gpt_models)
 }
 
 /// 该模型是否属于官方推荐 GPT 集（只用于展示收敛，内部隐藏模型不受影响）。
@@ -376,7 +394,7 @@ fn apply_automatic_api_service_model_routing(
 ) {
     for value in values {
         if value.get("internal").and_then(Value::as_bool) == Some(true) {
-            // 宿主内部请求（唤醒、鹈鹕测试）固定落到指定账号，因此只保留原生路由：
+            // 宿主内部请求（唤醒）固定落到指定账号，因此只保留原生路由：
             // 历史模型仍然可用，且不会把内部请求转交到其它账号。
             let routable = api_service_routable_codex_model_ids();
             value["modelRouting"] = json!({
@@ -444,36 +462,115 @@ fn automatic_api_service_profile_extra_models(
 ) -> Vec<(String, bool)> {
     let scoped_ids = scoped_collection_account_ids(collection, api_key);
     let mut models = Vec::new();
+    // 上游确实是 GPT / Codex 家族的客户端模型名：这类 GPT 名字来自账号自己的模型清单
+    // （第三方 GPT 中转），要照实追加展示；壳位别名（客户端名是 GPT、上游是 `deepseek-*`
+    // 等）不在此列，避免只加 DeepSeek 的池又看到 GPT 模型。
+    let mut gpt_backed_models: HashSet<String> = HashSet::new();
     for account in accounts {
         if !scoped_ids.iter().any(|id| id == &account.id)
             || !is_local_access_eligible_account(account, collection.restrict_free_accounts)
         {
             continue;
         }
+        if account.is_api_key_auth() {
+            for (client, upstream) in automatic_api_service_account_model_slots(account) {
+                if is_gpt_or_codex_namespace_model(&upstream) {
+                    gpt_backed_models.insert(client.trim().to_ascii_lowercase());
+                }
+            }
+        }
         models.extend(automatic_api_service_account_model_entries(collection, account));
     }
     // 该 API Key 自己的供应商网关模型同样要在客户端可选。
     if let Some(gateway) = api_key.provider_gateway.as_ref() {
         let image_capable = provider_gateway_has_vision_support(gateway);
-        models.extend(
+        for model in
             apply_model_aliases_to_ids(gateway.upstream_models.clone(), &collection.model_aliases)
-                .into_iter()
-                .map(|model| (model, image_capable)),
-        );
+        {
+            if is_gpt_or_codex_namespace_model(&model) {
+                gpt_backed_models.insert(model.trim().to_ascii_lowercase());
+            }
+            models.push((model, image_capable));
+        }
     }
-    // GPT / Codex 命名空间只保留官方推荐集：账号映射里的 shell 别名（例如 DeepSeek 的
-    // `gpt-5.4-mini`）仍然可以路由，但不再额外出现在客户端选择器里。
+    // GPT / Codex 命名空间只保留两类：官方推荐集（显示名与档位跟随官方客户端），以及账号自己
+    // 模型清单里上游就是 GPT / Codex 家族的条目（例如第三方 GPT 中转）；壳位别名（例如
+    // DeepSeek 的 `gpt-5.4-mini`）仍然可以路由，但不出现在客户端选择器里。
     let mut seen = HashSet::new();
     models.retain(|(model, _)| {
         let key = model.trim().to_ascii_lowercase();
+        let gpt_namespace = is_gpt_or_codex_namespace_model(model);
         !model.trim().is_empty()
-            && !key.starts_with("gpt-")
-            && !key.starts_with("codex-")
+            && (!gpt_namespace
+                || (gpt_backed_models.contains(&key) && is_local_gateway_visible_gpt_model(model)))
             && !model_matches_any_rule(model, &collection.excluded_models)
             && (api_key.allowed_models.is_empty()
                 || model_matches_any_rule(model, &api_key.allowed_models))
             && !model_matches_any_rule(model, &api_key.excluded_models)
             && seen.insert(key)
     });
+    models
+}
+
+fn is_official_gpt_or_reserve_catalog_model(model_id: &str) -> bool {
+    let key = model_id.trim();
+    if key.is_empty() {
+        return false;
+    }
+    key.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID)
+        || is_local_gateway_visible_gpt_model(key)
+}
+
+pub(crate) fn overlay_rendered_pool_models_on_experimental_catalog(
+    profile_dir: &Path,
+    mut models: Vec<crate::models::codex::CodexExperimentalModelDefinition>,
+) -> Vec<crate::models::codex::CodexExperimentalModelDefinition> {
+    let Ok(Some(collection)) = load_collection_from_disk() else {
+        return models;
+    };
+    let attachment = inspect_local_access_profile_attachment(profile_dir, Some(&collection));
+    if !attachment.attached {
+        return models;
+    }
+    let Some(resolved_key) = resolve_collection_api_key(&collection, &collection.api_key) else {
+        return models;
+    };
+    let accounts = crate::modules::codex_account::list_accounts_checked().unwrap_or_default();
+    // 只按对话账号判断：仅用于生图转发的 OAuth 账号不承接对话模型。
+    let pool_accounts: Vec<_> = conversation_sidecar_account_ids(&collection)
+        .into_iter()
+        .filter_map(|account_id| {
+            accounts
+                .iter()
+                .find(|account| account.id == account_id)
+                .cloned()
+        })
+        .filter(|account| {
+            is_local_access_eligible_account(account, collection.restrict_free_accounts)
+        })
+        .collect();
+    if !pool_provides_gpt_models(&pool_accounts) {
+        models.retain(|model| !is_official_gpt_or_reserve_catalog_model(&model.model_id));
+    }
+    let mut seen = models
+        .iter()
+        .map(|model| model.model_id.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    for (model_id, _) in automatic_api_service_profile_extra_models(
+        &collection,
+        &resolved_key,
+        &accounts,
+    ) {
+        if !seen.insert(model_id.to_ascii_lowercase()) {
+            continue;
+        }
+        models.push(crate::models::codex::CodexExperimentalModelDefinition {
+            display_name: crate::modules::codex_account::provider_model_display_name(&model_id),
+            model_id,
+            reasoning_efforts: None,
+            context_window: None,
+            auto_compact_token_limit: None,
+        });
+    }
     models
 }

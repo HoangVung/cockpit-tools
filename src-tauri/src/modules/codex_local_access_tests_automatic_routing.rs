@@ -351,3 +351,154 @@ fn automatic_routing_hides_official_gpt_and_reserve_without_gpt_capability() {
         "图片模型与内部条目仍需保留: {empty_pool:?}"
     );
 }
+
+#[test]
+fn gpt_pool_capability_ignores_grok_and_api_key_accounts() {
+    // 普通 API Key（DeepSeek）不算官方 GPT 能力。
+    let deepseek = automatic_routing_account("deepseek", "responses", &["deepseek-flash"]);
+    // Grok 供应商账号（API Key + 绑定 Grok 平台账号）同样不算。
+    let mut grok = automatic_routing_account("grok", "responses", &["grok-4.6"]);
+    grok.upstream_grok_account_id = Some("grok-platform-1".to_string());
+
+    assert!(
+        !super::pool_provides_gpt_models(&[deepseek.clone(), grok.clone()]),
+        "只包含 DeepSeek 与 Grok 的账号池不应被判定为具备官方 GPT 能力"
+    );
+
+    // 官方 OAuth 账号仍然提供官方 GPT 能力。
+    let official = CodexAccount::new(
+        "official".to_string(),
+        "official@example.com".to_string(),
+        CodexTokens {
+            id_token: "id-token".to_string(),
+            access_token: "access-token".to_string(),
+            refresh_token: None,
+        },
+    );
+    assert!(super::pool_provides_gpt_models(&[official]));
+}
+
+/// 生图转发账号不承接对话模型：只加 DeepSeek / Grok 的池即使绑定了 OAuth 生图账号，
+/// 也不能判定为具备官方 GPT 能力。
+#[test]
+fn conversation_pool_excludes_image_generation_only_accounts() {
+    let mut collection = automatic_routing_collection();
+    collection.account_ids = vec!["deepseek".to_string(), "grok".to_string()];
+    collection.image_generation_account_ids = vec!["gpt-image".to_string()];
+
+    assert_eq!(
+        super::conversation_sidecar_account_ids(&collection),
+        vec!["deepseek", "grok"],
+        "生图账号不能进入对话账号范围"
+    );
+    // sidecar 账号清单仍需包含生图账号，否则拿不到转发凭据。
+    assert!(
+        super::effective_sidecar_account_ids(&collection)
+            .iter()
+            .any(|account_id| account_id == "gpt-image"),
+        "生图账号必须保留在 sidecar 账号清单里"
+    );
+
+    // 每个 API Key 自己的账号范围属于对话账号。
+    let mut scoped_key = build_local_access_api_key(Some("Scoped"));
+    scoped_key.inherit_account_pool = Some(false);
+    scoped_key.account_ids = vec!["key-only".to_string()];
+    collection.api_keys = vec![scoped_key];
+    assert!(
+        super::conversation_sidecar_account_ids(&collection)
+            .iter()
+            .any(|account_id| account_id == "key-only"),
+        "API Key 自定义账号池属于对话账号范围"
+    );
+
+    // 同一账号同时出现在对话池与生图池时，仍按对话账号参与判断。
+    collection.account_ids.push("gpt-image".to_string());
+    assert!(
+        super::conversation_sidecar_account_ids(&collection)
+            .iter()
+            .any(|account_id| account_id == "gpt-image"),
+        "同时在对话池里的账号不能因为出现在生图池而被排除"
+    );
+}
+
+/// 第三方 GPT 中转向账号（客户端名与上游名都是 GPT 家族）要按官方 GPT 能力处理，
+/// 官方 DeepSeek 的目录壳位（客户端名是 GPT、上游是 deepseek-*）不能。
+#[test]
+fn gpt_relay_api_key_accounts_provide_gpt_models() {
+    let relay = automatic_routing_account(
+        "gpt-relay",
+        "responses",
+        &["gpt-5.5", "gpt-5.6-luna", "gpt-image-2", "custom-model"],
+    );
+    assert!(
+        super::pool_provides_gpt_models(std::slice::from_ref(&relay)),
+        "第三方 GPT 中转账号应提供官方 GPT 能力"
+    );
+
+    // 带命名空间前缀的上游名同样按 GPT 家族识别。
+    let namespaced = automatic_routing_account("namespaced", "chat_completions", &["openai/gpt-5.5"]);
+    assert!(super::pool_provides_gpt_models(std::slice::from_ref(&namespaced)));
+
+    // 目录为空 + Responses 直通：仍按官方名称透传。
+    let passthrough = automatic_routing_account("passthrough", "responses", &[]);
+    assert!(super::pool_provides_gpt_models(std::slice::from_ref(&passthrough)));
+
+    // DeepSeek 壳位：客户端名是 gpt-5.5、上游是 deepseek-flash，不算 GPT 能力。
+    let mut shell = automatic_routing_account("deepseek-shell", "responses", &["gpt-5.5"]);
+    shell.api_model_mappings = vec![crate::models::codex::CodexApiModelMapping {
+        client_model: "gpt-5.5".into(),
+        upstream_model: "deepseek-flash".into(),
+    }];
+    assert!(
+        !super::pool_provides_gpt_models(std::slice::from_ref(&shell)),
+        "DeepSeek 目录壳位不应被当成官方 GPT 能力"
+    );
+}
+
+/// 账号自己的 GPT 模型清单要追加进 profile 目录，壳位别名仍然不展示。
+#[test]
+fn profile_extra_models_include_account_owned_gpt_models() {
+    let mut collection = automatic_routing_collection();
+    let mut relay = automatic_routing_account(
+        "gpt-relay",
+        "responses",
+        &["gpt-5.5", "gpt-5.6-luna", "gpt-4o", "custom-model"],
+    );
+    relay.api_provider_id = Some("custom".to_string());
+    let mut shell = automatic_routing_account("deepseek-shell", "responses", &["gpt-5.6-sol"]);
+    shell.api_model_mappings = vec![crate::models::codex::CodexApiModelMapping {
+        client_model: "gpt-5.6-sol".into(),
+        upstream_model: "deepseek-v4-pro".into(),
+    }];
+    let accounts = vec![relay, shell];
+    collection.account_ids = accounts.iter().map(|account| account.id.clone()).collect();
+    let api_key = super::ResolvedLocalApiKey {
+        id: "default".to_string(),
+        label: "Default".to_string(),
+        provider_gateway: None,
+        inherit_account_pool: true,
+        account_ids: collection.account_ids.clone(),
+        model_prefix: None,
+        allowed_models: Vec::new(),
+        excluded_models: Vec::new(),
+        token_limit: None,
+        token_used: 0,
+    };
+
+    let models = super::automatic_api_service_profile_extra_models(&collection, &api_key, &accounts)
+        .into_iter()
+        .map(|(model, _)| model)
+        .collect::<Vec<_>>();
+
+    assert!(models.iter().any(|model| model == "gpt-5.5"));
+    assert!(models.iter().any(|model| model == "gpt-5.6-luna"));
+    assert!(models.iter().any(|model| model == "custom-model"));
+    assert!(
+        !models.iter().any(|model| model == "gpt-4o"),
+        "不在官方推荐集里的 GPT 名字不展示: {models:?}"
+    );
+    assert!(
+        !models.iter().any(|model| model == "gpt-5.6-sol"),
+        "壳位别名不应进入目录: {models:?}"
+    );
+}

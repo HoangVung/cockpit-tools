@@ -1019,3 +1019,61 @@ func BenchmarkOptimizeCodexMultiAgentV2Request(b *testing.B) {
 		OptimizeCodexMultiAgentV2Request(ctx, headers, payload, cfg)
 	}
 }
+
+func TestRestoreCodexCollaborationFlatToolNames(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		tool string
+	}{
+		{name: "double colon", tool: "collaboration::spawn_agent"},
+		{name: "dotted", tool: "collaboration.spawn_agent"},
+		{name: "double underscore", tool: "collaboration__spawn_agent"},
+		{name: "optimized double colon", tool: "collaboration-optimize::wait_agent"},
+		{name: "optimized dotted", tool: "collaboration-optimize.wait_agent"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			payload := []byte(`{"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"` + testCase.tool + `","arguments":"{}"}}`)
+			got := RestoreCodexCollaborationFlatToolNames(payload)
+			name := gjson.GetBytes(got, "item.name").String()
+			if name == "" || name == testCase.tool || strings.Contains(name, ":") || strings.Contains(name, ".") {
+				t.Fatalf("flat tool name was not normalized: %s", got)
+			}
+			if namespace := gjson.GetBytes(got, "item.namespace").String(); namespace != codexCollaborationNamespace {
+				t.Fatalf("namespace = %q, want %q; payload=%s", namespace, codexCollaborationNamespace, got)
+			}
+		})
+	}
+
+	plain := []byte(`{"type":"function_call","name":"exec_command","arguments":"{}"}`)
+	if got := RestoreCodexCollaborationFlatToolNames(plain); string(got) != string(plain) {
+		t.Fatalf("ordinary tool call mutated: %s", got)
+	}
+
+	structured := []byte(`{"type":"function_call","name":"spawn_agent","namespace":"collaboration","arguments":"{}"}`)
+	if got := RestoreCodexCollaborationFlatToolNames(structured); string(got) != string(structured) {
+		t.Fatalf("structured tool call mutated: %s", got)
+	}
+}
+
+func TestNormalizeCodexCollaborationArguments(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte(`{"type":"response.output_item.done","item":{"type":"function_call","name":"wait_agent","arguments":"{\"timeout_ms\":180000.0}"}}`)
+	got := NormalizeCodexCollaborationArguments(payload)
+	if args := gjson.GetBytes(got, "item.arguments").String(); args != `{"timeout_ms":180000}` {
+		t.Fatalf("arguments = %q, want integral timeout_ms; payload=%s", args, got)
+	}
+
+	nonIntegral := []byte(`{"type":"function_call","name":"wait_agent","arguments":"{\"timeout_ms\":1.5}"}`)
+	if out := NormalizeCodexCollaborationArguments(nonIntegral); string(out) != string(nonIntegral) {
+		t.Fatalf("non-integral float must stay unchanged: %s", out)
+	}
+
+	otherTool := []byte(`{"type":"function_call","name":"exec_command","arguments":"{\"timeout_ms\":180000.0}"}`)
+	if out := NormalizeCodexCollaborationArguments(otherTool); string(out) != string(otherTool) {
+		t.Fatalf("non-collaboration tool must stay unchanged: %s", out)
+	}
+}

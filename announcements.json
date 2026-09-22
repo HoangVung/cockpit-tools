@@ -70,7 +70,7 @@
         "logoUrl": "https://raw.githubusercontent.com/BigPizzaV3/CodexPlusPlus/main/docs/images/sponsor-apikey-fun.png",
         "url": "https://apikey.fan/register?aff=cockpit",
         "badge": "AI 中转",
-        "description": "APIKEY.FUN 面向开发者提供多模型 API 接入与中转服务，覆盖 Claude、OpenAI、Gemini 等常用模型，适合需要统一密钥、稳定调用和成本优化的工具链场景。",
+        "description": "APIKEY.FUN 面向开发者提供多模型 API 接入与中转服务，覆盖 Claude / ChatGPT / Grok / Gemini / 智谱 GLM / Kimi / DeepSeek 等平台（每平台一把密钥、按分组计价），适合在 Codex、Claude Code、Gemini CLI 等工具中统一配置使用。",
         "integration": {
           "enabled": true,
           "type": "sub2api",
@@ -97,15 +97,18 @@
         "locales": {
           "zh-CN": {
             "badge": "AI 中转",
-            "description": "APIKEY.FUN 面向开发者提供多模型 API 接入与中转服务，覆盖 Claude、OpenAI、Gemini 等常用模型，适合需要统一密钥、稳定调用和成本优化的工具链场景。"
+            "description": "APIKEY.FUN 面向开发者提供多模型 API 接入与中转服务，覆盖 Claude / ChatGPT / Grok / Gemini / 智谱 GLM / Kimi / DeepSeek 等平台（每平台一把密钥、按分组计价），适合在 Codex、Claude Code、Gemini CLI 等工具中统一配置使用。"
           },
           "en": {
             "badge": "AI Relay",
-            "description": "APIKEY.FUN provides multi-model API access and relay services for developers, covering popular models such as Claude, OpenAI, and Gemini. It fits workflows that need unified keys, stable calls, and better cost control."
+            "description": "APIKEY.FUN provides multi-model API relay services for developers, covering Claude / ChatGPT / Grok / Gemini / Zhipu GLM / Kimi / DeepSeek (one key per platform, group-based pricing) for Codex, Claude Code, Gemini CLI and more."
           },
           "en-US": {
             "badge": "AI Relay",
-            "description": "APIKEY.FUN provides multi-model API access and relay services for developers, covering popular models such as Claude, OpenAI, and Gemini. It fits workflows that need unified keys, stable calls, and better cost control."
+            "description": "APIKEY.FUN provides multi-model API relay services for developers, covering Claude / ChatGPT / Grok / Gemini / Zhipu GLM / Kimi / DeepSeek (one key per platform, group-based pricing) for Codex, Claude Code, Gemini CLI and more."
+          },
+          "zh-tw": {
+            "description": "APIKEY.FUN 為開發者提供多模型 API 接入與中轉服務，覆蓋 Claude / ChatGPT / Grok / Gemini / 智譜 GLM / Kimi / DeepSeek 等平台（每平台一把密鑰、依分組計價），適合在 Codex、Claude Code、Gemini CLI 等工具中統一設定使用。"
           }
         }
       }
@@ -178,6 +181,42 @@
           "title": "Windows users: sign-in redirect after account switching",
           "summary": "The official ChatGPT client can also redirect to sign-in after switching accounts. On Windows, updating to ChatGPT 26.825 or later has generally restored normal behavior in current testing.",
           "content": "We found that the official ChatGPT client can redirect to the sign-in page after switching accounts even when no third-party tool is used.\n\nCurrent testing shows that Windows users generally recover normal behavior after updating ChatGPT to 26.825 or later. If you encounter this issue, update the official client and test again. Similar behavior may still occur on macOS.",
+          "actionLabel": "Send feedback"
+        }
+      }
+    },
+    {
+      "id": "reverse-proxy-api-risk-2026-09-17",
+      "type": "warning",
+      "priority": 100,
+      "title": "反代 API 服务风险提示",
+      "summary": "近期针对反代接入的风控明显收紧，建议谨慎使用第三方 API 服务；日常优先使用切号，授权时优先走官方登录。",
+      "content": "近期 GPT 对反代（第三方 API 服务）接入的风控明显收紧，在此做几点提醒：\n\n1. 日常使用请优先走切号。切号是按官方客户端真实落盘规则写入本机，账号始终保持官方客户端登录状态，不需要经过任何第三方服务。\n\n2. 授权时请优先走官方登录。在「添加账号」中选择「官方登录」，点击“打开官方客户端并登录”，整个授权过程都在官方桌面客户端内完成：授权地址由官方客户端生成，授权回调与 token 换取也都由官方客户端处理，Cockpit 只在凭据落盘后读取。\n\n3. 如果官方登录功能因权限问题无法使用，可以自己在官方客户端完成登录，然后回到「添加账号」的「导入」页签，点击“获取本地账号”，从 ~/.codex/auth.json 读取并导入。\n\n风控是否触发，取决于上游服务和账号状态，我们无法预先判断，也无法通过某条固定规则帮你规避。账号比较重要的话，建议评估后再决定使用方式。\n\n如果你发现了具体的触发条件或更可靠的处理方式，欢迎在 GitHub 反馈。",
+      "action": {
+        "type": "url",
+        "target": "https://github.com/jlcodes99/cockpit-tools/issues/new",
+        "label": "提交反馈"
+      },
+      "targetVersions": "*",
+      "targetLanguages": [
+        "zh",
+        "en"
+      ],
+      "showOnce": true,
+      "popup": true,
+      "createdAt": "2026-09-17T03:20:00Z",
+      "expiresAt": "2026-10-17T00:00:00Z",
+      "locales": {
+        "en": {
+          "title": "Reverse-proxy API service risk notice",
+          "summary": "Risk controls on reverse-proxy access have tightened noticeably. Please use third-party API services with care; prefer account switching for daily use and official login when authorizing.",
+          "content": "Risk controls from GPT on reverse-proxy access (third-party API services) have tightened noticeably. A few reminders:\n\n1. Prefer account switching for daily use. Switching writes accounts following the official client's real on-disk rules, so the account stays signed in through the official client and never goes through a third-party service.\n\n2. Prefer official login when authorizing. In \"Add account\", choose \"Official login\" and click \"Open official client and sign in\". The whole authorization happens inside the official desktop client: the authorization URL is generated by the official client, and both the callback and the token exchange are handled by it too. Cockpit only reads the credentials after they are written to disk.\n\n3. If official login is unavailable due to permission issues, sign in manually in the official client, then go back to the \"Import\" tab under \"Add account\" and click \"Get Local Account\" to read and import from ~/.codex/auth.json.\n\nWhether risk control is triggered depends on the upstream service and the account state. We cannot predict it in advance, and there is no fixed rule we can give you to avoid it. If an account matters to you, evaluate before deciding how to use it.\n\nIf you have identified a specific trigger or a more reliable way to handle it, please let us know on GitHub.",
+          "actionLabel": "Send feedback"
+        },
+        "en-US": {
+          "title": "Reverse-proxy API service risk notice",
+          "summary": "Risk controls on reverse-proxy access have tightened noticeably. Please use third-party API services with care; prefer account switching for daily use and official login when authorizing.",
+          "content": "Risk controls from GPT on reverse-proxy access (third-party API services) have tightened noticeably. A few reminders:\n\n1. Prefer account switching for daily use. Switching writes accounts following the official client's real on-disk rules, so the account stays signed in through the official client and never goes through a third-party service.\n\n2. Prefer official login when authorizing. In \"Add account\", choose \"Official login\" and click \"Open official client and sign in\". The whole authorization happens inside the official desktop client: the authorization URL is generated by the official client, and both the callback and the token exchange are handled by it too. Cockpit only reads the credentials after they are written to disk.\n\n3. If official login is unavailable due to permission issues, sign in manually in the official client, then go back to the \"Import\" tab under \"Add account\" and click \"Get Local Account\" to read and import from ~/.codex/auth.json.\n\nWhether risk control is triggered depends on the upstream service and the account state. We cannot predict it in advance, and there is no fixed rule we can give you to avoid it. If an account matters to you, evaluate before deciding how to use it.\n\nIf you have identified a specific trigger or a more reliable way to handle it, please let us know on GitHub.",
           "actionLabel": "Send feedback"
         }
       }

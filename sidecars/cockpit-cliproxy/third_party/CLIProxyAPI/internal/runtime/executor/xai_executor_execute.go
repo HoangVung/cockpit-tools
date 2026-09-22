@@ -86,6 +86,7 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req 
 	var outputItemsFallback [][]byte
 	responseFilter := newXAIInternalXSearchResponseFilter(prepared.filterInternalXSearch, prepared.clientDeclaredTools)
 	namespaceRestorer := newXAINamespaceRestorer(prepared.namespaceTools)
+	applyPatchRestorer := newXAIApplyPatchRestorer(prepared.restoreApplyPatch)
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		if !bytes.HasPrefix(line, xaiDataTag) {
 			continue
@@ -105,6 +106,8 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req 
 				reporter.Publish(ctx, detail)
 			}
 			completedData := xaiPatchCompletedOutput(eventData, outputItemsByIndex, outputItemsFallback)
+			completedData = applyPatchRestorer.restore(completedData)
+			completedData = helps.NormalizeCodexCollaborationToolCalls(completedData)
 			completedData = xaiNormalizeReasoningSummaryData(completedData)
 			if eventType == "response.completed" {
 				// A truncated turn carries no replayable terminal state, so only a

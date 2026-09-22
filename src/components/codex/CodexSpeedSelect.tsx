@@ -31,14 +31,14 @@ interface CodexSpeedSelectProps {
 }
 
 const SPEED_MENU_WIDTH = 206;
-const SPEED_MENU_HEIGHT = 166;
+const SPEED_MENU_HEIGHT = 122;
 const SPEED_MENU_COMPACT_WIDTH = 180;
-const SPEED_MENU_COMPACT_HEIGHT = 150;
+const SPEED_MENU_COMPACT_HEIGHT = 106;
 const SPEED_MENU_GAP = 5;
 const SPEED_MENU_MARGIN = 8;
 const SPEED_MENU_Z_INDEX = 10030;
 
-/// 三档速度的文案键与兜底文案，供选择器与账号总览共用。
+/// 两档速度的文案键与兜底文案，供选择器与账号总览共用。
 export const CODEX_SPEED_DESCRIPTION: Record<
   CodexAppSpeed,
   { key: string; fallback: string }
@@ -48,10 +48,6 @@ export const CODEX_SPEED_DESCRIPTION: Record<
     fallback: "默认速度，常规用量",
   },
   fast: { key: "codex.speed.fastDesc", fallback: "1.5 倍速，用量增加" },
-  ultrafast: {
-    key: "codex.speed.ultrafastDesc",
-    fallback: "最快响应，用量最高",
-  },
 };
 
 function resolveSpeedMenuPosition(
@@ -124,11 +120,6 @@ export function CodexSpeedSelect({
         value: "fast" as CodexAppSpeed,
         label: t("codex.speed.fast", "快速"),
         desc: t("codex.speed.fastDesc", "1.5 倍速，用量增加"),
-      },
-      {
-        value: "ultrafast" as CodexAppSpeed,
-        label: t("codex.speed.ultrafast", "超高速"),
-        desc: t("codex.speed.ultrafastDesc", "最快响应，用量最高"),
       },
     ],
     [t],
@@ -204,7 +195,7 @@ export function CodexSpeedSelect({
         title={selectedTitle}
         aria-label={ariaLabel || t("codex.speed.title", "速度")}
       >
-        {(speed === "fast" || speed === "ultrafast") && <Zap size={12} />}
+        {speed === "fast" && <Zap size={12} />}
         <span>{selected.label}</span>
         {!compact && <ChevronDown size={12} className="codex-speed-caret" />}
       </button>

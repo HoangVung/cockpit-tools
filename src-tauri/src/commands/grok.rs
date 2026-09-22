@@ -322,13 +322,29 @@ pub async fn list_grok_accounts() -> Result<Vec<GrokAccountView>, String> {
 }
 
 #[tauri::command]
-pub fn delete_grok_account(account_id: String) -> Result<(), String> {
-    grok_account::remove_account(&account_id)
+pub async fn delete_grok_account(account_id: String) -> Result<(), String> {
+    let source_id = account_id.clone();
+    let deletion =
+        tauri::async_runtime::spawn_blocking(move || grok_account::remove_account(&source_id))
+            .await
+            .map_err(|error| format!("删除 Grok 账号任务失败: {}", error))?;
+    // Even a partial delete (for example an index-write failure after file removal) must revoke
+    // the old runtime credential. Retrying is safe because removal is idempotent.
+    let revocation =
+        crate::modules::codex_local_access::sync_grok_upstream_auth_files(account_id).await;
+    match (deletion, revocation) {
+        (Err(first), Err(second)) => Err(format!("{}; {}", first, second)),
+        (Err(error), _) | (_, Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 #[tauri::command]
-pub fn delete_grok_accounts(account_ids: Vec<String>) -> Result<(), String> {
-    grok_account::remove_accounts(&account_ids)
+pub async fn delete_grok_accounts(account_ids: Vec<String>) -> Result<(), String> {
+    for account_id in account_ids {
+        delete_grok_account(account_id).await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

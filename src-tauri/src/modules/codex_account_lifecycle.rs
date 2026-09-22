@@ -193,9 +193,7 @@ pub fn upsert_api_key_account(
             acc.email = build_api_key_email(&api_key);
         }
         if let Some(name) = account_name.clone() {
-            if normalize_optional_ref(acc.account_name.as_deref()).is_none() {
-                acc.account_name = Some(name);
-            }
+            acc.account_name = Some(name);
         }
         acc.update_last_used();
         acc

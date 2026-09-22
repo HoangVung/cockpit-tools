@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/xai"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/codex/historyprojection"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
@@ -34,6 +35,9 @@ type xaiPreparedRequest struct {
 	sessionID             string
 	replayScope           xaiReasoningReplayScope
 	filterInternalXSearch bool
+	// restoreApplyPatch 表示客户端声明了 Codex 的 freeform apply_patch 工具，
+	// 响应出口需要把降级后的 function_call 还原成 custom_tool_call。
+	restoreApplyPatch bool
 }
 
 type xaiNamespaceToolRef struct {
@@ -88,6 +92,12 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
 	body, _ = sjson.DeleteBytes(body, "stream_options")
+	// 统一历史投影：补齐 web_search_call 等 Codex 私有历史项，并规范化参数类型。
+	body = historyprojection.Project(body, historyprojection.ProfileFor(historyprojection.UpstreamXAI))
+	// xAI 链路自己负责 collaboration namespace 的展开与还原，这里只准备工具
+	// 声明（刷新 spawn_agent 模型明细、移除 message 加密参数），再把
+	// agent_message 输入项转成上游可读的普通 message。
+	body = helps.PrepareCodexMultiAgentV2Tools(ctx, opts.Headers, body, e.cfg)
 	body = helps.RewriteCodexMultiAgentV2Input(ctx, opts.Headers, body, e.cfg)
 	willInjectXSearch := e.cfg != nil && e.cfg.XAI.InjectXSearch
 	shouldFold := xaiShouldFoldNamespaceTools(body, willInjectXSearch)
@@ -95,6 +105,7 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	// Collect before normalizeXAITools flattens namespace wrappers so keys match
 	// the post-restore (namespace, short-name) shape used by the response filter.
 	clientDeclaredTools := collectXAIClientDeclaredToolKeys(body)
+	restoreApplyPatch := xaiClientDeclaresApplyPatch(body)
 	body = normalizeXAIToolsWithFold(body, shouldFold)
 	body = promoteXAIAdditionalTools(body)
 	// Drop choices that point at tools removed by normalizeXAITools before any
@@ -118,11 +129,15 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	if err != nil {
 		return nil, err
 	}
+	body = xaiNormalizeApplyPatchHistory(body)
 	body = normalizeXAIInputCustomToolCalls(body)
 	body = normalizeXAIInputNamespaceToolCallsWithFold(body, shouldFold)
 	body = normalizeXAIInputReasoningItems(body)
 	body = sanitizeXAIInputEncryptedContent(body)
 	body = normalizeCodexInstructions(body)
+	if restoreApplyPatch {
+		body = xaiEnsureApplyPatchInstructions(body)
+	}
 	body = sanitizeXAIResponsesBody(body, baseModel)
 	body = normalizeXAIImageRefs(body)
 
@@ -146,6 +161,7 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 		sessionID:             sessionID,
 		replayScope:           replayScope,
 		filterInternalXSearch: xaiRequestHasNativeXSearch(body),
+		restoreApplyPatch:     restoreApplyPatch,
 	}, nil
 }
 
@@ -1391,6 +1407,37 @@ func normalizeXAINamespaceToolChoiceWithFold(body []byte, shouldFold bool) []byt
 	return body
 }
 
+// xaiClientDeclaresApplyPatch reports whether the request declares Codex's
+// freeform apply_patch tool. Clients that already declare it as a plain
+// function expect function_call output and are left untouched; only the
+// freeform custom declaration gets the custom_tool_call restoration.
+func xaiClientDeclaresApplyPatch(body []byte) bool {
+	declares := func(tools gjson.Result) bool {
+		if !tools.Exists() || !tools.IsArray() {
+			return false
+		}
+		for _, tool := range tools.Array() {
+			if strings.TrimSpace(tool.Get("type").String()) == xaiCustomToolType &&
+				strings.TrimSpace(tool.Get("name").String()) == xaiApplyPatchToolName {
+				return true
+			}
+		}
+		return false
+	}
+	if declares(gjson.GetBytes(body, "tools")) {
+		return true
+	}
+	input := gjson.GetBytes(body, "input")
+	if input.Exists() && input.IsArray() {
+		for _, item := range input.Array() {
+			if item.Get("type").String() == "additional_tools" && declares(item.Get("tools")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func normalizeXAITool(tool gjson.Result, namespaceName string, keepImageGeneration bool) ([]byte, bool, bool) {
 	toolType := tool.Get("type").String()
 	changed := false
@@ -1398,9 +1445,6 @@ func normalizeXAITool(tool gjson.Result, namespaceName string, keepImageGenerati
 		return nil, true, true
 	}
 	if toolType == xaiImageGenerationToolType && !keepImageGeneration {
-		return nil, true, true
-	}
-	if toolType == xaiCustomToolType && tool.Get("name").String() == "apply_patch" {
 		return nil, true, true
 	}
 
@@ -1442,6 +1486,26 @@ func normalizeXAITool(tool gjson.Result, namespaceName string, keepImageGenerati
 		raw = updatedTool
 		toolType = xaiFunctionToolType
 		changed = true
+		if strings.TrimSpace(tool.Get("name").String()) == xaiApplyPatchToolName {
+			// Codex 声明的是 freeform(lark grammar) 工具，xAI 不接受该形态。
+			// 这里改写成单字段 JSON function，并把官方信封写进每轮 description；
+			// 新窗口没有历史 custom_tool_call 当 few-shot，只能靠这段说明写出正确头尾。
+			// 响应出口按同样的名字把 function_call 还原成客户端期望的 custom_tool_call。
+			if trimmed, errDel := sjson.DeleteBytes(raw, "format"); errDel == nil {
+				raw = trimmed
+			}
+			updatedTool, errSet = sjson.SetBytes(raw, "description", xaiApplyPatchDescription)
+			if errSet != nil {
+				return nil, false, false
+			}
+			raw = updatedTool
+			updatedTool, errSet = sjson.SetRawBytes(raw, "parameters", []byte(xaiApplyPatchParameters))
+			if errSet != nil {
+				return nil, false, false
+			}
+			raw = updatedTool
+			schemaTool = gjson.ParseBytes(raw)
+		}
 	}
 	if toolType == xaiWebSearchToolType && tool.Get("external_web_access").Exists() {
 		updatedTool, errDel := sjson.DeleteBytes(raw, "external_web_access")
@@ -1641,4 +1705,79 @@ func xaiCustomToolCallOutput(output gjson.Result) string {
 		return output.String()
 	}
 	return output.Raw
+}
+
+func xaiEnsureApplyPatchInstructions(body []byte) []byte {
+	if !gjson.ValidBytes(body) {
+		return body
+	}
+	reminder := strings.TrimSpace(xaiApplyPatchInstructionReminder)
+	if reminder == "" {
+		return body
+	}
+	current := strings.TrimSpace(gjson.GetBytes(body, "instructions").String())
+	if strings.Contains(current, xaiApplyPatchBeginMarker) && strings.Contains(current, xaiApplyPatchBeginWrong) {
+		return body
+	}
+	next := reminder
+	if current != "" {
+		next = current + "\n\n" + reminder
+	}
+	updated, errSet := sjson.SetBytes(body, "instructions", next)
+	if errSet != nil {
+		return body
+	}
+	return updated
+}
+
+func xaiNormalizeApplyPatchHistory(body []byte) []byte {
+	if !gjson.ValidBytes(body) {
+		return body
+	}
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return body
+	}
+	updated := body
+	changed := false
+	for index, item := range input.Array() {
+		if strings.TrimSpace(item.Get("name").String()) != xaiApplyPatchToolName {
+			continue
+		}
+		path := fmt.Sprintf("input.%d", index)
+		switch item.Get("type").String() {
+		case "function_call":
+			rawArgs := item.Get("arguments").String()
+			normalized := xaiApplyPatchInputFromArguments(rawArgs)
+			encoded, errMarshal := json.Marshal(map[string]string{"input": normalized})
+			if errMarshal != nil {
+				continue
+			}
+			if rawArgs == string(encoded) {
+				continue
+			}
+			next, errSet := sjson.SetBytes(updated, path+".arguments", string(encoded))
+			if errSet != nil {
+				continue
+			}
+			updated = next
+			changed = true
+		case "custom_tool_call":
+			rawInput := item.Get("input").String()
+			normalized := xaiNormalizeApplyPatchEnvelope(rawInput)
+			if normalized == rawInput {
+				continue
+			}
+			next, errSet := sjson.SetBytes(updated, path+".input", normalized)
+			if errSet != nil {
+				continue
+			}
+			updated = next
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	return updated
 }

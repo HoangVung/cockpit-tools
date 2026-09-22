@@ -382,6 +382,13 @@ jobs:
           set -euo pipefail
           npx tauri build --ci --target aarch64-apple-darwin
 
+      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/inject-dmg-readme.cjs \
+            --bundle-dir "target/aarch64-apple-darwin/release/bundle"
+
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
         with:
@@ -498,6 +505,13 @@ jobs:
         run: |
           set -euo pipefail
           npx tauri build --ci --target x86_64-apple-darwin
+
+      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/inject-dmg-readme.cjs \
+            --bundle-dir "target/x86_64-apple-darwin/release/bundle"
 
       - name: 📥 Download release metadata
         uses: actions/download-artifact@v4
@@ -616,6 +630,13 @@ jobs:
         run: |
           set -euo pipefail
           npx tauri build --ci --target universal-apple-darwin
+
+      - name: 📝 Rebuild DMG with the Gatekeeper troubleshooting note
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/inject-dmg-readme.cjs \
+            --bundle-dir "target/universal-apple-darwin/release/bundle"
 
       - name: 📦 Stage macOS Universal assets
         shell: bash

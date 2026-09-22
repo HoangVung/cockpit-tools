@@ -29,8 +29,6 @@ import { Account } from '../types/account'
 import { Page } from '../types/navigation'
 import {
   getAntigravityTierBadge,
-  getQuotaClass,
-  formatResetTimeDisplay,
 } from '../utils/account'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -39,6 +37,7 @@ import { useModalErrorState } from '../components/ModalErrorMessage'
 import { useEscClose } from '../hooks/useEscClose'
 import { useEnterConfirm } from '../hooks/useEnterConfirm'
 import { AntigravityGcpTosBadge } from '../components/AntigravityGcpTosBadge'
+import { AntigravityQuotaSection } from '../components/AntigravityQuotaSection'
 import {
   AccountGroup,
   getAccountGroups,
@@ -3032,71 +3031,9 @@ export function useAccountsPageController({ onNavigate }: AccountsPageProps) {
   const resolveGroupLabel = (groupKey: string) =>
     groupKey === untaggedKey ? t('accounts.untagged', '未分组') : groupKey
 
-  const renderCustomQuotaSection = (account: Account, isList: boolean = false) => {
-    const quotaDisplayItems = getQuotaDisplayItems(account);
-    const hasModels = account.quota?.models && account.quota.models.length > 0;
-    
-    if (!hasModels) {
-      return (
-        <div className="quota-empty" style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
-          {t('overview.noQuotaData')}
-        </div>
-      );
-    }
-
-    const claude5h = quotaDisplayItems.find(item => item.key === 'claude:5h');
-    const claudeWeekly = quotaDisplayItems.find(item => item.key === 'claude:weekly');
-    const gemini5h = quotaDisplayItems.find(item => item.key === 'gemini:5h');
-    const geminiWeekly = quotaDisplayItems.find(item => item.key === 'gemini:weekly');
-
-    const renderBar = (label: string, item: any) => {
-      const percentage = item ? item.percentage : 100;
-      const resetTime = item ? item.resetTime : '';
-      const resetLabel = resetTime ? formatResetTimeDisplay(resetTime, t) : '';
-      
-      return (
-        <div className={isList ? "quota-item" : "quota-compact-item"}>
-          <div className={isList ? "quota-header" : "quota-compact-header"}>
-            <span className={isList ? "quota-name" : "model-label"}>{label}</span>
-            <span className={`${isList ? "quota-value" : "model-pct"} ${getQuotaClass(percentage)}`}>
-              {percentage}%
-            </span>
-          </div>
-          <div className={isList ? "quota-progress-track" : "quota-compact-bar-track"}>
-            <div
-              className={`${isList ? "quota-progress-bar" : "quota-compact-bar"} ${getQuotaClass(percentage)}`}
-              style={{ width: `${percentage}%` }}
-            />
-          </div>
-          {(isList || resetLabel) && (
-            <div className={isList ? "quota-footer" : undefined}>
-              <span
-                className={isList ? "quota-reset" : "quota-compact-reset"}
-                title={resetLabel || undefined}
-              >
-                {resetLabel || '\u00A0'}
-              </span>
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    return (
-      <>
-        <div className="quota-column">
-          <div className="quota-column-title">Claude</div>
-          {renderBar("5h", claude5h)}
-          {renderBar(t('common.weekly', 'Weekly'), claudeWeekly)}
-        </div>
-        <div className="quota-column">
-          <div className="quota-column-title">Gemini</div>
-          {renderBar("5h", gemini5h)}
-          {renderBar(t('common.weekly', 'Weekly'), geminiWeekly)}
-        </div>
-      </>
-    );
-  };
+  const renderCustomQuotaSection = (account: Account, isList: boolean = false) => (
+    <AntigravityQuotaSection items={getQuotaDisplayItems(account)} isList={isList} t={t} />
+  );
 
   const renderGridCards = (items: Account[], groupKey?: string) =>
     items.map((account) => {

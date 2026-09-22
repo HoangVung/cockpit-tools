@@ -27,6 +27,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	codexmodels "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/models"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 
@@ -58,6 +59,12 @@ const codexSparkModel = "gpt-5.3-codex-spark"
 const codexSparkCatalogTemplateModel = "gpt-5.3-codex"
 const defaultImagesMainModel = "gpt-5.5"
 const defaultImagesToolModel = "gpt-image-2.5"
+
+// codexClientCompactionHash 是下发给 Codex 客户端的统一压缩格式哈希（comp_hash）。
+// 各模型带不同 comp_hash 时，客户端在切换模型后会触发 PreTurn 自动压缩
+// （日志中为 run_auto_compact{reason=CompHashChanged}），与当前 token 用量无关；
+// 统一为最新官方值即可避免混合模型目录内切换模型被强制重建上下文。
+const codexClientCompactionHash = "3000"
 const legacyImagesToolModel = "gpt-image-2"
 const imagesGenerationsPath = "/v1/images/generations"
 const imagesEditsPath = "/v1/images/edits"
@@ -425,11 +432,15 @@ type customRoutingRule struct {
 }
 
 type usagePayload struct {
-	Type             string       `json:"type"`
-	RequestID        string       `json:"requestId,omitempty"`
-	Provider         string       `json:"provider,omitempty"`
-	Model            string       `json:"model,omitempty"`
-	Alias            string       `json:"alias,omitempty"`
+	Type      string `json:"type"`
+	RequestID string `json:"requestId,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Alias     string `json:"alias,omitempty"`
+	// RequestedModel keeps the client-requested model (route namespace intact)
+	// while Model/UpstreamModel carry the model that actually reached upstream.
+	RequestedModel   string       `json:"requestedModel,omitempty"`
+	UpstreamModel    string       `json:"upstreamModel,omitempty"`
 	AccountID        string       `json:"accountId,omitempty"`
 	AccountEmail     string       `json:"accountEmail,omitempty"`
 	AuthID           string       `json:"authId,omitempty"`
@@ -444,6 +455,9 @@ type usagePayload struct {
 	ErrorCategory    string       `json:"errorCategory,omitempty"`
 	ErrorMessage     string       `json:"errorMessage,omitempty"`
 	LatencyMS        int64        `json:"latencyMs,omitempty"`
+	// TurnStateLength/TurnStateClass 来自上游响应头的旁路观测；state 原文不保存。
+	TurnStateLength *int   `json:"turnStateLength,omitempty"`
+	TurnStateClass  string `json:"turnStateClass,omitempty"`
 	Usage            usageDetails `json:"usage"`
 	RequestedAtMS    int64        `json:"requestedAtMs,omitempty"`
 }
@@ -1253,6 +1267,7 @@ func withClientInstanceID(ctx context.Context, instanceID string) context.Contex
 
 type requestPolicy struct {
 	manifest     *manifest
+	cfg          *config.Config
 	emitter      *eventEmitter
 	tracker      *requestUsageTracker
 	tokenLimiter *apiKeyTokenLimiter
@@ -1317,7 +1332,9 @@ func (p *requestPolicy) middleware() gin.HandlerFunc {
 		if spec != nil && isModelsRequest(c.Request) {
 			models := clientCatalogModelsForAPIKey(p.manifest, spec)
 			if isCodexClientModelsRequest(c.Request) {
-				c.JSON(http.StatusOK, buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(p.manifest, spec), p.manifest))
+				response := buildCodexClientModelsResponse(models, spec, contextWindowsForAPIKey(p.manifest, spec), p.manifest)
+				applyThirdPartyMultiAgentV2Catalog(response, spec, p.manifest, p.cfg)
+				c.JSON(http.StatusOK, response)
 			} else {
 				c.JSON(http.StatusOK, buildModelsResponse(models))
 			}
@@ -1824,7 +1841,10 @@ func xaiOnlyModelIDs(m *manifest) map[string]struct{} {
 	}
 	for i := range m.Accounts {
 		account := &m.Accounts[i]
-		if !strings.EqualFold(strings.TrimSpace(account.Provider), "xai") {
+		// 宿主 manifest 里 Grok 账号的 provider 是 "grok"，sidecar 内部统一用
+		// "xai"；这里漏归一化会把 xai-only 模型注册给 Codex 账号，导致 Grok 模型
+		// 被判给不承接它的账号并最终在 API Key 作用域过滤时报「账号池没有可用账号」。
+		if normalizedSidecarProvider(account.Provider) != "xai" {
 			continue
 		}
 		for _, model := range account.ModelIDs {
@@ -1901,6 +1921,12 @@ func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows m
 				if _, xaiOnly := xaiOnlyModels[strings.ToLower(strings.TrimSpace(slug))]; xaiOnly {
 					// Grok 模型没有 Codex OAuth 的 WS 传输，必须走本地 HTTP 网关。
 					model["prefer_websockets"] = false
+					// xAI 的 Responses 端点只接受 function 工具，sidecar 会把
+					// freeform apply_patch 降级成单字段 function 再在响应侧还原；
+					// 目录里保持 freeform 声明，客户端才会把 apply_patch 交给模型。
+					if _, exists := model["apply_patch_tool_type"]; !exists {
+						model["apply_patch_tool_type"] = "freeform"
+					}
 				}
 			}
 			if spec != nil && spec.ProviderGateway != nil {
@@ -1946,9 +1972,65 @@ func buildCodexClientModelsResponse(models []string, spec *apiKeySpec, windows m
 				model["upgrade"] = nil
 			}
 		}
+		// 最后统一覆盖压缩格式哈希，保证官方模板、路由模板和第三方模型下发同一个值。
+		for _, model := range data {
+			model["comp_hash"] = codexClientCompactionHash
+		}
 		applyExplicitContextWindows(data, windows)
 	}
 	return response
+}
+
+// applyThirdPartyMultiAgentV2Catalog 让第三方模型在 Codex 客户端目录里声明
+// multi_agent_version=v2。客户端据此启用 Multi-Agent V2 工具集，sidecar 再在
+// provider gateway 与 xAI 转发路径上完成请求/响应的协议转换；官方模型继续使用
+// 自身目录声明，不受影响。
+func applyThirdPartyMultiAgentV2Catalog(response gin.H, spec *apiKeySpec, m *manifest, cfg *config.Config) {
+	if response == nil || cfg == nil || !cfg.Codex.OptimizeMultiAgentV2 {
+		return
+	}
+	models, ok := response["models"].([]map[string]any)
+	if !ok {
+		return
+	}
+	xaiModels := xaiOnlyModelIDs(m)
+	for _, model := range models {
+		slug, _ := model["slug"].(string)
+		if !clientModelUsesThirdPartyBackend(slug, spec, xaiModels) {
+			continue
+		}
+		if existing, exists := model["multi_agent_version"]; exists {
+			if text, ok := existing.(string); ok && strings.TrimSpace(text) != "" {
+				continue
+			}
+		}
+		model["multi_agent_version"] = "v2"
+	}
+}
+
+// clientModelUsesThirdPartyBackend reports whether requests for the client model
+// leave the official Codex pool: routed through a provider gateway, matched to a
+// third-party model route, or declared by a Grok (xAI) account.
+func clientModelUsesThirdPartyBackend(slug string, spec *apiKeySpec, xaiModels map[string]struct{}) bool {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return false
+	}
+	if _, ok := xaiModels[strings.ToLower(slug)]; ok {
+		return true
+	}
+	if spec == nil {
+		return false
+	}
+	if spec.ProviderGateway != nil {
+		return true
+	}
+	if spec.ModelRouting != nil {
+		if _, _, status := resolveModelRoutingRoute(spec, slug); status == "matched" || status == "native" {
+			return true
+		}
+	}
+	return false
 }
 
 func applyProviderGatewayCodexInputModalities(model map[string]any, gateway *providerGatewaySpec) {
@@ -2257,7 +2339,7 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []
 	if isImageRequestKind(requestKind) {
 		return nil, model, nil
 	}
-	// 宿主内部请求（唤醒、鹈鹕测试）的模型由 Cockpit 自己选定，
+	// 宿主内部请求（唤醒）的模型由 Cockpit 自己选定，
 	// 必须绕过对外 API 的模型可见性与排除规则，否则关闭某个模型会连带打断唤醒任务。
 	if spec != nil && spec.Internal {
 		return nil, model, nil
@@ -2336,9 +2418,12 @@ func visibleModelsForAPIKey(m *manifest, spec *apiKeySpec) []string {
 			}
 			if len(route.Models) > 0 {
 				for _, model := range route.Models {
-					// 自动混合路由下，GPT / Codex 命名空间只展示官方推荐集；
-					// 账号映射里的 shell 别名仍然可以路由，但不出现在模型列表里。
+					// 自动混合路由下，GPT / Codex 命名空间的「壳位别名」（客户端名是 GPT、
+					// 上游是 deepseek-* 等）只展示官方推荐集，别名本身不出现在模型列表里；
+					// 上游本身就是 GPT / Codex 家族的账号模型（例如第三方 GPT 中转）照常展示，
+					// 否则客户端看得到却会被请求校验拒绝。
 					if automatic && isGptFamilyModelName(model.ClientModel) &&
+						!isGptFamilyModelName(model.UpstreamModel) &&
 						!automaticListedModel(spec, model.ClientModel) {
 						continue
 					}

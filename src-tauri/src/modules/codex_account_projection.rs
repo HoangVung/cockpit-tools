@@ -504,6 +504,91 @@ pub fn read_managed_projection_account_id_from_dir(base_dir: &Path) -> Option<St
     read_managed_projection_from_dir(base_dir).map(|projection| projection.account_id)
 }
 
+/// Recognize the OAuth credential owner, not token bytes: the official client may
+/// have rotated its refresh token since takeover. A stale projection alone is not
+/// sufficient to claim a different account signed in by the user.
+pub(crate) fn preserve_owned_oauth_auth_for_runtime(
+    base_dir: &Path,
+    runtime_account_id: &str,
+    auth_text: &str,
+) -> Result<bool, String> {
+    let Some(projection) = read_managed_projection_from_dir(base_dir)
+        .filter(|projection| projection.account_id == runtime_account_id)
+    else {
+        return Ok(false);
+    };
+    // Older combined projections without a credential owner cannot prove which
+    // OAuth login the takeover wrote. Preserve such unknown credentials.
+    let Some(owner_id) = projection.credential_account_id.as_deref() else {
+        return Ok(false);
+    };
+    let Some(mut owner) = load_account(owner_id).filter(|account| !account.is_api_key_auth())
+    else {
+        return Ok(false);
+    };
+    let Some(snapshot) = serde_json::from_str::<CodexAuthFile>(auth_text)
+        .ok()
+        .and_then(load_local_oauth_snapshot_from_auth_file)
+    else {
+        return Ok(false);
+    };
+    if !local_oauth_snapshot_matches_account(&snapshot, &owner) {
+        return Ok(false);
+    }
+    // Keep a rotated RT in the account authority before removing this projection.
+    if should_accept_managed_authority_snapshot(&owner, &snapshot, base_dir)
+        && apply_local_oauth_snapshot(&mut owner, &snapshot)
+    {
+        save_account(&owner)?;
+    }
+    Ok(true)
+}
+
+/// Restore identity from the backup without replaying an old refresh token when
+/// that same identity is still live here or has newer credentials in the account store.
+pub(crate) fn resolve_oauth_auth_backup_for_restore(
+    backup_text: &str,
+    current_text: Option<&str>,
+) -> Result<String, String> {
+    let snapshot_from_text = |text: &str| {
+        serde_json::from_str::<CodexAuthFile>(text)
+            .ok()
+            .and_then(load_local_oauth_snapshot_from_auth_file)
+    };
+    let Some(backup) = snapshot_from_text(backup_text) else {
+        return Ok(backup_text.to_string());
+    };
+    if let Some(current) = current_text.and_then(snapshot_from_text) {
+        if current.email.eq_ignore_ascii_case(&backup.email)
+            && current.account_id == backup.account_id
+            && current.organization_id == backup.organization_id
+            && current.user_id == backup.user_id
+        {
+            return Ok(current_text.unwrap_or(backup_text).to_string());
+        }
+    }
+    let stored = load_account_index()
+        .accounts
+        .into_iter()
+        .filter(|entry| entry.email.eq_ignore_ascii_case(&backup.email))
+        .filter_map(|entry| load_account(&entry.id))
+        .find(|account| {
+            !account.is_api_key_auth() && local_oauth_snapshot_matches_account(&backup, account)
+        });
+    if let Some(account) = stored {
+        if !should_accept_authority_snapshot(&account, &backup) {
+            let existing = serde_json::from_str::<serde_json::Value>(backup_text)
+                .ok()
+                .and_then(|value| value.as_object().cloned());
+            let restored =
+                merge_existing_auth_file_value(existing, build_auth_file_value(&account)?);
+            return serde_json::to_string_pretty(&restored)
+                .map_err(|error| format!("序列化恢复的 OAuth 凭据失败: {error}"));
+        }
+    }
+    Ok(backup_text.to_string())
+}
+
 fn ensure_directory_writable_for_import(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| format_io_error("创建导入目录", path, &e))?;
     let probe_path = build_temp_file_path(path, path, "import-probe");

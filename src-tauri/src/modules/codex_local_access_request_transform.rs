@@ -1068,7 +1068,6 @@ fn normalize_proxy_service_tier(value: &str) -> Option<&'static str> {
 fn normalize_upstream_inject_service_tier(value: &str) -> Option<&'static str> {
     match normalize_proxy_service_tier(value) {
         Some("priority") => Some("priority"),
-        Some("ultrafast") => Some("ultrafast"),
         Some("flex") => Some("flex"),
         _ => None,
     }

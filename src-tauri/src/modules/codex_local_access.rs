@@ -6,7 +6,9 @@ include!("codex_local_access_quota_cooldown.rs");
 include!("codex_local_access_request_transform.rs");
 include!("codex_local_access_routing_pricing.rs");
 include!("codex_local_access_request_logs.rs");
+include!("codex_local_access_turn_state.rs");
 include!("codex_local_access_profile_takeover.rs");
+include!("codex_local_access_takeover_maintenance.rs");
 include!("codex_local_access_sidecar_config.rs");
 include!("codex_local_access_automatic_routing.rs");
 include!("codex_local_access_sidecar_runtime.rs");
@@ -15,7 +17,6 @@ include!("codex_local_access_gateway_runtime.rs");
 include!("codex_local_access_provider_gateway.rs");
 include!("codex_local_access_instance_gateways.rs");
 include!("codex_local_access_probe_chat.rs");
-include!("codex_pelican_transport.rs");
 include!("codex_local_access_commands.rs");
 include!("codex_local_access_http.rs");
 // The retired in-process WebSocket gateway is retained only as a test oracle.
@@ -27,8 +28,11 @@ include!("codex_local_access_recovery.rs");
 mod tests {
     include!("codex_local_access_tests_automatic_routing.rs");
     include!("codex_local_access_tests_sidecar_gateway.rs");
+    include!("codex_local_access_tests_grok_lifecycle.rs");
     include!("codex_local_access_tests_pricing_profile.rs");
     include!("codex_local_access_tests_request_routing.rs");
+    include!("codex_local_access_tests_turn_state.rs");
+    include!("codex_local_access_tests_provider_gateway_vision.rs");
     include!("codex_local_access_tests_takeover.rs");
-    include!("codex_local_access_tests_internal_service.rs");
+    include!("codex_local_access_tests_takeover_maintenance.rs");
 }

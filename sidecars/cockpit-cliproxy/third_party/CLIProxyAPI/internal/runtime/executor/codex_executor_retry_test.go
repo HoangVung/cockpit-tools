@@ -146,7 +146,7 @@ func TestNewCodexStatusErrClassifiesKnownCodexFailures(t *testing.T) {
 			body:       []byte(`{"error":{"message":"context length exceeded","type":"invalid_request_error","code":"context_length_exceeded"}}`),
 			wantStatus: http.StatusRequestEntityTooLarge,
 			wantType:   "invalid_request_error",
-			wantCode:   "context_too_large",
+			wantCode:   "context_length_exceeded",
 		},
 		{
 			name:       "thinking signature",

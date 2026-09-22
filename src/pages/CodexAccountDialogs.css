@@ -1,0 +1,47 @@
+.codex-account-dialog-overlay {
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+
+/* Keep the shell anchored to the viewport; only the form body may scroll.
+   The semantic selector wins over legacy modal-content/provider defaults. */
+.modal-content.codex-account-dialog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: min(760px, calc(100vw - 32px));
+  max-width: 760px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+
+.modal-content.codex-account-dialog.codex-provider-modal {
+  width: min(920px, calc(100vw - 48px));
+  max-width: 920px;
+}
+
+@media (max-width: 960px) {
+  .modal-content.codex-account-dialog.codex-provider-modal {
+    width: min(860px, calc(100vw - 32px));
+    max-width: 860px;
+  }
+}
+
+.modal-content.codex-account-dialog > .modal-header,
+.modal-content.codex-account-dialog > .modal-tabs,
+.modal-content.codex-account-dialog > .modal-footer {
+  flex-shrink: 0;
+}
+
+.modal-content.codex-account-dialog > .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: inherit;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-content.codex-account-dialog > .modal-footer {
+  flex-wrap: wrap;
+}

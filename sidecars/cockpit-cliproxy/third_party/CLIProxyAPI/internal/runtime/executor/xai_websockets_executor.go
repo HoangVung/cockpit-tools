@@ -699,6 +699,7 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
 		outputItemsByIndex := make(map[int64][]byte)
 		var outputItemsFallback [][]byte
 		responseFilter := newXAIInternalXSearchResponseFilter(prepared.filterInternalXSearch, prepared.clientDeclaredTools)
+		applyPatchRestorer := newXAIApplyPatchRestorer(prepared.restoreApplyPatch)
 		recordedTranscript := false
 		for {
 			if ctx != nil && ctx.Err() != nil {
@@ -759,6 +760,11 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
 			}
 
 			for _, payload := range xaiNormalizeReasoningSummaryDataEvents(payload) {
+				payload = applyPatchRestorer.applyStream(payload)
+				if len(payload) == 0 {
+					continue
+				}
+				payload = helps.NormalizeCodexCollaborationToolCalls(payload)
 				payload = restoreXAINamespaceToolCalls(payload, prepared.namespaceTools)
 				payload = responseFilter.apply(payload)
 				if len(payload) == 0 {
@@ -785,6 +791,7 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
 						reporter.Publish(ctx, detail)
 					}
 					payload = xaiPatchCompletedOutput(payload, outputItemsByIndex, outputItemsFallback)
+					payload = applyPatchRestorer.restore(payload)
 					payload = xaiNormalizeReasoningSummaryData(payload)
 					cacheXAIReasoningReplayFromCompleted(ctx, prepared.replayScope, payload)
 					if !warmupRequest && idMapper != nil && idMapper.state != nil && !recordedTranscript {

@@ -7,8 +7,9 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useEscClose } from "../../hooks/useEscClose";
+import { useEscCloseTopmost } from "../../hooks/useEscClose";
 import { usePagination } from "../../hooks/usePagination";
 import { MultiSelectFilterDropdown } from "../MultiSelectFilterDropdown";
 import { PaginationControls } from "../PaginationControls";
@@ -36,6 +37,8 @@ export interface CodexImageAccountPickerModalProps {
   selectedIds: string[];
   /** 信息区展示的对话账号 / 供应商名称。 */
   contextLabel?: string;
+  /** 生图模型等附加设置；传入后与账号选择合并到同一个弹框里。 */
+  imageModelControl?: ReactNode;
   saving?: boolean;
   onCancel: () => void;
   onConfirm: (accountIds: string[]) => void;
@@ -57,6 +60,7 @@ export function CodexImageAccountPickerModal({
   accounts,
   selectedIds,
   contextLabel,
+  imageModelControl,
   saving = false,
   onCancel,
   onConfirm,
@@ -68,7 +72,8 @@ export function CodexImageAccountPickerModal({
   const [sortDesc, setSortDesc] = useState(true);
   const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
 
-  useEscClose(!saving, onCancel);
+  // 该弹框会叠加在启动预览 / API 服务弹框之上，ESC 只关闭最上层，避免连带关闭底层弹框。
+  useEscCloseTopmost(!saving, onCancel);
 
   const candidates = useMemo(
     () => accounts.filter((account) => isImageGenerationEligibleAccount(account)),
@@ -190,27 +195,30 @@ export function CodexImageAccountPickerModal({
             <div className="codex-oauth-binding-picker">
               <div className="codex-oauth-binding-picker-header">
                 <label>{t("codex.deepSeek.start.pickerTitle", "选择生图账号")}</label>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={saving || filtered.length === 0}
-                  onClick={() => {
-                    if (allVisibleSelected) {
-                      const visibleIds = new Set(filtered.map((item) => item.id));
-                      setDraftIds((prev) =>
-                        prev.filter((value) => !visibleIds.has(value)),
-                      );
-                      return;
-                    }
-                    const ids = new Set(draftIds);
-                    filtered.forEach((account) => ids.add(account.id));
-                    setDraftIds(Array.from(ids));
-                  }}
-                >
-                  {allVisibleSelected
-                    ? t("codex.deepSeek.start.pickerClear", "清空")
-                    : t("codex.deepSeek.start.pickerSelectAll", "全选")}
-                </button>
+                <div className="codex-oauth-binding-picker-controls">
+                  {imageModelControl}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={saving || filtered.length === 0}
+                    onClick={() => {
+                      if (allVisibleSelected) {
+                        const visibleIds = new Set(filtered.map((item) => item.id));
+                        setDraftIds((prev) =>
+                          prev.filter((value) => !visibleIds.has(value)),
+                        );
+                        return;
+                      }
+                      const ids = new Set(draftIds);
+                      filtered.forEach((account) => ids.add(account.id));
+                      setDraftIds(Array.from(ids));
+                    }}
+                  >
+                    {allVisibleSelected
+                      ? t("codex.deepSeek.start.pickerClear", "清空")
+                      : t("codex.deepSeek.start.pickerSelectAll", "全选")}
+                  </button>
+                </div>
               </div>
 
               {candidates.length === 0 ? (
@@ -394,29 +402,31 @@ export function CodexImageAccountPickerModal({
               )}
             </div>
 
-            <div className="api-key-edit-actions">
-              <span className="codex-image-account-picker-count">
-                {t("codex.deepSeek.start.imageGenSelected", {
-                  count: draftIds.length,
-                  defaultValue: "已选 {{count}} 个账号",
-                })}
-              </span>
-              <button
-                className="btn btn-secondary"
-                onClick={onCancel}
-                disabled={saving}
-              >
-                {t("common.cancel", "取消")}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => onConfirm(draftIds)}
-                disabled={saving}
-              >
-                {saving ? t("common.saving", "保存中...") : t("common.save", "保存")}
-              </button>
-            </div>
           </div>
+        </div>
+
+        {/* 操作区固定在底部：正文再长也能直接取消 / 保存。 */}
+        <div className="api-key-edit-actions codex-image-account-picker-actions">
+          <span className="codex-image-account-picker-count">
+            {t("codex.deepSeek.start.imageGenSelected", {
+              count: draftIds.length,
+              defaultValue: "已选 {{count}} 个账号",
+            })}
+          </span>
+          <button
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            {t("common.cancel", "取消")}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => onConfirm(draftIds)}
+            disabled={saving}
+          >
+            {saving ? t("common.saving", "保存中...") : t("common.save", "保存")}
+          </button>
         </div>
       </div>
     </div>

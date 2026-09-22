@@ -191,7 +191,7 @@ func TestXAIExecutorExecuteShapesResponsesRequest(t *testing.T) {
 
 	_, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
 		Model:   "grok-4.3",
-		Payload: []byte(`{"model":"grok-4.3","input":[{"type":"reasoning","summary":[{"type":"summary_text","text":"test"}],"content":null,"encrypted_content":null},{"type":"reasoning","summary":[{"type":"summary_text","text":"second"}]},{"role":"user","content":"hello"}],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"high"},"tools":[{"type":"tool_search"},{"type":"image_generation"},{"type":"custom","name":"apply_patch"},{"type":"custom","name":"custom_lookup"},{"type":"function","name":"lookup"},{"type":"web_search","external_web_access":true,"search_content_types":["text","image"]},{"type":"namespace","name":"codex_app","description":"Tools in the codex_app namespace.","tools":[{"type":"function","name":"automation_update"},{"type":"custom","name":"namespace_custom"},{"type":"tool_search"}]}],"tool_choice":{"type":"allowed_tools","tools":[{"type":"function","name":"automation_update","namespace":"codex_app"},{"type":"function","name":"lookup"},{"type":"web_search"}]}}`),
+		Payload: []byte(`{"model":"grok-4.3","input":[{"type":"reasoning","summary":[{"type":"summary_text","text":"test"}],"content":null,"encrypted_content":null},{"type":"reasoning","summary":[{"type":"summary_text","text":"second"}]},{"role":"user","content":"hello"}],"include":["reasoning.encrypted_content"],"reasoning":{"effort":"high"},"tools":[{"type":"tool_search"},{"type":"image_generation"},{"type":"custom","name":"apply_patch","description":"Edit files","format":{"type":"grammar","syntax":"lark","definition":"start: patch"}},{"type":"custom","name":"custom_lookup"},{"type":"function","name":"lookup"},{"type":"web_search","external_web_access":true,"search_content_types":["text","image"]},{"type":"namespace","name":"codex_app","description":"Tools in the codex_app namespace.","tools":[{"type":"function","name":"automation_update"},{"type":"custom","name":"namespace_custom"},{"type":"tool_search"}]}],"tool_choice":{"type":"allowed_tools","tools":[{"type":"function","name":"automation_update","namespace":"codex_app"},{"type":"function","name":"lookup"},{"type":"web_search"}]}}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FormatOpenAIResponse,
 		Stream:       false,
@@ -246,12 +246,13 @@ func TestXAIExecutorExecuteShapesResponsesRequest(t *testing.T) {
 		t.Fatalf("input.2 exists, want consecutive reasoning item merged; body=%s", string(gotBody))
 	}
 	tools := gjson.GetBytes(gotBody, "tools").Array()
-	if len(tools) != 6 {
-		t.Fatalf("tools length = %d, want 6; body=%s", len(tools), string(gotBody))
+	if len(tools) != 7 {
+		t.Fatalf("tools length = %d, want 7; body=%s", len(tools), string(gotBody))
 	}
 	foundAutomationUpdate := false
 	foundNamespaceCustom := false
 	foundXSearch := false
+	foundApplyPatch := false
 	for i, tool := range tools {
 		toolType := tool.Get("type").String()
 		if toolType == "image_generation" {
@@ -266,8 +267,18 @@ func TestXAIExecutorExecuteShapesResponsesRequest(t *testing.T) {
 		if toolType == "function" && !tool.Get("parameters").Exists() {
 			t.Fatalf("tools.%d.parameters missing for xAI function tool; body=%s", i, string(gotBody))
 		}
-		if got := tool.Get("name").String(); got == "apply_patch" {
-			t.Fatalf("tools.%d.name = apply_patch, want removed; body=%s", i, string(gotBody))
+		if got := tool.Get("name").String(); got == xaiApplyPatchToolName {
+			foundApplyPatch = true
+			if toolType != "function" {
+				t.Fatalf("tools.%d.type = %q, want function for downgraded apply_patch; body=%s", i, toolType, string(gotBody))
+			}
+			if tool.Get("format").Exists() {
+				t.Fatalf("tools.%d.format exists, want removed for xAI function tool; body=%s", i, string(gotBody))
+			}
+			if got := tool.Get("parameters.properties.input.type").String(); got != "string" {
+				t.Fatalf("tools.%d.parameters.properties.input.type = %q, want string; body=%s", i, got, string(gotBody))
+			}
+			assertXAIApplyPatchEnvelopeDescription(t, tool, gotBody)
 		}
 		switch tool.Get("name").String() {
 		case "codex_app__automation_update":
@@ -293,6 +304,10 @@ func TestXAIExecutorExecuteShapesResponsesRequest(t *testing.T) {
 	if !foundXSearch {
 		t.Fatalf("native x_search tool was not injected; body=%s", string(gotBody))
 	}
+	if !foundApplyPatch {
+		t.Fatalf("apply_patch was not forwarded as a downgraded function tool; body=%s", string(gotBody))
+	}
+	assertXAIApplyPatchInstructionReminder(t, gotBody)
 	if got := gjson.GetBytes(gotBody, "tool_choice.tools.0.name").String(); got != "codex_app__automation_update" {
 		t.Fatalf("tool_choice.tools.0.name = %q, want codex_app__automation_update; body=%s", got, string(gotBody))
 	}
@@ -659,7 +674,7 @@ func TestXAIExecutorExecuteNormalizesCustomToolCallHistory(t *testing.T) {
 			{"type":"custom_tool_call_output","output":"missing call id"},
 			{"type":"custom_tool_call","status":"completed","call_id":"xs_call-1","name":"x_semantic_search","input":"{\"query\":\"US stocks\",\"limit\":\"10\"}","internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}},
 			{"type":"custom_tool_call_output","call_id":"xs_call-1","output":"unsupported custom tool call: x_semantic_search","internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}},
-			{"type":"custom_tool_call","call_id":"call-2","name":"apply_patch","input":"*** Begin Patch"},
+			{"type":"custom_tool_call","call_id":"call-2","name":"apply_patch","input":"*** Begin Patch ***\n*** Add File: hello.txt\n+hello\n*** End Patch ***"},
 			{"type":"custom_tool_call_output","call_id":"call-2","output":[{"type":"input_text","text":"done"}]}
 		],
 		"tools":[{"type":"x_search"}],
@@ -696,8 +711,8 @@ func TestXAIExecutorExecuteNormalizesCustomToolCallHistory(t *testing.T) {
 	if got := input[2].Get("output").String(); got != "unsupported custom tool call: x_semantic_search" {
 		t.Fatalf("input.2.output = %q; body=%s", got, gotBody)
 	}
-	if got := gjson.Get(input[3].Get("arguments").String(), "input").String(); got != "*** Begin Patch" {
-		t.Fatalf("input.3 freeform arguments = %q, want patch input; body=%s", got, gotBody)
+	if got := gjson.Get(input[3].Get("arguments").String(), "input").String(); got != "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch" {
+		t.Fatalf("input.3 freeform arguments = %q, want normalized patch input; body=%s", got, gotBody)
 	}
 	if got := input[4].Get("output").String(); got != `[{"type":"input_text","text":"done"}]` {
 		t.Fatalf("input.4 output = %q, want flattened JSON string; body=%s", got, gotBody)
@@ -3027,8 +3042,8 @@ func TestXAIExecutorExecuteStreamFiltersToolSearchTool(t *testing.T) {
 	}
 
 	tools := gjson.GetBytes(gotBody, "tools").Array()
-	if len(tools) != 6 {
-		t.Fatalf("tools length = %d, want 6; body=%s", len(tools), string(gotBody))
+	if len(tools) != 7 {
+		t.Fatalf("tools length = %d, want 7; body=%s", len(tools), string(gotBody))
 	}
 	if gjson.GetBytes(gotBody, "input.0.content").Exists() {
 		t.Fatalf("input.0.content exists, want removed; body=%s", string(gotBody))
@@ -3051,6 +3066,7 @@ func TestXAIExecutorExecuteStreamFiltersToolSearchTool(t *testing.T) {
 	foundAutomationUpdate := false
 	foundNamespaceCustom := false
 	foundXSearch := false
+	foundApplyPatch := false
 	for i, tool := range tools {
 		toolType := tool.Get("type").String()
 		if toolType == "image_generation" {
@@ -3063,7 +3079,14 @@ func TestXAIExecutorExecuteStreamFiltersToolSearchTool(t *testing.T) {
 			t.Fatalf("tools.%d.parameters missing for xAI function tool; body=%s", i, string(gotBody))
 		}
 		if got := tool.Get("name").String(); got == "apply_patch" {
-			t.Fatalf("tools.%d.name = apply_patch, want removed; body=%s", i, string(gotBody))
+			foundApplyPatch = true
+			if toolType != "function" {
+				t.Fatalf("tools.%d.type = %q, want function for downgraded apply_patch; body=%s", i, toolType, string(gotBody))
+			}
+			if got := tool.Get("parameters.properties.input.type").String(); got != "string" {
+				t.Fatalf("tools.%d.parameters.properties.input.type = %q, want string; body=%s", i, got, string(gotBody))
+			}
+			assertXAIApplyPatchEnvelopeDescription(t, tool, gotBody)
 		}
 		switch tool.Get("name").String() {
 		case "codex_app__automation_update":
@@ -3092,6 +3115,10 @@ func TestXAIExecutorExecuteStreamFiltersToolSearchTool(t *testing.T) {
 	if !foundXSearch {
 		t.Fatalf("native x_search tool was not injected; body=%s", string(gotBody))
 	}
+	if !foundApplyPatch {
+		t.Fatalf("apply_patch was not forwarded as a downgraded function tool; body=%s", string(gotBody))
+	}
+	assertXAIApplyPatchInstructionReminder(t, gotBody)
 }
 
 func TestXAIExecutorExecuteStreamNormalizesReasoningTextEvents(t *testing.T) {
@@ -6227,6 +6254,394 @@ func TestXAIExecutorExecuteImagesOAuthBaseURLResolution(t *testing.T) {
 				t.Fatalf("recorded URL = %q, want %q", recordedURL, tt.wantURL)
 			}
 		})
+	}
+}
+
+func assertXAIApplyPatchInstructionReminder(t *testing.T, body []byte) {
+	t.Helper()
+	instructions := gjson.GetBytes(body, "instructions").String()
+	for _, want := range []string{
+		xaiApplyPatchBeginMarker,
+		xaiApplyPatchEndMarker,
+		xaiApplyPatchBeginWrong,
+		xaiApplyPatchEndWrong,
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("instructions missing %q; body=%s", want, string(body))
+		}
+	}
+}
+
+func assertXAIApplyPatchEnvelopeDescription(t *testing.T, tool gjson.Result, body []byte) {
+	t.Helper()
+	desc := tool.Get("description").String()
+	for _, want := range []string{
+		xaiApplyPatchBeginMarker,
+		xaiApplyPatchEndMarker,
+		xaiApplyPatchBeginWrong,
+		xaiApplyPatchEndWrong,
+		"Use apply_patch to edit local files",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("apply_patch description missing %q; body=%s", want, string(body))
+		}
+	}
+	if !strings.Contains(desc, xaiApplyPatchBeginMarker+"\n") {
+		t.Fatalf("apply_patch description must put %q on its own line; desc=%q", xaiApplyPatchBeginMarker, desc)
+	}
+	if !strings.Contains(desc, xaiApplyPatchEndMarker+"\n") && !strings.HasSuffix(desc, xaiApplyPatchEndMarker) {
+		t.Fatalf("apply_patch description must put %q on its own line; desc=%q", xaiApplyPatchEndMarker, desc)
+	}
+	if strings.Contains(desc, "Start with *** Begin Patch and end with *** End Patch.") {
+		t.Fatalf("apply_patch description still uses the short envelope hint; body=%s", string(body))
+	}
+	inputDesc := tool.Get("parameters.properties.input.description").String()
+	if !strings.Contains(inputDesc, xaiApplyPatchBeginWrong) || !strings.Contains(inputDesc, xaiApplyPatchEndWrong) {
+		t.Fatalf("apply_patch input description missing invalid envelope counterexamples; body=%s", string(body))
+	}
+}
+
+func TestXAIApplyPatchRestorerRewritesFunctionCallToCustomToolCall(t *testing.T) {
+	if restorer := newXAIApplyPatchRestorer(false); restorer != nil {
+		t.Fatal("disabled apply_patch restorer must be nil")
+	}
+	if xaiClientDeclaresApplyPatch([]byte(`{"tools":[{"type":"function","name":"apply_patch"}]}`)) {
+		t.Fatal("function apply_patch declaration must not enable freeform restoration")
+	}
+	if !xaiClientDeclaresApplyPatch([]byte(`{"tools":[{"type":"custom","name":"apply_patch"}]}`)) {
+		t.Fatal("custom apply_patch declaration must enable freeform restoration")
+	}
+
+	restorer := newXAIApplyPatchRestorer(true)
+	ordinary := []byte(`{"type":"response.output_item.added","output_index":0,"item":{"id":"fc_0","type":"function_call","name":"lookup","arguments":""}}`)
+	if got := restorer.applyStream(ordinary); !bytes.Equal(got, ordinary) {
+		t.Fatalf("ordinary tool event mutated: %s", got)
+	}
+
+	added := []byte(`{"type":"response.output_item.added","output_index":1,"item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":""}}`)
+	got := restorer.applyStream(added)
+	if gotType := gjson.GetBytes(got, "item.type").String(); gotType != "custom_tool_call" {
+		t.Fatalf("added item.type = %q, want custom_tool_call; event=%s", gotType, got)
+	}
+	if gjson.GetBytes(got, "item.arguments").Exists() {
+		t.Fatalf("added item kept arguments: %s", got)
+	}
+	if gjson.GetBytes(got, "item.input").String() != "" {
+		t.Fatalf("added item input should start empty: %s", got)
+	}
+
+	delta := []byte(`{"type":"response.function_call_arguments.delta","output_index":1,"item_id":"fc_1","delta":"{\"input\":\"*** Begin"}`)
+	if got := restorer.applyStream(delta); got != nil {
+		t.Fatalf("apply_patch arguments delta should be absorbed, got %s", got)
+	}
+
+	done := []byte(`{"type":"response.output_item.done","output_index":1,"item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\\n*** End Patch\"}"}}`)
+	got = restorer.applyStream(done)
+	if gotType := gjson.GetBytes(got, "item.type").String(); gotType != "custom_tool_call" {
+		t.Fatalf("done item.type = %q, want custom_tool_call; event=%s", gotType, got)
+	}
+	if gotInput := gjson.GetBytes(got, "item.input").String(); gotInput != "*** Begin Patch\n*** End Patch" {
+		t.Fatalf("done item.input = %q; event=%s", gotInput, got)
+	}
+	if gjson.GetBytes(got, "item.arguments").Exists() {
+		t.Fatalf("done item kept arguments: %s", got)
+	}
+
+	completed := []byte(`{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"id":"fc_2","call_id":"call_2","type":"function_call","name":"apply_patch","arguments":"{\"input\":\"patch text\"}"},{"id":"fc_3","call_id":"call_3","type":"function_call","name":"lookup","arguments":"{}"}]}}`)
+	got = restorer.applyStream(completed)
+	if gotType := gjson.GetBytes(got, "response.output.0.type").String(); gotType != "custom_tool_call" {
+		t.Fatalf("completed output.0.type = %q, want custom_tool_call; event=%s", gotType, got)
+	}
+	if gotInput := gjson.GetBytes(got, "response.output.0.input").String(); gotInput != "patch text" {
+		t.Fatalf("completed output.0.input = %q; event=%s", gotInput, got)
+	}
+	if gotType := gjson.GetBytes(got, "response.output.1.type").String(); gotType != "function_call" {
+		t.Fatalf("ordinary completed tool mutated: %s", got)
+	}
+}
+
+func TestXAIExecutorRestoresApplyPatchCustomToolCall(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var errRead error
+		gotBody, errRead = io.ReadAll(r.Body)
+		if errRead != nil {
+			t.Fatalf("read body: %v", errRead)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: " + `{"type":"response.completed","response":{"id":"resp_patch","object":"response","created_at":0,"status":"completed","model":"grok-4.6","output":[{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\\n*** End Patch\"}"}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"))
+	}))
+	defer server.Close()
+
+	exec := NewXAIExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		ID:       "xai-auth",
+		Provider: "xai",
+		Attributes: map[string]string{
+			"base_url":  server.URL,
+			"auth_kind": "oauth",
+		},
+		Metadata: map[string]any{
+			"access_token": "xai-token",
+			"email":        "user@example.com",
+		},
+	}
+	resp, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "grok-4.6",
+		Payload: []byte(`{"model":"grok-4.6","input":[{"role":"user","content":"edit"}],"tools":[{"type":"custom","name":"apply_patch","description":"Edit files","format":{"type":"grammar","syntax":"lark","definition":"start: patch"}}],"tool_choice":"auto"}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	applyPatch := gjson.GetBytes(gotBody, `tools.#(name=="apply_patch")`)
+	if got := applyPatch.Get("type").String(); got != "function" {
+		t.Fatalf("upstream apply_patch type = %q, want function; body=%s", got, string(gotBody))
+	}
+	assertXAIApplyPatchEnvelopeDescription(t, applyPatch, gotBody)
+	assertXAIApplyPatchInstructionReminder(t, gotBody)
+
+	out := resp.Payload
+	if got := gjson.GetBytes(out, "output.0.type").String(); got != "custom_tool_call" {
+		t.Fatalf("output.0.type = %q, want custom_tool_call; payload=%s", got, string(out))
+	}
+	if got := gjson.GetBytes(out, "output.0.input").String(); got != "*** Begin Patch\n*** End Patch" {
+		t.Fatalf("output.0.input = %q; payload=%s", got, string(out))
+	}
+	if gjson.GetBytes(out, "output.0.arguments").Exists() {
+		t.Fatalf("output.0.arguments must be removed; payload=%s", string(out))
+	}
+}
+
+func TestXAIExecutorStreamRestoresApplyPatchCustomToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":""}}`,
+			`{"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_1","delta":"{\"input\":\"*** Begin"}`,
+			`{"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc_1","arguments":"{\"input\":\"*** Begin Patch\\n*** End Patch\"}"}`,
+			`{"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\\n*** End Patch\"}"}}`,
+			`{"type":"response.completed","response":{"id":"resp_patch","object":"response","created_at":0,"status":"completed","model":"grok-4.6","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		}
+		for _, event := range events {
+			_, _ = w.Write([]byte("data: " + event + "\n\n"))
+		}
+	}))
+	defer server.Close()
+
+	exec := NewXAIExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		ID:       "xai-auth",
+		Provider: "xai",
+		Attributes: map[string]string{
+			"base_url":  server.URL,
+			"auth_kind": "oauth",
+		},
+		Metadata: map[string]any{
+			"access_token": "xai-token",
+			"email":        "user@example.com",
+		},
+	}
+	result, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "grok-4.6",
+		Payload: []byte(`{"model":"grok-4.6","stream":true,"input":[{"role":"user","content":"edit"}],"tools":[{"type":"custom","name":"apply_patch","description":"Edit files","format":{"type":"grammar","syntax":"lark","definition":"start: patch"}}],"tool_choice":"auto"}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse})
+	if err != nil {
+		t.Fatalf("ExecuteStream() error = %v", err)
+	}
+
+	var joined strings.Builder
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error = %v", chunk.Err)
+		}
+		joined.Write(chunk.Payload)
+	}
+	out := joined.String()
+	if !strings.Contains(out, `"type":"custom_tool_call"`) {
+		t.Fatalf("stream did not emit custom_tool_call: %s", out)
+	}
+	if strings.Contains(out, `"type":"function_call"`) {
+		t.Fatalf("stream leaked function_call for apply_patch: %s", out)
+	}
+	if !strings.Contains(out, "*** Begin Patch") {
+		t.Fatalf("stream lost the patch text: %s", out)
+	}
+}
+
+func TestXAIEnsureApplyPatchInstructions(t *testing.T) {
+	got := xaiEnsureApplyPatchInstructions([]byte(`{"instructions":"You are Codex."}`))
+	instructions := gjson.GetBytes(got, "instructions").String()
+	if !strings.Contains(instructions, "You are Codex.") {
+		t.Fatalf("lost original instructions: %s", instructions)
+	}
+	if !strings.Contains(instructions, xaiApplyPatchBeginMarker) || !strings.Contains(instructions, xaiApplyPatchBeginWrong) {
+		t.Fatalf("missing apply_patch reminder: %s", instructions)
+	}
+
+	again := xaiEnsureApplyPatchInstructions(got)
+	if gjson.GetBytes(again, "instructions").String() != instructions {
+		t.Fatalf("apply_patch reminder should be idempotent; first=%q second=%q", instructions, gjson.GetBytes(again, "instructions").String())
+	}
+
+	empty := xaiEnsureApplyPatchInstructions([]byte(`{}`))
+	if got := gjson.GetBytes(empty, "instructions").String(); !strings.Contains(got, xaiApplyPatchBeginMarker) {
+		t.Fatalf("empty instructions should receive reminder; got %q", got)
+	}
+}
+
+func TestXAINormalizeApplyPatchHistory(t *testing.T) {
+	body := []byte(`{"input":[{"type":"custom_tool_call","call_id":"call-1","name":"apply_patch","input":"*** Begin Patch ***\n+hello\n*** End Patch ***"},{"type":"function_call","call_id":"call-2","name":"lookup","arguments":"{}"}]}`)
+	got := xaiNormalizeApplyPatchHistory(body)
+	if gotInput := gjson.GetBytes(got, "input.0.input").String(); gotInput != "*** Begin Patch\n+hello\n*** End Patch" {
+		t.Fatalf("history input = %q; body=%s", gotInput, got)
+	}
+	if gotType := gjson.GetBytes(got, "input.1.type").String(); gotType != "function_call" {
+		t.Fatalf("ordinary history item mutated: %s", got)
+	}
+}
+
+func TestXAINormalizeApplyPatchEnvelope(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "wrong markers on their own lines",
+			in:   "*** Begin Patch ***\n*** Add File: hello.txt\n+hello\n*** End Patch ***",
+			want: "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch",
+		},
+		{
+			name: "correct envelope is unchanged",
+			in:   "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch",
+			want: "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch",
+		},
+		{
+			name: "inner wrong markers stay",
+			in:   "*** Begin Patch\n*** Begin Patch ***\n+hello\n*** End Patch",
+			want: "*** Begin Patch\n*** Begin Patch ***\n+hello\n*** End Patch",
+		},
+		{
+			name: "leading and trailing blank lines",
+			in:   "\n*** Begin Patch ***\n+hello\n*** End Patch ***\n",
+			want: "\n*** Begin Patch\n+hello\n*** End Patch\n",
+		},
+		{
+			name: "crlf markers",
+			in:   "*** Begin Patch ***\r\n+hello\r\n*** End Patch ***\r",
+			want: "*** Begin Patch\r\n+hello\r\n*** End Patch\r",
+		},
+		{
+			name: "empty input",
+			in:   "",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := xaiNormalizeApplyPatchEnvelope(tc.in); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	got := xaiApplyPatchInputFromArguments("{\"input\":\"*** Begin Patch ***\\n*** Add File: a.txt\\n+1\\n*** End Patch ***\"}")
+	want := "*** Begin Patch\n*** Add File: a.txt\n+1\n*** End Patch"
+	if got != want {
+		t.Fatalf("json arguments got %q, want %q", got, want)
+	}
+}
+
+func TestXAIApplyPatchRestorerNormalizesWrongEnvelope(t *testing.T) {
+	restorer := newXAIApplyPatchRestorer(true)
+	done := []byte(`{"type":"response.output_item.done","output_index":1,"item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch ***\\n*** Add File: hello.txt\\n+hello\\n*** End Patch ***\"}"}}`)
+	got := restorer.applyStream(done)
+	if gotType := gjson.GetBytes(got, "item.type").String(); gotType != "custom_tool_call" {
+		t.Fatalf("done item.type = %q, want custom_tool_call; event=%s", gotType, got)
+	}
+	want := "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch"
+	if gotInput := gjson.GetBytes(got, "item.input").String(); gotInput != want {
+		t.Fatalf("done item.input = %q, want %q; event=%s", gotInput, want, got)
+	}
+}
+
+func TestXAIExecutorPreparesCodexMultiAgentV2Request(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var errRead error
+		gotBody, errRead = io.ReadAll(r.Body)
+		if errRead != nil {
+			t.Fatalf("read body: %v", errRead)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"created_at\":0,\"status\":\"completed\",\"model\":\"grok-4.6\",\"output\":[{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"collaboration::wait_agent\",\"arguments\":\"{\\\"timeout_ms\\\":180000.0}\"}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"))
+	}))
+	defer server.Close()
+
+	exec := NewXAIExecutor(&config.Config{Codex: config.CodexConfig{OptimizeMultiAgentV2: true}})
+	auth := &cliproxyauth.Auth{
+		ID:       "xai-auth",
+		Provider: "xai",
+		Attributes: map[string]string{
+			"base_url":  server.URL,
+			"auth_kind": "oauth",
+		},
+		Metadata: map[string]any{
+			"access_token": "xai-token",
+			"email":        "user@example.com",
+		},
+	}
+	payload := []byte(`{"model":"grok-4.6","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"agent_message","author":{"role":"user"},"recipient":"root","content":[{"type":"encrypted_content","encrypted_content":"child task text"}]},{"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"codex compatibility"}}],"tools":[{"type":"namespace","name":"collaboration","description":"Tools for spawning and managing sub-agents.","tools":[{"type":"function","name":"spawn_agent","description":"Spawn a sub-agent.","parameters":{"type":"object","properties":{}}},{"type":"function","name":"send_message","description":"Send a message to a sub-agent.","parameters":{"type":"object","properties":{"message":{"type":"string","encrypted":true}}}}]}],"tool_choice":"auto"}`)
+
+	result, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "grok-4.6",
+		Payload: payload,
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAIResponse,
+		Stream:       true,
+		Headers:      http.Header{"User-Agent": []string{"Codex Desktop/0.151.0"}},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream() error = %v", err)
+	}
+	var out strings.Builder
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error = %v", chunk.Err)
+		}
+		out.Write(chunk.Payload)
+	}
+
+	if gjson.GetBytes(gotBody, `tools.#(name=="collaboration__send_message").parameters.properties.message.encrypted`).Exists() {
+		t.Fatalf("encrypted message parameter must be removed for third-party upstreams; body=%s", string(gotBody))
+	}
+	if !gjson.GetBytes(gotBody, `tools.#(name=="collaboration__spawn_agent")`).Exists() {
+		t.Fatalf("collaboration tools must survive xAI normalization; body=%s", string(gotBody))
+	}
+	var agentMessage gjson.Result
+	for _, item := range gjson.GetBytes(gotBody, "input").Array() {
+		if item.Get("type").String() == "message" && item.Get("recipient").String() == "root" {
+			agentMessage = item
+			break
+		}
+	}
+	if !agentMessage.Exists() {
+		t.Fatalf("agent_message must be converted into a portable message item; body=%s", string(gotBody))
+	}
+	if got := agentMessage.Get("content.0.type").String(); got != "input_text" {
+		t.Fatalf("agent_message content.0.type = %q, want input_text; body=%s", got, string(gotBody))
+	}
+	if got := agentMessage.Get("content.0.text").String(); got != "child task text" {
+		t.Fatalf("agent_message content.0.text = %q, want the decrypted task text; body=%s", got, string(gotBody))
+	}
+	if got := gjson.GetBytes(gotBody, `input.#(type=="web_search_call").action.queries.0`).String(); got != "codex compatibility" {
+		t.Fatalf("web_search_call queries[0] = %q, want the original query; body=%s", got, string(gotBody))
+	}
+	if response := out.String(); !strings.Contains(response, `"namespace":"collaboration"`) || !strings.Contains(response, `"name":"wait_agent"`) {
+		t.Fatalf("collaboration tool call must be restored for the client; response=%s", response)
+	} else if strings.Contains(response, "180000.0") || !strings.Contains(response, "180000") {
+		t.Fatalf("integer-valued floating point argument must be normalized; response=%s", response)
 	}
 }
 

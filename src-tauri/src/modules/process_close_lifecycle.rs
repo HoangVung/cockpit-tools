@@ -2301,9 +2301,11 @@ pub fn start_codex_with_args_and_env(
             Ok(child) => Some(child),
             Err(err) => {
                 let launch_path_text = launch_path.to_string_lossy().to_ascii_lowercase();
-                if err.kind() == std::io::ErrorKind::PermissionDenied
-                    && launch_path_text.contains("\\windowsapps\\")
-                {
+                let retryable = matches!(
+                    err.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                );
+                if retryable && launch_path_text.contains("\\windowsapps\\") {
                     let mut fallback_args = build_codex_app_launch_args(extra_args);
                     fallback_args.push(format!(
                         "--user-data-dir={}",
@@ -2554,9 +2556,13 @@ fn launch_windows_codex_instance(
     match spawn(launch_path) {
         Ok(child) => return (launch_path.to_path_buf(), Ok(child)),
         Err(error) => {
-            if error.kind() != std::io::ErrorKind::PermissionDenied
-                || !is_windowsapps_launch_path(launch_path)
-            {
+            // 商店包更新后旧版本目录会被删除或失去执行权限：NotFound / PermissionDenied
+            // 都应该重新解析「当前注册的包」再重试一次。
+            let retryable = matches!(
+                error.kind(),
+                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+            );
+            if !retryable || !is_windowsapps_launch_path(launch_path) {
                 return (launch_path.to_path_buf(), Err(error));
             }
             let Some(refreshed) = refresh_registered_codex_store_launch_path(launch_path) else {

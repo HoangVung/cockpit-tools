@@ -2450,6 +2450,24 @@ html[data-reduced-motion="true"] .codex-api-service-key-advanced-toggle[aria-exp
   white-space: nowrap;
 }
 
+.codex-api-service-log-model {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.codex-api-service-log-model-upstream {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .codex-api-service-log-row > div:last-child {
   flex-wrap: wrap;
 }

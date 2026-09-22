@@ -11,6 +11,9 @@ export interface CodexExperimentalModelDefinition {
   display_name: string;
   /** undefined follows the official model reasoning levels; otherwise custom multi-select. */
   reasoning_efforts?: CodexReasoningEffort[];
+  /** Omitted values follow the model catalog metadata. */
+  context_window?: number;
+  auto_compact_token_limit?: number;
 }
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
@@ -32,7 +35,7 @@ export interface CodexQuickConfig {
   context_management_experimental_mode: boolean;
 }
 
-export type CodexAppSpeed = "standard" | "fast" | "ultrafast";
+export type CodexAppSpeed = "standard" | "fast";
 export type CodexFingerprintMode = "off" | "device" | "session" | "full";
 
 export interface CodexAppSpeedConfig {

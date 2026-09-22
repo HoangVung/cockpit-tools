@@ -79,7 +79,7 @@ func TestUsageServiceTierUsesClientRequestedTier(t *testing.T) {
 	if got := usageServiceTier(coreusage.Record{RequestServiceTier: "priority"}, ""); got != "priority" {
 		t.Fatalf("deprecated request tier = %q, want priority", got)
 	}
-	// 官方“超高速”档位必须原样保留，不能落回标准档。
+	// Preserve explicitly requested tiers as raw values, even when not advertised.
 	if got := usageServiceTier(coreusage.Record{ServiceTier: "ultrafast"}, ""); got != "ultrafast" {
 		t.Fatalf("client ultrafast tier = %q, want ultrafast", got)
 	}
@@ -329,6 +329,143 @@ func TestCodexClientModelsResponseShape(t *testing.T) {
 	}
 }
 
+func TestCodexClientModelsShareUnifiedCompactionHash(t *testing.T) {
+	response := buildCodexClientModelsResponse(
+		[]string{"gpt-5.5", "gpt-5.6-sol", "gpt-6-astra", "deepseek-flash", "custom-third-party"},
+		&apiKeySpec{},
+		nil,
+		nil,
+	)
+	models, ok := response["models"].([]map[string]any)
+	if !ok {
+		t.Fatalf("models response should contain a models array: %#v", response["models"])
+	}
+	if len(models) != 5 {
+		t.Fatalf("expected 5 models, got %d", len(models))
+	}
+	for _, model := range models {
+		if model["comp_hash"] != codexClientCompactionHash {
+			t.Fatalf("model %v comp_hash = %#v, want %q", model["slug"], model["comp_hash"], codexClientCompactionHash)
+		}
+	}
+}
+
+func TestCodexClientModelsKeepApplyPatchForXAIModels(t *testing.T) {
+	m := &manifest{
+		Accounts: []accountSpec{
+			{ID: "grok-account", AuthID: "grok-account.json", Provider: "xai", ModelIDs: []string{"grok-4.6"}},
+		},
+	}
+	response := buildCodexClientModelsResponse([]string{"grok-4.6", "custom-third-party"}, &apiKeySpec{}, nil, m)
+	models, ok := response["models"].([]map[string]any)
+	if !ok {
+		t.Fatalf("models response should contain a models array: %#v", response["models"])
+	}
+	grok := findCodexClientModelForTest(models, "grok-4.6")
+	if grok == nil {
+		t.Fatal("expected grok-4.6 in the Codex client catalog")
+	}
+	if got := stringFromAny(grok["apply_patch_tool_type"]); got != "freeform" {
+		t.Fatalf("grok-4.6 apply_patch_tool_type = %q, want freeform; entry=%#v", got, grok)
+	}
+	// 只有 xai-only 模型补 freeform 声明，其它第三方模型保持原目录形态。
+	other := findCodexClientModelForTest(models, "custom-third-party")
+	if other == nil {
+		t.Fatal("expected custom-third-party in the Codex client catalog")
+	}
+	if _, exists := other["apply_patch_tool_type"]; exists {
+		t.Fatalf("non-xai model must not declare apply_patch: %#v", other)
+	}
+}
+
+func TestThirdPartyModelsDeclareMultiAgentV2InCodexCatalog(t *testing.T) {
+	m := &manifest{
+		Accounts: []accountSpec{
+			{ID: "grok-account", AuthID: "grok-account.json", Provider: "xai", ModelIDs: []string{"grok-4.6"}},
+		},
+	}
+	enabled := &config.Config{}
+	enabled.Codex.OptimizeMultiAgentV2 = true
+
+	response := buildCodexClientModelsResponse([]string{"grok-4.6", "gpt-5.5"}, &apiKeySpec{}, nil, m)
+	applyThirdPartyMultiAgentV2Catalog(response, &apiKeySpec{}, m, enabled)
+	models, ok := response["models"].([]map[string]any)
+	if !ok {
+		t.Fatalf("models response should contain a models array: %#v", response["models"])
+	}
+	grok := findCodexClientModelForTest(models, "grok-4.6")
+	if grok == nil {
+		t.Fatal("expected grok-4.6 in the Codex client catalog")
+	}
+	if got := stringFromAny(grok["multi_agent_version"]); got != "v2" {
+		t.Fatalf("grok-4.6 multi_agent_version = %q, want v2", got)
+	}
+	if official := findCodexClientModelForTest(models, "gpt-5.5"); official != nil {
+		if got := stringFromAny(official["multi_agent_version"]); got != "" {
+			t.Fatalf("official model multi_agent_version = %q, want its own declaration", got)
+		}
+	}
+
+	// 供应商网关模式下该 Key 的模型全部走第三方上游，同样声明 v2。
+	gatewaySpec := &apiKeySpec{ProviderGateway: &providerGatewaySpec{UpstreamModel: "deepseek-v4-flash"}}
+	gatewayResponse := buildCodexClientModelsResponse([]string{"gpt-5.5"}, gatewaySpec, nil, nil)
+	applyThirdPartyMultiAgentV2Catalog(gatewayResponse, gatewaySpec, nil, enabled)
+	gatewayModels, _ := gatewayResponse["models"].([]map[string]any)
+	gatewayModel := findCodexClientModelForTest(gatewayModels, "gpt-5.5")
+	if gatewayModel == nil || stringFromAny(gatewayModel["multi_agent_version"]) != "v2" {
+		t.Fatalf("provider-gateway model multi_agent_version = %#v, want v2", gatewayModel)
+	}
+
+	// 开关关闭时保持原目录形态。
+	disabledResponse := buildCodexClientModelsResponse([]string{"grok-4.6"}, &apiKeySpec{}, nil, m)
+	applyThirdPartyMultiAgentV2Catalog(disabledResponse, &apiKeySpec{}, m, &config.Config{})
+	disabledModels, _ := disabledResponse["models"].([]map[string]any)
+	disabledGrok := findCodexClientModelForTest(disabledModels, "grok-4.6")
+	if got := stringFromAny(disabledGrok["multi_agent_version"]); got != "" {
+		t.Fatalf("multi_agent_version = %q, want no declaration when the optimization is off", got)
+	}
+}
+
+func TestCodexModelsEndpointDeclaresMultiAgentV2ForThirdPartyModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	m := deepseekAutomaticRoutingManifest(t, "http://127.0.0.1:1")
+	cfg := &config.Config{}
+	cfg.Codex.OptimizeMultiAgentV2 = true
+	server := &relayServer{
+		manifest: m,
+		cfg:      cfg,
+		policy:   &requestPolicy{manifest: m, cfg: cfg, tracker: newRequestUsageTracker()},
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/models?client_version=1", nil)
+	request.Header.Set("Authorization", "Bearer client-key")
+	server.router().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode models response: %v", err)
+	}
+	found := false
+	for _, model := range payload.Models {
+		slug, _ := model["slug"].(string)
+		if slug != "deepseek-flash" {
+			continue
+		}
+		found = true
+		if got := stringFromAny(model["multi_agent_version"]); got != "v2" {
+			t.Fatalf("deepseek-flash multi_agent_version = %q, want v2", got)
+		}
+	}
+	if !found {
+		t.Fatalf("deepseek-flash missing from Codex models response: %#v", payload.Models)
+	}
+}
+
 func TestCodexClientModelsResponsePreserves56Template(t *testing.T) {
 	response := buildCodexClientModelsResponse([]string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "custom-compat-model"}, &apiKeySpec{}, nil, nil)
 	models, ok := response["models"].([]map[string]any)
@@ -342,9 +479,9 @@ func TestCodexClientModelsResponsePreserves56Template(t *testing.T) {
 	if intFromAny(sol["context_window"]) != 272000 || intFromAny(sol["max_context_window"]) != 921000 {
 		t.Fatalf("sol context windows = %#v / %#v", sol["context_window"], sol["max_context_window"])
 	}
-	// 官方为 gpt-5.6-sol 同时声明 Fast 与 Ultrafast 两个档位。
+	// Advertise Fast only; do not inject an unverified Ultrafast tier.
 	tiers, ok := sol["service_tiers"].([]any)
-	if !ok || len(tiers) != 2 {
+	if !ok || len(tiers) != 1 {
 		t.Fatalf("sol service_tiers = %#v", sol["service_tiers"])
 	}
 	tierIDs := make([]string, 0, len(tiers))
@@ -352,8 +489,8 @@ func TestCodexClientModelsResponsePreserves56Template(t *testing.T) {
 		tier, _ := raw.(map[string]any)
 		tierIDs = append(tierIDs, strings.TrimSpace(fmt.Sprint(tier["id"])))
 	}
-	if got := strings.Join(tierIDs, ","); got != "priority,ultrafast" {
-		t.Fatalf("sol service tier ids = %q, want priority,ultrafast", got)
+	if got := strings.Join(tierIDs, ","); got != "priority" {
+		t.Fatalf("sol service tier ids = %q, want priority", got)
 	}
 	if got, ok := sol["supports_search_tool"].(bool); !ok || !got {
 		t.Fatalf("sol supports_search_tool = %#v, want true", sol["supports_search_tool"])
@@ -3050,6 +3187,40 @@ func TestUsagePluginForwardsReasoningEffortInUsagePayload(t *testing.T) {
 	}
 	if got, ok := decoded["reasoningEffort"].(string); !ok || got != "xhigh" {
 		t.Fatalf("usage JSON reasoningEffort = %#v, want xhigh", decoded["reasoningEffort"])
+	}
+}
+
+func TestUsagePluginKeepsRequestedAndUpstreamModelPair(t *testing.T) {
+	tracker := newRequestUsageTracker()
+	plugin := &usagePlugin{tracker: tracker}
+	ctx := internallogging.WithRequestID(context.Background(), "req-model-pair")
+	ctx = internallogging.WithEndpoint(ctx, "POST /v1/responses")
+	// 路由改写前宿主上下文里保存的是客户端请求模型（含命名空间前缀）。
+	ctx = context.WithValue(ctx, requestModelContextKey, "cpa/gpt-5.5")
+
+	plugin.HandleUsage(ctx, coreusage.Record{
+		Provider:    "openai-compatibility",
+		Model:       "glm-5.3",
+		RequestedAt: time.UnixMilli(123),
+		Latency:     50 * time.Millisecond,
+	})
+
+	payload, ok := tracker.finalize("req-model-pair", usageFinalizeInput{
+		status:        http.StatusOK,
+		latencyMS:     50,
+		completedAtMS: 123,
+	})
+	if !ok {
+		t.Fatal("expected usage payload")
+	}
+	if payload.RequestedModel != "cpa/gpt-5.5" {
+		t.Fatalf("requested model = %q, want cpa/gpt-5.5", payload.RequestedModel)
+	}
+	if payload.UpstreamModel != "glm-5.3" {
+		t.Fatalf("upstream model = %q, want glm-5.3", payload.UpstreamModel)
+	}
+	if payload.Model != "glm-5.3" {
+		t.Fatalf("legacy model field = %q, want glm-5.3", payload.Model)
 	}
 }
 

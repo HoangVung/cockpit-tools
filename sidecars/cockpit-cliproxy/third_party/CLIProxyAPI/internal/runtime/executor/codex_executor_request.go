@@ -441,9 +441,13 @@ func nextGeneratedCodexCallID(prefix string, index int, used map[string]struct{}
 	}
 }
 
-// normalizeCodexCallIDs repairs historical tool replay items whose provider-specific
+// NormalizeCodexCallIDs repairs historical tool replay items whose provider-specific
 // conversion omitted call_id. Strict Responses upstreams reject the whole request with
 // "missing field `call_id`" otherwise.
+func NormalizeCodexCallIDs(body []byte) []byte {
+	return normalizeCodexCallIDs(body)
+}
+
 func normalizeCodexCallIDs(body []byte) []byte {
 	input := gjson.GetBytes(body, "input")
 	if !input.IsArray() {

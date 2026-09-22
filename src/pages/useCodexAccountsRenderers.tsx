@@ -1,13 +1,13 @@
 import { useEffect, type ReactElement } from "react";
-import { RefreshCw, Upload, Trash2, X, Power, Database, Copy, Check, Play, RotateCw, CircleAlert, Info, Calendar, Tag, Eye, EyeOff, FileText, ExternalLink, Pencil, FolderOpen, FolderPlus, ChevronRight, LogOut, Wrench, Terminal, Link2, Waypoints } from "lucide-react";
+import { RefreshCw, Upload, Trash2, X, Power, Database, Copy, Check, Play, RotateCw, CircleAlert, Info, Calendar, Tag, Eye, EyeOff, FileText, ExternalLink, Pencil, FolderOpen, FolderPlus, ChevronRight, LogOut, Wrench, Terminal, Link2, Waypoints, ShieldAlert } from "lucide-react";
 import { isCodexGroupQuotaRefreshInherit, resolveCodexGroupQuotaAutoRefreshMinutes } from "../services/codexAccountGroupService";
-import { isCodexApiKeyAccount, isCodexAgentIdentityAccount, isCodexChatCompletionsApiKeyAccount, isCodexNewApiAccount } from "../types/codex";
+import { isCodexApiKeyAccount, isCodexAgentIdentityAccount, isCodexChatCompletionsApiKeyAccount, isCodexNewApiAccount, type CodexAccount } from "../types/codex";
 import { isVerboseCodexQuotaErrorMessage, summarizeCodexQuotaErrorMessage } from "../utils/codexQuotaError";
 import { CodexQuotaMiniRows } from "../components/codex/CodexQuotaMiniRows";
 import { CodexTeamQuotaHistory } from "../components/codex/CodexTeamQuotaHistory";
 import { isCodexClientReauthNoticeOnly, isCodexRefreshTokenNoticeOnly, isCodexRefreshTokenReusedAccount, isCodexServerRevokedReauth } from "../utils/codexSwitchAuthFailure";
-import { DEFAULT_CODEX_INSTANCE_ID } from "../components/codex/CodexLaunchPreviewModal";
-import { isDeepSeekAccount, isCodexTokenPlanAccount, shouldShowCodexApiKeyUsagePanel } from "../utils/codexDeepSeekAccess";
+import { CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY } from "../utils/codexLaunchPreviewInstancePreference";
+ import { isDeepSeekAccount, isCodexTokenPlanAccount, shouldShowCodexApiKeyUsagePanel } from "../utils/codexDeepSeekAccess";
 import { CodexSpeedSelect } from "../components/codex/CodexSpeedSelect";
 import { SingleSelectDropdown } from "../components/SingleSelectDropdown";
 import { CODEX_API_SERVICE_BIND_ID } from "../types/instance";
@@ -24,6 +24,7 @@ import type { useCodexAccountsOverviewController } from "./useCodexAccountsOverv
 /** 封装 useCodexAccountsPageController 的 useCodexAccountsRenderers 业务域状态与动作。 */
 export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCodexAccountsBaseController> & ReturnType<typeof useCodexAccountsOAuthController> & ReturnType<typeof useCodexAccountsAccessController> & ReturnType<typeof useCodexAccountsLocalAccessController> & ReturnType<typeof useCodexAccountsOverviewController>,
   | "accountIdLabel"
+  | "accountTurnStateMap"
   | "activeGroupId"
   | "addingLocalAccessAccountId"
   | "apiKeyUsageDetailAccount"
@@ -111,6 +112,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
   | "openQuickSwitchProviderModal"
   | "openQuotaErrorDetail"
   | "openTagModal"
+  | "openTurnStateCheckModal"
   | "overviewCurrentAccountId"
   | "overviewLayoutMode"
   | "paginatedAccounts"
@@ -152,9 +154,9 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
   | "setEditingApiKeyNameValue"
   | "setExternalImportSyncError"
   | "setGroupQuickAddGroupId"
-  | "setImportApiServiceGuideCount"
-  | "setLaunchPreviewInstanceId"
-  | "setLocalAccessDetailsExpanded"
+   | "setImportApiServiceGuideCount"
+   | "restoreLaunchPreviewInstanceId"
+   | "setLocalAccessDetailsExpanded"
   | "setLocalAccessKeyVisible"
   | "setLocalAccessLaunchPreviewOpen"
   | "setMessage"
@@ -170,6 +172,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
 >) {
   const {
     accountIdLabel,
+    accountTurnStateMap,
     activeGroupId,
     addingLocalAccessAccountId,
     apiKeyUsageDetailAccount,
@@ -257,6 +260,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
     openQuickSwitchProviderModal,
     openQuotaErrorDetail,
     openTagModal,
+    openTurnStateCheckModal,
     overviewCurrentAccountId,
     overviewLayoutMode,
     paginatedAccounts,
@@ -297,10 +301,10 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
     setCockpitApiPanelAccountId,
     setEditingApiKeyNameValue,
     setExternalImportSyncError,
-    setGroupQuickAddGroupId,
-    setImportApiServiceGuideCount,
-    setLaunchPreviewInstanceId,
-    setLocalAccessDetailsExpanded,
+     setGroupQuickAddGroupId,
+     setImportApiServiceGuideCount,
+     restoreLaunchPreviewInstanceId,
+     setLocalAccessDetailsExpanded,
     setLocalAccessKeyVisible,
     setLocalAccessLaunchPreviewOpen,
     setMessage,
@@ -523,6 +527,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
               )}
             </div>
             {renderAccountSpeedSelect(account, true)}
+            {renderAccountTurnStatePill(account)}
             {renderAddLocalAccessAccountButton(
               account,
               "codex-compact-api-service-btn",
@@ -568,6 +573,69 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
         );
       });
   
+    // 风控检测徽标：只有官方 OAuth 账号有上游 state，API Key 账号不参与。
+    const renderAccountTurnStatePill = (
+      account: CodexAccount,
+    ): ReactElement | null => {
+      if (isCodexApiKeyAccount(account)) return null;
+      const turnState = accountTurnStateMap?.[account.id];
+      const suspected =
+        Boolean(turnState?.suspected) || turnState?.status === "suspected";
+      const abnormal = !suspected && turnState?.status === "abnormal";
+      if (!suspected && !abnormal) return null;
+      const reasonCode = (turnState?.reason || "").trim();
+      const reasonText = (() => {
+        switch (reasonCode) {
+          case "turnStateSuspected":
+            return t("codex.turnState.reasonSuspected", "state 为 312");
+          case "turnStateAbnormal":
+            return t("codex.turnState.reasonAbnormal", "state 长度异常");
+          case "turnStateMissing":
+            return t("codex.turnState.reasonMissing", "响应未返回 state");
+          default:
+            return "";
+        }
+      })();
+      // 疑似风控本身就等价于 state 312，不再重复一行长度。
+      const lengthText =
+        reasonCode !== "turnStateSuspected" &&
+        typeof turnState?.lastLength === "number" &&
+        turnState.lastLength > 0
+          ? t("codex.turnState.stateLength", {
+              length: turnState.lastLength,
+              defaultValue: "state {{length}}",
+            })
+          : turnState?.lastClass === "missing"
+            ? t("codex.turnState.stateMissing", "未返回 state")
+            : "";
+      const title = [
+        suspected
+          ? t("codex.turnState.statusSuspected", "疑似风控")
+          : t("codex.turnState.statusAbnormal", "异常"),
+        lengthText,
+        reasonText,
+        t("codex.turnState.openCheckTitle", "点击打开风控检测"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return (
+        <button
+          type="button"
+          className={`codex-status-pill ${suspected ? "turn-state-suspected" : "turn-state-abnormal"}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            openTurnStateCheckModal();
+          }}
+          title={title}
+        >
+          <ShieldAlert size={12} />
+          {suspected
+            ? t("codex.turnState.statusSuspected", "疑似风控")
+            : t("codex.turnState.statusAbnormal", "异常")}
+        </button>
+      );
+    };
+
     const renderGridCards = (items: typeof filteredAccounts, groupKey?: string) =>
       items.map((account) => {
         const presentation = resolvePresentation(account);
@@ -828,6 +896,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                   {accountIssueBadge}
                 </span>
               )}
+              {renderAccountTurnStatePill(account)}
               <span className={`tier-badge ${displayPlanClass}`}>
                 {displayPlanLabel}
               </span>
@@ -1826,7 +1895,9 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                         className="card-action-btn success"
                         onClick={() => {
                           setImportApiServiceGuideCount(null);
-                          setLaunchPreviewInstanceId(DEFAULT_CODEX_INSTANCE_ID);
+                          restoreLaunchPreviewInstanceId(
+                            CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY,
+                          );
                           setLocalAccessLaunchPreviewOpen(true);
                         }}
                         title={t(
@@ -2226,6 +2297,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                       {t("codex.current", "当前")}
                     </span>
                   )}
+                  {renderAccountTurnStatePill(account)}
                   {renderAccountSpeedSelect(account, true)}
                 </div>
                 {(meta.accountContextText ||

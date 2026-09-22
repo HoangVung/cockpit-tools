@@ -16,7 +16,7 @@ import { CODEX_ADDITIONAL_QUOTA_VISIBILITY_CHANGED_EVENT, CODEX_CODE_REVIEW_QUOT
 import { emitAccountsChanged } from "../utils/accountSyncEvents";
 import { resolveCodexModelProviderAccountName } from "../utils/codexModelProviderAccountName";
 import { readCodexCustomSortOrder, writeCodexCustomSortActive, writeCodexCustomSortOrder } from "../utils/codexAccountOverview";
-import { CODEX_API_PROVIDER_CUSTOM_ID, COCKPIT_API_PROVIDER_ID, COCKPIT_API_PROVIDER_NAME, codexApiProviderPresetVisionSupport, findCodexApiProviderPresetById, isCockpitApiProviderBaseUrl } from "../utils/codexProviderPresets";
+import { CODEX_API_PROVIDER_CUSTOM_ID, COCKPIT_API_PROVIDER_ID, COCKPIT_API_PROVIDER_NAME, DEEPSEEK_API_PROVIDER_ID, codexApiProviderPresetVisionSupport, findCodexApiProviderPresetById, isCockpitApiProviderBaseUrl } from "../utils/codexProviderPresets";
 import { isApiKeyFunProviderBaseUrl } from "../utils/apikeyFunLinks";
 import { type ApiKeyFunPrefillPayload } from "../utils/apiKeyFunPrefill";
 import { resolveCodexProviderCapabilityProfile } from "../utils/codexProviderGateway";
@@ -617,11 +617,15 @@ export function useCodexAccountsOAuthController(context: Pick<ReturnType<typeof 
         }
   
         const preset = selectedPreset;
+        // 官方预设的身份必须和官方端点绑定：DeepSeek 预设遇上第三方 Base URL 时
+        // 不能落成 provider id = deepseek，否则后端会把地址强制改写回官方域名。
+        const presetRequiresEndpointMatch =
+          preset?.id === DEEPSEEK_API_PROVIDER_ID ||
+          preset?.id === OPENAI_OFFICIAL_PRESET_ID;
         if (
           preset &&
           providerPresetId !== CODEX_API_PROVIDER_CUSTOM_ID &&
-          (providerPresetId !== OPENAI_OFFICIAL_PRESET_ID ||
-            selectedPresetBaseUrlMatches)
+          (selectedPresetBaseUrlMatches || !presetRequiresEndpointMatch)
         ) {
           return {
             apiProviderMode: "custom",

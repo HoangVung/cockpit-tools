@@ -41,6 +41,67 @@
         );
     }
 
+    #[test]
+    fn third_party_deepseek_preset_keeps_its_own_endpoint() {
+        // 供应商可以选择 DeepSeek 预设（身份）却把地址指向第三方中转：此时不能被当成
+        // 官方账号，地址、协议与模型列表必须原样保留（模型名按上游真实 ID）。
+        let mut account = CodexAccount::new_api_key(
+            "third-party-deepseek-key".to_string(),
+            "third-party@example.com".to_string(),
+            "sk-third-party".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.apikey.fan/v1".to_string()),
+            Some("deepseek".to_string()),
+            Some("DeepSeek 中转".to_string()),
+            vec!["deepseek-chat".to_string()],
+        );
+        account.api_wire_api = Some("chat_completions".to_string());
+
+        assert!(!super::is_deepseek_account(&account));
+        assert!(!super::normalize_deepseek_account(&mut account));
+        assert_eq!(
+            account.api_base_url.as_deref(),
+            Some("https://api.apikey.fan/v1")
+        );
+        assert_eq!(account.api_wire_api.as_deref(), Some("chat_completions"));
+        assert_eq!(
+            account.api_model_catalog,
+            vec!["deepseek-chat".to_string()]
+        );
+    }
+
+    #[test]
+    fn provider_account_access_modes_are_generic() {
+        // 第三方供应商账号也能选择直连上游 / CDP 注入，并按选择决定是否做壳位改写。
+        let mut account = CodexAccount::new_api_key(
+            "third-party-provider-key".to_string(),
+            "third-party@example.com".to_string(),
+            "sk-provider".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://api.apikey.fan/v1".to_string()),
+            Some("cmp_provider".to_string()),
+            Some("APIKEY.FUN".to_string()),
+            vec!["deepseek-chat".to_string()],
+        );
+        account.api_wire_api = Some("responses".to_string());
+
+        assert!(!super::account_uses_cdp_model_injection(&account));
+        assert!(!super::account_uses_provider_direct_access(&account));
+        assert!(!super::account_uses_raw_provider_model_ids(&account));
+
+        account.api_instance_access_mode = Some("cdp".to_string());
+        assert!(super::account_uses_cdp_model_injection(&account));
+        assert!(super::account_uses_raw_provider_model_ids(&account));
+
+        account.api_instance_access_mode = Some("direct".to_string());
+        assert!(super::account_uses_provider_direct_access(&account));
+        assert!(!super::account_uses_cdp_model_injection(&account));
+
+        // Chat Completions 不能直连上游（Codex 端只支持 Responses 直连）。
+        account.api_wire_api = Some("chat_completions".to_string());
+        assert!(!super::account_wire_api_is_responses(&account));
+    }
+
     /// 历史遗留的 Codex/GPT 内置 id（例如 gpt-5.6-sol / gpt-5.6-terra）不能再作为 DeepSeek
     /// 的客户端可见模型名：客户端会用内置 GPT 元数据生成工具定义，DeepSeek 上游只能把工具调用
     /// 写成文本标记（DSML）返回，链路无法解析，正文里就会直接出现原始标记。
@@ -1263,8 +1324,33 @@ model_catalog_json = "cockpit-provider-model-catalog.json"
             None,
             None,
         )
-        .expect_err("non-DeepSeek account rejects access mode");
-        assert!(access_error.contains("DeepSeek"));
+        .expect("第三方供应商账号同样支持接入方式");
+        assert_eq!(
+            access_error.api_instance_access_mode.as_deref(),
+            Some("gateway")
+        );
+
+        // 直连上游需要 Responses；Chat Completions 账号会被拒绝。
+        let mut chat_account = CodexAccount::new_api_key(
+            "chat-only-provider".to_string(),
+            "chat-only@example.com".to_string(),
+            "sk-chat-only".to_string(),
+            CodexApiProviderMode::Custom,
+            Some("https://relay.example.com/v1".to_string()),
+            Some("cmp_chat_only".to_string()),
+            Some("Relay Chat".to_string()),
+            vec!["kimi-k2.6".to_string()],
+        );
+        chat_account.api_wire_api = Some("chat_completions".to_string());
+        save_account(&chat_account).expect("save chat account");
+        let direct_error = update_account_instance_access(
+            &chat_account.id,
+            Some("direct".to_string()),
+            None,
+            None,
+        )
+        .expect_err("Chat Completions 账号拒绝直连上游");
+        assert!(direct_error.contains("Chat Completions"));
     }
 
     #[test]

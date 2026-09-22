@@ -220,30 +220,6 @@ fn start_codex_default_internal(
             "[Codex Start] 启动策略=exe-path launch_path={}",
             launch_path_text
         ));
-        if is_windowsapps_launch_path(&launch_path) {
-            if let Some(pid) = resolve_codex_pid(None, None) {
-                crate::modules::logger::log_info(&format!(
-                    "[Codex Start] 已跳过 WindowsApps 直接启动；确认 Codex 正在运行 pid={} launch_path={}",
-                    pid, launch_path_text
-                ));
-                return Ok(pid);
-            }
-            let message = "未探测到 Codex 的 Store 启动入口；请确认 PowerShell 可用，或手动打开 Codex";
-            crate::modules::logger::log_warn(&format!(
-                "[Codex Start] {} launch_path={}",
-                message, launch_path_text
-            ));
-            return Err(crate::modules::windows_operation::format_error(
-                "launch_app",
-                message,
-                "WindowsApps 目录下的 Codex 可执行文件拒绝普通进程直接启动（ACCESS_DENIED / os error 5）",
-                None,
-                &[],
-                true,
-                false,
-                true,
-            ));
-        }
         let mut cmd = Command::new(&launch_path);
         apply_managed_proxy_env_to_command(&mut cmd);
         if should_detach_child() {

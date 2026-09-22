@@ -113,13 +113,12 @@ pub(crate) fn grok_sidecar_auth_json(
     Ok(value)
 }
 
-/// Grok 账号的过期时间在本地以毫秒时间戳保存，这里转换成 xAI auth 使用的 RFC3339。
-fn grok_access_token_expired_at(expires_at_ms: i64) -> Option<String> {
-    if expires_at_ms <= 0 {
+/// Grok 账号的过期时间在本地以 Unix 秒时间戳保存，这里转换成 xAI auth 使用的 RFC3339。
+fn grok_access_token_expired_at(expires_at_seconds: i64) -> Option<String> {
+    if expires_at_seconds <= 0 {
         return None;
     }
-    let seconds = expires_at_ms / 1000;
-    chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)
+    chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at_seconds, 0)
         .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
@@ -279,5 +278,14 @@ mod grok_provider_tests {
         assert!(catalog.iter().any(|model| model == "grok-4.6"));
         assert!(catalog.iter().any(|model| model == "grok-4.5"));
         assert!(grok_provider_vision_support().values().all(|value| *value));
+    }
+
+    #[test]
+    fn grok_access_token_expiry_uses_unix_seconds() {
+        assert_eq!(
+            grok_access_token_expired_at(1_893_456_000).as_deref(),
+            Some("2030-01-01T00:00:00Z")
+        );
+        assert_eq!(grok_access_token_expired_at(0), None);
     }
 }

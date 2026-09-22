@@ -1096,8 +1096,9 @@ export function AccountsOverviewView(props: AccountsOverviewViewProps) {
                                 <span
                                   key={`${account.id}-${item.key}`}
                                   className="codex-custom-sort-quota"
+                                  title={item.stale ? t('common.shared.quota.cachedRefreshFailed') : undefined}
                                 >
-                                  <span>{item.key.includes('claude') ? 'Claude' : 'Gemini'} {item.key.includes('5h') ? '5h' : 'Weekly'}:</span>
+                                  <span>{item.label}:</span>
                                   <strong className={getQuotaClass(item.percentage)}>
                                     {item.percentage}%
                                   </strong>
@@ -1565,6 +1566,7 @@ export function AccountsOverviewView(props: AccountsOverviewViewProps) {
                               ></div>
                             </div>
                             <div className="quota-reset-info">
+                              {item.stale && <p>{t('common.shared.quota.cachedRefreshFailed')}</p>}
                               <p>
                                 <strong>{t('modals.quota.resetTime')}:</strong>{' '}
                                 {formatResetTimeDisplay(item.resetTime, t)}

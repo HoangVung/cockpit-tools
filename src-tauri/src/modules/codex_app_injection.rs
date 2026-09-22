@@ -188,7 +188,8 @@ pub fn supports_bind_account(bind_account_id: Option<&str>) -> bool {
     bind_account_id.is_some_and(crate::modules::codex_instance::is_api_service_bind_account_id)
 }
 
-pub fn bind_uses_deepseek_cdp_injection(bind_account_id: Option<&str>) -> bool {
+/// 绑定账号是否选择了「CDP 注入」（官方 DeepSeek 与第三方供应商同一语义）。
+pub fn bind_uses_cdp_model_injection(bind_account_id: Option<&str>) -> bool {
     let Some(bind) = bind_account_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -201,8 +202,15 @@ pub fn bind_uses_deepseek_cdp_injection(bind_account_id: Option<&str>) -> bool {
     let account_id = crate::modules::codex_instance::parse_provider_gateway_bind_account_id(bind)
         .unwrap_or_else(|| bind.to_string());
     crate::modules::codex_account::load_account(&account_id).is_some_and(|account| {
-        crate::modules::codex_account::account_uses_deepseek_cdp_injection(&account)
+        crate::modules::codex_account::account_uses_cdp_model_injection(&account)
     })
+}
+
+/// 绑定账号（含 `__provider_gateway__:` 前缀）对应的 API Key 供应商账号。
+fn bound_api_key_account(bind_account_id: Option<&str>) -> Option<CodexAccount> {
+    let account_id = bind_account_id_value(bind_account_id)?;
+    let account = crate::modules::codex_account::load_account(&account_id)?;
+    account.is_api_key_auth().then_some(account)
 }
 
 /// 绑定账号（含 `__provider_gateway__:` 前缀）对应的 DeepSeek 账号。
@@ -234,7 +242,7 @@ fn bind_uses_deepseek_balance_injection(bind_account_id: Option<&str>) -> bool {
 
 pub fn should_enable_injection(bind_account_id: Option<&str>) -> bool {
     (enabled_for_app() && supports_bind_account(bind_account_id))
-        || bind_uses_deepseek_cdp_injection(bind_account_id)
+        || bind_uses_cdp_model_injection(bind_account_id)
         || (enabled_for_app() && bind_uses_deepseek_balance_injection(bind_account_id))
 }
 
@@ -3495,80 +3503,7 @@ async fn run_auth_diagnostic_loop(
     }
 }
 
-async fn api_service_quota_refresh_targets() -> Result<Option<(usize, Vec<String>)>, String> {
-    let state = codex_local_access::get_local_access_state().await?;
-    let Some(collection) = state.collection else {
-        return Ok(None);
-    };
-    if collection.account_ids.is_empty() {
-        return Ok(Some((0, Vec::new())));
-    }
-    let mut existing_account_count = 0;
-    let mut target_ids = Vec::new();
-    for account_id in collection.account_ids {
-        let Some(account) = codex_account::load_account(&account_id) else {
-            continue;
-        };
-        existing_account_count += 1;
-        if codex_quota::supports_quota_refresh(&account) {
-            target_ids.push(account_id);
-        }
-    }
-    if existing_account_count == 0 {
-        // Account files can be briefly unavailable while Cockpit atomically
-        // refreshes or rewrites them. Do not turn that transient read miss
-        // into a real empty pool in the injected UI.
-        return Ok(None);
-    }
-    Ok(Some((existing_account_count, target_ids)))
-}
-
-async fn api_service_account_pool_is_empty() -> Result<Option<bool>, String> {
-    let state = codex_local_access::get_local_access_state().await?;
-    Ok(state
-        .collection
-        .map(|collection| collection.account_ids.is_empty()))
-}
-
-async fn refresh_api_service_quota_pool(
-    app: &AppHandle,
-) -> Result<Option<(i32, usize)>, String> {
-    let Some((existing_account_count, target_ids)) = api_service_quota_refresh_targets().await? else {
-        return Ok(None);
-    };
-    if existing_account_count == 0 {
-        return Ok(Some((0, 0)));
-    }
-    if target_ids.is_empty() {
-        return Err("API 服务账号池暂无可刷新的额度".to_string());
-    }
-    let total = target_ids.len();
-    let success_count = crate::commands::codex::refresh_codex_quotas_batch(
-        app.clone(),
-        target_ids,
-        Some(true),
-        Some(false),
-    )
-    .await?;
-    if success_count <= 0 {
-        return Err("API 服务账号池额度刷新失败".to_string());
-    }
-    Ok(Some((success_count, total)))
-}
-
-async fn run_quota_refresh_singleflight(app: &AppHandle) -> Result<Option<(i32, usize)>, String> {
-    let lock = quota_refresh_lock();
-    match lock.try_lock() {
-        Ok(_guard) => refresh_api_service_quota_pool(app).await,
-        Err(_) => {
-            let _guard = lock.lock().await;
-            let Some((existing_account_count, _)) = api_service_quota_refresh_targets().await? else {
-                return Ok(None);
-            };
-            Ok((existing_account_count == 0).then_some((0, 0)))
-        }
-    }
-}
+include!("codex_app_injection_quota.rs");
 
 async fn run_injection_loop(
     app: AppHandle,
@@ -3638,29 +3573,29 @@ async fn run_injection_loop(
         }
         let locale = config::get_user_config().language;
         // DeepSeek 绑定（网关列出 / CDP 注入 / 直连官方）统一在底部显示账号余额；
-        // 只有 CDP 接入方式才需要额外的模型列表注入。
+        // 只有 CDP 接入方式才需要额外的模型列表注入；官方 DeepSeek 仍额外注入余额。
         if deepseek_account_at.elapsed() >= DEEPSEEK_ACCOUNT_CACHE_TTL {
             deepseek_account_at = Instant::now();
             // 账号文件短暂读取失败时保留上一份快照，不因为一次读取失败就撤掉余额。
-            if let Some(account) = deepseek_bound_account(bind_account_id.as_deref()) {
+            if let Some(account) = bound_api_key_account(bind_account_id.as_deref()) {
                 deepseek_account_cache = Some(account);
             }
         }
-        // 只有「CDP 模型注入」或「可查官方余额」时才需要进入 DeepSeek 分支，
-        // 第三方中转的 DeepSeek 账号没有官方余额接口，保持原有行为。
+        // 只有「CDP 模型注入」或「可查官方余额」时才需要进入注入分支：
+        // 第三方中转没有官方余额接口，只做模型清单注入。
         let deepseek_account = deepseek_account_cache.as_ref().filter(|account| {
-            crate::modules::codex_account::account_uses_deepseek_cdp_injection(account)
+            crate::modules::codex_account::account_uses_cdp_model_injection(account)
                 || deepseek_balance_endpoint(account).is_some()
         });
         if let Some(deepseek_account) = deepseek_account {
-            let deepseek_cdp = crate::modules::codex_account::account_uses_deepseek_cdp_injection(
-                deepseek_account,
-            );
+            let deepseek_cdp =
+                crate::modules::codex_account::account_uses_cdp_model_injection(deepseek_account);
             if deepseek_cdp {
                 let account_id = Some(deepseek_account.id.clone());
-                let payload = crate::modules::codex_account::deepseek_injection_model_payload(
-                    deepseek_account,
-                );
+                let payload =
+                    crate::modules::codex_account::provider_injection_model_payload(
+                        deepseek_account,
+                    );
                 let script = deepseek_model_injection_script(
                     &locale,
                     &payload,
@@ -3789,7 +3724,9 @@ async fn run_injection_loop(
             last_quota_at = Instant::now();
         }
         // API 服务注入不再显示独立的余额徽章，余额只放在点击弹框里；查询失败保留上次结果。
-        if last_api_service_balance_at.elapsed() >= DEEPSEEK_BALANCE_REFRESH_INTERVAL {
+        if refresh_finished
+            || last_api_service_balance_at.elapsed() >= DEEPSEEK_BALANCE_REFRESH_INTERVAL
+        {
             if let Some(lines) = fetch_api_service_balance_lines(&balance_client).await {
                 api_service_balance_lines = lines;
             }

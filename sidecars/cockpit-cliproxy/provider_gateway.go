@@ -22,7 +22,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/codex/historyprojection"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 
 	responsesconverter "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/openai/responses"
 
@@ -79,10 +81,21 @@ func (s *relayServer) handleExecutorBody(c *gin.Context, spec *apiKeySpec, body 
 	if route, upstreamModel, routeStatus := resolveModelRoutingRoute(spec, model); routeStatus != "none" {
 		if routeStatus == "native" {
 			// 原生 provider 路由：只剥掉命名空间，把请求交给该 provider 的执行器。
-			if route == nil || route.NativeProvider == "" {
+			if route == nil || route.NativeProvider == "" || strings.TrimSpace(route.ProviderAccountID) == "" {
 				writeAPIError(c, http.StatusNotFound, fmt.Sprintf("model route %s is not available", model), "model_route_not_available")
 				return
 			}
+			// The configured route authorizes its bound account independently of the
+			// default OAuth pool. Keep this override request-local and singleton so
+			// neither failover nor later requests can select another route's account.
+			routeAccountID := strings.TrimSpace(route.ProviderAccountID)
+			routeSpec := *spec
+			routeSpec.AccountIDs = []string{routeAccountID}
+			originalRequest := c.Request
+			routeContext := context.WithValue(originalRequest.Context(), clientAPIKeyContextKey, &routeSpec)
+			routeContext = context.WithValue(routeContext, targetAccountIDContextKey, routeAccountID)
+			c.Request = originalRequest.WithContext(routeContext)
+			defer func() { c.Request = originalRequest }()
 			nativeBody := rewriteProviderGatewayBodyModel(body, upstreamModel)
 			alt := fixedAlt
 			if alt == "" {
@@ -293,6 +306,25 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 			}
 		}
 	}
+	var multiAgentV2Optimized bool
+	if sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {
+		// 统一历史投影：把 Codex 私有历史项（web_search_call、浮点参数等）
+		// 投影成目标上游能反序列化的形状，避免严格上游直接 422。
+		historyProfile := historyprojection.ProfileFor(historyprojection.UpstreamGeneric)
+		if isDeepSeekResponsesGateway(gateway.BaseURL) {
+			historyProfile = historyprojection.ProfileFor(historyprojection.UpstreamDeepSeek)
+		}
+		body = historyprojection.Project(body, historyProfile)
+		// Codex 客户端的 Multi-Agent V2 会带 collaboration 工具与 agent_message
+		// 输入项；第三方上游不认识这些私有形态，这里按 CLIProxyAPI 的既有优化
+		// 逻辑改写请求，响应出口再还原 collaboration namespace。
+		body, multiAgentV2Optimized = helps.OptimizeCodexMultiAgentV2Request(relayContext(c), c.Request.Header, body, s.cfg)
+		body = helps.RewriteCodexMultiAgentV2Input(relayContext(c), c.Request.Header, body, s.cfg)
+		// DeepSeek 等严格 Responses 上游按字段反序列化整个 input。历史里缺 call_id
+		// 时整包 422，不会进入后面的工具顺序修复。补 ID 必须在重排之前，
+		// 否则缺 ID 的调用项会让重排直接放弃。
+		body = normalizeProviderGatewayCallIDs(body)
+	}
 	if wireAPI == "responses" && providerGatewayRepairsToolCallOrder(gateway) {
 		// 先关掉并行工具调用（从源头避免竞态），再还原已经落盘历史里的顺序。
 		body = providerGatewaySerializeToolCalls(body)
@@ -336,7 +368,6 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 		// 已经把正文改写成 summary（见 responses_reasoning_replay.go）。
 		upstreamBody = restoreResponsesReasoningTextForReplay(upstreamBody)
 	}
-
 	upstreamURL, err := providerGatewayURL(gateway.BaseURL, upstreamPath)
 	if err != nil {
 		writeAPIError(c, http.StatusBadGateway, err.Error(), "bad_gateway")
@@ -382,7 +413,7 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 		if wireAPI == "chat_completions" {
 			switch {
 			case sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse):
-				s.writeProviderGatewayChatStream(c, resp.Body, upstreamModel, body, upstreamBody)
+				s.writeProviderGatewayChatStream(c, resp.Body, upstreamModel, body, upstreamBody, multiAgentV2Optimized)
 			case sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAI):
 				c.Status(http.StatusOK)
 				c.Stream(func(w io.Writer) bool {
@@ -399,7 +430,7 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 			return
 		}
 		c.Status(http.StatusOK)
-		s.writeProviderGatewayResponsesStream(c, resp.Body)
+		s.writeProviderGatewayResponsesStream(c, resp.Body, multiAgentV2Optimized)
 		return
 	}
 
@@ -419,6 +450,9 @@ func (s *relayServer) handleProviderGatewayRequest(c *gin.Context, gateway *prov
 	}
 	if sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAIResponse) {
 		payload = normalizeResponsesReasoningContentBody(payload)
+		payload = helps.RestoreCodexMultiAgentV2Response(payload, multiAgentV2Optimized)
+		payload = helps.NormalizeCodexCollaborationToolCalls(payload)
+		payload = newProviderGatewayItemIDRewriter().RewritePayload(payload)
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" || (wireAPI == "chat_completions" && !sourceFormatEqual(sourceFormat, sdktranslator.FormatOpenAI)) {
@@ -498,7 +532,7 @@ func copyProviderGatewayDiagnosticHeaders(dst http.Header, src http.Header) {
 	}
 }
 
-func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Reader, model string, originalBody []byte, chatBody []byte) {
+func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Reader, model string, originalBody []byte, chatBody []byte, multiAgentV2Optimized bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		writeAPIError(c, http.StatusInternalServerError, "streaming not supported", "streaming_not_supported")
@@ -516,6 +550,7 @@ func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Rea
 	convertedEventCount := 0
 	rawLineCount := 0
 	eventCounts := make(map[string]int)
+	itemIDRewriter := newProviderGatewayItemIDRewriter()
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -528,6 +563,11 @@ func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Rea
 			doneSeen = true
 		}
 		events := responsesconverter.ConvertOpenAIChatCompletionsResponseToOpenAIResponses(relayContext(c), model, originalBody, chatBody, line, &state)
+		for index := range events {
+			events[index] = helps.RestoreCodexMultiAgentV2Response(events[index], multiAgentV2Optimized)
+			events[index] = helps.NormalizeCodexCollaborationToolCalls(events[index])
+			events[index] = itemIDRewriter.RewriteSSEFrame(events[index])
+		}
 		for _, event := range events {
 			if len(event) == 0 {
 				continue
@@ -554,6 +594,11 @@ func (s *relayServer) writeProviderGatewayChatStream(c *gin.Context, body io.Rea
 	}
 	if !doneSeen {
 		events := responsesconverter.CompleteOpenAIChatCompletionsResponseToOpenAIResponses(relayContext(c), chatBody, &state)
+		for index := range events {
+			events[index] = helps.RestoreCodexMultiAgentV2Response(events[index], multiAgentV2Optimized)
+			events[index] = helps.NormalizeCodexCollaborationToolCalls(events[index])
+			events[index] = itemIDRewriter.RewriteSSEFrame(events[index])
+		}
 		for _, event := range events {
 			if len(event) == 0 {
 				continue
@@ -604,6 +649,7 @@ func (s *relayServer) writeProviderGatewayTranslatedChatStream(c *gin.Context, b
 	c.Status(http.StatusOK)
 
 	var state any
+	itemIDRewriter := newProviderGatewayItemIDRewriter()
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -619,6 +665,9 @@ func (s *relayServer) writeProviderGatewayTranslatedChatStream(c *gin.Context, b
 			if sourceFormatEqual(targetFormat, sdktranslator.FormatGemini) && alt == "" {
 				output = frameOpenAIStreamChunk(output)
 			}
+			if sourceFormatEqual(targetFormat, sdktranslator.FormatOpenAIResponse) {
+				output = itemIDRewriter.RewriteSSEFrame(output)
+			}
 			if _, err := c.Writer.Write(output); err != nil {
 				return
 			}
@@ -632,16 +681,21 @@ func (s *relayServer) writeProviderGatewayTranslatedChatStream(c *gin.Context, b
 }
 
 // writeProviderGatewayResponsesStream 透传 provider gateway 的 Responses SSE，
-// 只在出口清洗第三方推理项，其余字节与原有 io.Copy 透传保持一致。
-func (s *relayServer) writeProviderGatewayResponsesStream(c *gin.Context, body io.Reader) {
+// 只在出口清洗第三方推理项，并在需要时还原 Multi-Agent V2 collaboration
+// namespace；其余字节与原有 io.Copy 透传保持一致。
+func (s *relayServer) writeProviderGatewayResponsesStream(c *gin.Context, body io.Reader, multiAgentV2Optimized bool) {
 	if body == nil {
 		return
 	}
+	itemIDRewriter := newProviderGatewayItemIDRewriter()
 	reader := bufio.NewReaderSize(body, 64*1024)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			if _, writeErr := c.Writer.Write(normalizeResponsesReasoningContentSSELine(line)); writeErr != nil {
+			line = normalizeResponsesReasoningContentSSELine(line)
+			line = restoreProviderGatewayMultiAgentV2SSELine(line, multiAgentV2Optimized)
+			line = itemIDRewriter.RewriteSSEFrame(line)
+			if _, writeErr := c.Writer.Write(line); writeErr != nil {
 				return
 			}
 		}
@@ -649,6 +703,39 @@ func (s *relayServer) writeProviderGatewayResponsesStream(c *gin.Context, body i
 			return
 		}
 	}
+}
+
+// restoreProviderGatewayMultiAgentV2SSELine 只改写 data 行内的 JSON，
+// event:、空行和 [DONE] 保持原样。
+func restoreProviderGatewayMultiAgentV2SSELine(line []byte, optimized bool) []byte {
+	if len(line) == 0 {
+		return line
+	}
+	trimmed := bytes.TrimSpace(line)
+	if !bytes.HasPrefix(trimmed, []byte("data:")) {
+		return line
+	}
+	payload := bytes.TrimSpace(trimmed[len("data:"):])
+	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+		return line
+	}
+	restored := payload
+	if optimized {
+		restored = helps.RestoreCodexMultiAgentV2Response(restored, true)
+	}
+	restored = helps.NormalizeCodexCollaborationToolCalls(restored)
+	if bytes.Equal(restored, payload) {
+		return line
+	}
+	out := make([]byte, 0, len(restored)+len("data: ")+2)
+	out = append(out, "data: "...)
+	out = append(out, restored...)
+	if bytes.HasSuffix(line, []byte("\r\n")) {
+		out = append(out, '\r', '\n')
+	} else if bytes.HasSuffix(line, []byte("\n")) {
+		out = append(out, '\n')
+	}
+	return out
 }
 
 func providerGatewaySSEFrame(event []byte) []byte {

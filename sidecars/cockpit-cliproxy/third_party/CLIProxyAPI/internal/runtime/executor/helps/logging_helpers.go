@@ -189,6 +189,8 @@ func newAPIRequestLogBuilder(index int, info UpstreamRequestLog, timestamp time.
 // RecordAPIResponseMetadata captures upstream response status/header information for the latest attempt.
 func RecordAPIResponseMetadata(ctx context.Context, cfg *config.Config, status int, headers http.Header) {
 	logging.SetResponseHeaders(ctx, headers)
+	// 上游响应头里的 turn state 观测与日志开关无关，业务转发本身就能采到。
+	ObserveTurnStateFromHeaders(ctx, status, headers)
 	if !requestLogCaptureEnabled(cfg) {
 		return
 	}
