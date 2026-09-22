@@ -2166,23 +2166,12 @@ fn xml_attribute(element: &str, name: &str) -> Option<String> {
     Some(value.to_string())
 }
 
-#[cfg(target_os = "windows")]
-fn codex_store_package_priority(dir_name: &str) -> u8 {
-    let lower = dir_name.to_ascii_lowercase();
-    if lower.starts_with("openai.codex_") || lower.starts_with("openai.chatgpt_") {
-        2
-    } else if lower.starts_with("openai.chatgpt-desktop_") {
-        1
-    } else {
-        0
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn find_codex_windows_app_main_exe(app_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    for exe_name in ["ChatGPT.exe", "Codex.exe"] {
-        let candidate = app_dir.join(exe_name);
-        if candidate.exists() {
+/// Resolve the registered Store package's GUI entry point, never its bundled CLI.
+#[cfg(any(test, target_os = "windows"))]
+fn codex_store_gui_exe_in(install_location: &std::path::Path) -> Option<std::path::PathBuf> {
+    if let Some(relative) = appx_manifest_gui_executable(install_location) {
+        let candidate = install_location.join(relative.replace('/', "\\"));
+        if is_chatgpt_store_gui_exe(&candidate) && candidate.is_file() {
             return Some(candidate);
         }
     }
@@ -2201,10 +2190,7 @@ struct CodexStorePackage {
     install_location: std::path::PathBuf,
 }
 
-/// 列出当前用户已注册的商店版 Codex 包（新版本优先）。
-///
-/// 只读包注册信息：不扫描 WindowsApps 目录（普通用户会被拒，且带 `-Filter` 时可能
-/// 静默返回空），也不依赖客户端是否正在运行。PFN 一并输出，便于日志和后续匹配。
+/// Resolve the selected app identity through its registered package location.
 #[cfg(target_os = "windows")]
 fn detect_codex_exec_path_by_app_user_model_id(app_user_model_id: &str) -> Option<std::path::PathBuf> {
     let family = app_user_model_id.split('!').next()?.trim();
@@ -2218,7 +2204,8 @@ if ($pkg -and -not [string]::IsNullOrWhiteSpace($pkg.InstallLocation)) {{
   Write-Output ([string]$pkg.InstallLocation.Trim())
 }}"#
     );
-    let output = powershell_output_with_timeout(&["-Command", &script], WINDOWS_PROCESS_PROBE_TIMEOUT).ok()?;
+    let output =
+        powershell_output_with_timeout(&["-Command", &script], WINDOWS_PROCESS_PROBE_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -2229,49 +2216,37 @@ if ($pkg -and -not [string]::IsNullOrWhiteSpace($pkg.InstallLocation)) {{
             continue;
         }
         let install_path = std::path::PathBuf::from(install_location);
-        if let Some(candidate) = find_codex_windows_app_main_exe(&install_path.join("app")) {
-            if candidate.exists() {
-                crate::modules::logger::log_info(&format!(
-                    "[Path Detect] codex app_user_model_id install hit: {}",
-                    candidate.to_string_lossy()
-                ));
-                return Some(candidate);
-            }
-        }
-        if let Some(candidate) = find_codex_windows_app_main_exe(&install_path) {
-            if candidate.exists() {
-                crate::modules::logger::log_info(&format!(
-                    "[Path Detect] codex app_user_model_id install hit: {}",
-                    candidate.to_string_lossy()
-                ));
-                return Some(candidate);
-            }
+        if let Some(candidate) = codex_store_gui_exe_in(&install_path) {
+            crate::modules::logger::log_info(&format!(
+                "[Path Detect] codex app_user_model_id install hit: {}",
+                candidate.to_string_lossy()
+            ));
+            return Some(candidate);
         }
     }
     None
 }
 
+/// List registered packages, preferring current clients over ChatGPT Desktop.
 #[cfg(target_os = "windows")]
-fn detect_codex_exec_path_by_appx_install_location() -> Option<std::path::PathBuf> {
+fn codex_store_packages() -> Vec<CodexStorePackage> {
     let script = r#"$names = @('OpenAI.Codex', 'OpenAI.ChatGPT', 'OpenAI.ChatGPT-Desktop')
-$pkg = $names |
-  ForEach-Object { Get-AppxPackage -Name $_ -ErrorAction SilentlyContinue } |
-  Sort-Object @{ Expression = { if ($_.Name -like '*ChatGPT-Desktop*' -or $_.PackageFamilyName -like '*ChatGPT-Desktop*') { 1 } else { 0 } } }, @{ Expression = { try { [version]$_.Version } catch { [version]'0.0.0.0' } }; Descending = $true } |
-  Select-Object -First 1
-if (-not $pkg) {
-  $pkg = Get-AppxPackage |
+$pkgs = @()
+foreach ($name in $names) {
+  $pkgs += @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue)
+}
+if ($pkgs.Count -eq 0) {
+  $pkgs = @(Get-AppxPackage -ErrorAction SilentlyContinue |
     Where-Object {
       $_.Name -like 'OpenAI.ChatGPT*' -or
       $_.Name -like 'OpenAI.Codex*' -or
       $_.PackageFamilyName -like 'OpenAI.ChatGPT*' -or
       $_.PackageFamilyName -like 'OpenAI.Codex*'
-    } |
-  Sort-Object @{ Expression = { if ($_.Name -like '*ChatGPT-Desktop*' -or $_.PackageFamilyName -like '*ChatGPT-Desktop*') { 1 } else { 0 } } }, @{ Expression = { try { [version]$_.Version } catch { [version]'0.0.0.0' } }; Descending = $true } |
-  Select-Object -First 1
+    })
 }
 $pkgs |
   Where-Object { $_.InstallLocation -and $_.PackageFamilyName } |
-  Sort-Object -Property @{ Expression = { $_.Version }; Descending = $true } |
+  Sort-Object @{ Expression = { if ($_.Name -like '*ChatGPT-Desktop*' -or $_.PackageFamilyName -like '*ChatGPT-Desktop*') { 1 } else { 0 } } }, @{ Expression = { try { [version]$_.Version } catch { [version]'0.0.0.0' } }; Descending = $true } |
   ForEach-Object { Write-Output ([string]$_.PackageFamilyName + '|' + [string]$_.InstallLocation.Trim()) }"#;
 
     let mut packages = Vec::new();
@@ -2856,10 +2831,7 @@ pub(crate) fn detect_codex_exec_path() -> Option<std::path::PathBuf> {
                 return Some(path);
             }
         }
-        if let Some(path) = detect_codex_exec_path_by_windowsapps_scan() {
-            return Some(path);
-        }
-        if let Some(path) = detect_codex_exec_path_by_windowsapps_scan() {
+        if let Some(path) = detect_codex_store_gui_exe() {
             return Some(path);
         }
     }
