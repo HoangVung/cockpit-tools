@@ -242,12 +242,21 @@ pub(crate) fn managed_codex_model_ids() -> Vec<String> {
         .map(str::to_string)
         .collect::<Vec<_>>();
 
-    if let Some(index) = model_ids
+    // 官方推荐集把 GPT-6 家族排在最前，顺序固定为 Astra → Sol → Luna；
+    // 只移动已存在的条目，不插入目录里没有的模型。
+    for (offset, model_id) in ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
         .iter()
-        .position(|model| model.eq_ignore_ascii_case("gpt-6-astra"))
+        .enumerate()
     {
-        let astra = model_ids.remove(index);
-        model_ids.insert(0, astra);
+        if let Some(index) = model_ids
+            .iter()
+            .position(|model| model.eq_ignore_ascii_case(model_id))
+        {
+            if index > offset {
+                let model = model_ids.remove(index);
+                model_ids.insert(offset, model);
+            }
+        }
     }
 
     model_ids
@@ -507,7 +516,18 @@ fn build_codex_client_model(model_id: &str, index: usize) -> Value {
         "comp_hash".to_string(),
         Value::String(CODEX_CLIENT_COMP_HASH.to_string()),
     );
+    apply_deepseek_multi_agent_capability(&mut model);
     model
+}
+
+/// 只为已适配的 DeepSeek 模型补协作声明；必须在模板覆盖之后调用。
+pub(crate) fn apply_deepseek_multi_agent_capability(model: &mut Value) {
+    let slug = model.get("slug").and_then(Value::as_str).unwrap_or_default();
+    let id = slug.trim().rsplit('/').next().unwrap_or_default().to_ascii_lowercase();
+    if !matches!(id.as_str(), "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-pro") {
+        return;
+    }
+    model["multi_agent_version"] = json!("v2");
 }
 
 fn codex_client_model_catalog() -> &'static Value {
@@ -622,7 +642,9 @@ fn display_name_for_model(model_id: &str) -> String {
         "gpt-5.4-mini" => "GPT-5.4 Mini".to_string(),
         "gpt-5.3-codex" => "GPT-5.3 Codex".to_string(),
         "gpt-5.3-codex-spark" => "GPT-5.3 Codex Spark".to_string(),
-        "gpt-6-astra" => "6 Astra".to_string(),
+        "gpt-6-astra" => "GPT-6 Astra".to_string(),
+        "gpt-6-sol" => "GPT-6 Sol".to_string(),
+        "gpt-6-luna" => "GPT-6 Luna".to_string(),
         "gpt-5.2" => "GPT-5.2".to_string(),
         "gpt-5.2-codex" => "GPT-5.2 Codex".to_string(),
         "gpt-5.1-codex-max" => "GPT-5.1 Codex Max".to_string(),
@@ -1106,6 +1128,21 @@ fn remove_unsupported_responses_fields(obj: &mut Map<String, Value>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deepseek_multi_agent_catalog_is_scoped_and_preserves_identity() {
+        for slug in ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro", "relay/deepseek-v4-pro"] {
+            let model = build_codex_client_model(slug, 0);
+            assert_eq!(model["slug"], json!(slug));
+            assert_eq!(model["multi_agent_version"], json!("v2"));
+        }
+        for slug in ["gpt-5.5", "gpt-5.6-luna", "gpt-reserve", "grok-4.6", "glm-4.6", "deepseek-custom"] {
+            let mut model = build_codex_client_model(slug, 0);
+            let before = model.clone();
+            apply_deepseek_multi_agent_capability(&mut model);
+            assert_eq!(model, before, "{slug}");
+        }
+    }
 
     #[test]
     fn grok_models_declare_multi_agent_capability() {
@@ -1803,6 +1840,8 @@ mod tests {
             managed_codex_model_ids(),
             vec![
                 "gpt-6-astra",
+                "gpt-6-sol",
+                "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna"
@@ -1925,6 +1964,42 @@ mod tests {
     }
 
     #[test]
+    fn gpt_6_sol_and_luna_preserve_official_catalog_limits_and_reasoning_levels() {
+        for (slug, official_name, fallback_name, priority, supports_ultra) in [
+            ("gpt-6-sol", "GPT-6 Sol", "GPT-6 Sol", 2, true),
+            ("gpt-6-luna", "GPT-6 Luna", "GPT-6 Luna", 3, false),
+        ] {
+            let response = build_codex_client_models_response(&[slug.to_string()]);
+            let model = response
+                .pointer("/models/0")
+                .expect("GPT-6 model should be present");
+            assert_eq!(
+                model.get("display_name").and_then(Value::as_str),
+                Some(official_name)
+            );
+            assert_eq!(display_name_for_model(slug), fallback_name);
+            assert_eq!(model.get("priority").and_then(Value::as_i64), Some(priority));
+            assert_eq!(
+                model.get("context_window").and_then(Value::as_i64),
+                Some(1_050_000)
+            );
+            assert_eq!(
+                model.get("max_context_window").and_then(Value::as_i64),
+                Some(1_050_000)
+            );
+            let efforts = model
+                .get("supported_reasoning_levels")
+                .and_then(Value::as_array)
+                .expect("GPT-6 reasoning levels should exist")
+                .iter()
+                .filter_map(|level| level.get("effort").and_then(Value::as_str))
+                .collect::<Vec<_>>();
+            assert!(efforts.contains(&"max"), "{slug}: {efforts:?}");
+            assert_eq!(efforts.contains(&"ultra"), supports_ultra, "{slug}: {efforts:?}");
+        }
+    }
+
+    #[test]
     fn gpt_6_astra_filters_reasoning_efforts_to_official_six_levels() {
         let response = build_codex_client_models_response_with_model_definitions_and_reasoning(&[
             (
@@ -2014,7 +2089,7 @@ mod tests {
 
         assert_eq!(
             priorities,
-            vec![Some(1), Some(2), Some(3), Some(7), Some(16), Some(23)]
+            vec![Some(4), Some(7), Some(8), Some(12), Some(16), Some(23)]
         );
     }
 

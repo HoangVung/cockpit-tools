@@ -790,6 +790,8 @@
                 "migrations": ["add-gpt-6-astra-model"],
                 "models": [
                     {"model_id": "gpt-6-astra", "display_name": "6 Astra"},
+                    {"model_id": "gpt-6-sol", "display_name": "6 Sol"},
+                    {"model_id": "gpt-6-luna", "display_name": "6 Luna"},
                     {"model_id": "gpt-5.6-sol", "display_name": "5.6 Sol"},
                     {"model_id": "gpt-5.6-terra", "display_name": "5.6 Terra"},
                     {"model_id": "gpt-5.6-luna", "display_name": "5.6 Luna"},
@@ -825,6 +827,8 @@
             .collect::<HashMap<_, _>>();
         for (slug, expected_name) in [
             ("gpt-6-astra", "GPT-6 Astra"),
+            ("gpt-6-sol", "GPT-6 Sol"),
+            ("gpt-6-luna", "GPT-6 Luna"),
             ("gpt-5.6-sol", "GPT-5.6 Sol"),
             ("gpt-5.6-terra", "GPT-5.6 Terra"),
             ("gpt-5.6-luna", "GPT-5.6 Luna"),

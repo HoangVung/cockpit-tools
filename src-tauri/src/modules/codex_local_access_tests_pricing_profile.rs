@@ -1148,6 +1148,57 @@
         assert_eq!(astra_long.input_usd_per_million, 40.0);
         assert_eq!(astra_long.output_usd_per_million, 150.0);
         assert_eq!(astra_long.cached_input_usd_per_million, Some(4.0));
+
+        // GPT-6 Sol / Luna keep official short-context rates (2 / 0.2 / 10, 0.1 / 0.01 / 0.5).
+        let sol =
+            resolve_effective_model_pricing(None, Some("gpt-6-sol"), Some(&short_usage), None)
+                .expect("gpt-6-sol pricing");
+        assert_eq!(sol.input_usd_per_million, 2.0);
+        assert_eq!(sol.output_usd_per_million, 10.0);
+        assert_eq!(sol.cached_input_usd_per_million, Some(0.2));
+        let luna =
+            resolve_effective_model_pricing(None, Some("gpt-6-luna"), Some(&short_usage), None)
+                .expect("gpt-6-luna pricing");
+        assert_eq!(luna.input_usd_per_million, 0.1);
+        assert_eq!(luna.output_usd_per_million, 0.5);
+        assert_eq!(luna.cached_input_usd_per_million, Some(0.01));
+
+        // Long context (>272k) applies the official multipliers: sol 2 -> 4 / 0.2 -> 0.4 / 10 -> 15,
+        // priority sol 4 -> 8 / 0.4 -> 0.8 / 20 -> 30.
+        let sol_long =
+            resolve_effective_model_pricing(None, Some("gpt-6-sol"), Some(&long_usage), None)
+                .expect("gpt-6-sol long pricing");
+        assert_eq!(sol_long.input_usd_per_million, 4.0);
+        assert_eq!(sol_long.output_usd_per_million, 15.0);
+        assert_eq!(sol_long.cached_input_usd_per_million, Some(0.4));
+        let sol_priority_long = resolve_effective_model_pricing(
+            None,
+            Some("gpt-6-sol"),
+            Some(&long_usage),
+            Some("priority"),
+        )
+        .expect("gpt-6-sol priority long pricing");
+        assert_eq!(sol_priority_long.input_usd_per_million, 8.0);
+        assert_eq!(sol_priority_long.output_usd_per_million, 30.0);
+        assert_eq!(sol_priority_long.cached_input_usd_per_million, Some(0.8));
+        // luna long context: 0.1 -> 0.2 / 0.01 -> 0.02 / 0.5 -> 0.75,
+        // priority long: 0.2 -> 0.4 / 0.02 -> 0.04 / 1 -> 1.5.
+        let luna_long =
+            resolve_effective_model_pricing(None, Some("gpt-6-luna"), Some(&long_usage), None)
+                .expect("gpt-6-luna long pricing");
+        assert_eq!(luna_long.input_usd_per_million, 0.2);
+        assert_eq!(luna_long.output_usd_per_million, 0.75);
+        assert_eq!(luna_long.cached_input_usd_per_million, Some(0.02));
+        let luna_priority_long = resolve_effective_model_pricing(
+            None,
+            Some("gpt-6-luna"),
+            Some(&long_usage),
+            Some("priority"),
+        )
+        .expect("gpt-6-luna priority long pricing");
+        assert_eq!(luna_priority_long.input_usd_per_million, 0.4);
+        assert_eq!(luna_priority_long.output_usd_per_million, 1.5);
+        assert_eq!(luna_priority_long.cached_input_usd_per_million, Some(0.04));
     }
 
     #[test]

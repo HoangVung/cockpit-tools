@@ -63,12 +63,168 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command as TokioCommand};
-use tokio::sync::{oneshot, watch, Mutex as TokioMutex, Notify};
+use tokio::sync::{oneshot, watch, Mutex as TokioMutex, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Duration};
 
-/// API 服务 sidecar 的运行条件：只有对外入口被启用时才运行。
+const INTERNAL_REQUEST_CONCURRENCY: usize = 6;
+static INTERNAL_REQUEST_GATE: std::sync::LazyLock<Arc<Semaphore>> =
+    std::sync::LazyLock::new(|| Arc::new(Semaphore::new(INTERNAL_REQUEST_CONCURRENCY)));
+static INTERNAL_ACCOUNT_GATES: std::sync::LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static INTERNAL_API_ACCOUNT_IDS: std::sync::LazyLock<Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
+static INTERNAL_API_SERVICE_KEY: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(generate_internal_api_service_key);
+
+fn generate_internal_api_service_key() -> String {
+    let suffix: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(48)
+        .map(char::from)
+        .collect();
+    format!("agt_internal_codex_{}", suffix)
+}
+
+fn internal_api_service_key() -> &'static str {
+    INTERNAL_API_SERVICE_KEY.as_str()
+}
+
+fn register_internal_api_account(account_id: &str) -> Result<(), String> {
+    let account_id = account_id.trim();
+    if account_id.is_empty() {
+        return Err("Codex API 内部请求缺少目标账号".to_string());
+    }
+    let mut accounts = INTERNAL_API_ACCOUNT_IDS
+        .lock()
+        .map_err(|_| "Codex API 内部账号范围不可用".to_string())?;
+    accounts.insert(account_id.to_string());
+    Ok(())
+}
+
+fn internal_api_account_ids() -> Vec<String> {
+    INTERNAL_API_ACCOUNT_IDS
+        .lock()
+        .map(|accounts| accounts.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn internal_api_service_required() -> bool {
+    !internal_api_account_ids().is_empty()
+}
+
+/// API 服务 sidecar 的运行条件：对外入口被启用，或者宿主内部调度仍需要它。
+///
+/// 用户停用 API 服务只关闭对外入口，唤醒与鹈鹕测试等内部请求依然复用同一进程，
+/// 因此生命周期判断必须同时考虑这两个条件。
 fn local_access_gateway_should_run(collection: &CodexLocalAccessCollection) -> bool {
-    collection.enabled
+    collection.enabled || internal_api_service_required()
+}
+
+/// All host-triggered Codex requests share this scheduler. The account permit
+/// prevents a wakeup and a Pelican run from concurrently refreshing/consuming
+/// the same account while the global permit bounds total background pressure.
+pub(crate) async fn acquire_internal_request_permit(
+    account_id: &str,
+) -> Result<(OwnedSemaphorePermit, OwnedSemaphorePermit), String> {
+    let global = INTERNAL_REQUEST_GATE
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "Codex API 内部请求调度器已停止".to_string())?;
+    let account_gate = {
+        let mut gates = INTERNAL_ACCOUNT_GATES
+            .lock()
+            .map_err(|_| "Codex API 账号并发锁不可用".to_string())?;
+        gates
+            .entry(account_id.trim().to_string())
+            .or_insert_with(|| Arc::new(Semaphore::new(1)))
+            .clone()
+    };
+    let account = account_gate
+        .acquire_owned()
+        .await
+        .map_err(|_| "Codex API 账号请求调度器已停止".to_string())?;
+    Ok((global, account))
+}
+
+/// 统一承接宿主内部发起的 Codex 模型请求。
+///
+/// 内部调用也必须经过 API Service sidecar，这样账号选择、Token Authority、账号级并发、
+/// quota cooldown、重试和请求日志都与外部 API 请求使用同一条链路。请求只连接本机，
+/// 不复用上游代理，避免把内部控制头发到公网。
+async fn send_internal_api_service_request(
+    account_id: &str,
+    target: &str,
+    headers: &HashMap<String, String>,
+    body: &[u8],
+    request_timeout: Duration,
+) -> Result<reqwest::Response, String> {
+    let account_id = account_id.trim();
+    if account_id.is_empty() {
+        return Err("Codex API 内部请求缺少目标账号".to_string());
+    }
+    register_internal_api_account(account_id)?;
+    let target = resolve_internal_api_service_target(target)?;
+    ensure_runtime_loaded_without_start().await?;
+    ensure_gateway_matches_runtime().await?;
+
+    let (port, api_key, running) = {
+        let runtime = gateway_runtime().lock().await;
+        let collection = runtime
+            .collection
+            .as_ref()
+            .ok_or_else(|| "API 服务集合尚未创建".to_string())?;
+        (
+            collection.port,
+            internal_api_service_key().to_string(),
+            runtime.running,
+        )
+    };
+    if !running {
+        return Err("API 服务 sidecar 未运行，无法承接内部请求".to_string());
+    }
+    if api_key.is_empty() {
+        return Err("API 服务缺少内部 API Key".to_string());
+    }
+
+    let url = format!(
+        "http://{}:{}{}",
+        CODEX_LOCAL_ACCESS_LOCALHOST_BIND_HOST, port, target
+    );
+    let client = build_localhost_http_client(request_timeout, "API 服务内部请求")?;
+    let mut request = client
+        .post(&url)
+        .header(AUTHORIZATION, format!("Bearer {}", api_key))
+        .header("X-Cockpit-Target-Account-Id", account_id)
+        .header(CONTENT_TYPE, "application/json");
+    for (name, value) in headers {
+        if matches!(
+            name.as_str(),
+            "authorization" | "host" | "content-length" | "connection" | "x-api-key"
+        ) {
+            continue;
+        }
+        request = request.header(name, value);
+    }
+    request
+        .body(body.to_vec())
+        .send()
+        .await
+        .map_err(|error| format!("连接 API 服务 sidecar 失败: {}", error))
+}
+
+/// 宿主内部请求打到 API 服务 sidecar 时使用的路径。
+///
+/// 内部请求的输入仍是客户端路径形态（`/v1/*` 或 `/backend-api/codex/*`），但必须还原成
+/// sidecar 的对外路由路径：sidecar 只注册了 `/v1/*`（例如 `/v1/responses`），
+/// 直接拿上游路径 `/responses` 去请求只会命中 404 `endpoint not supported`，
+/// 唤醒与鹈鹕测试都会因此不可用。
+fn resolve_internal_api_service_target(target: &str) -> Result<String, String> {
+    let upstream_path = resolve_upstream_target(target)?;
+    Ok(match upstream_path.as_str() {
+        "/" => "/v1".to_string(),
+        _ => format!("/v1{}", upstream_path),
+    })
 }
 #[cfg(test)]
 use tokio_tungstenite::client_async_tls_with_config;
@@ -111,9 +267,11 @@ const CODEX_PROVIDER_MODEL_SHELL_POOL: &[&str] = &[
     "gpt-5.3-codex-spark",
     "gpt-5.2",
 ];
-// Keep Astra available as an identity-preserving shell when an upstream account
-// already exposes that exact model, without assigning it to unrelated overflow models.
-const CODEX_PROVIDER_IDENTITY_ONLY_MODEL_IDS: &[&str] = &["gpt-6-astra"];
+// Keep the GPT-6 family available as identity-preserving shells when an upstream
+// account already exposes those exact models, without assigning them to unrelated
+// overflow models.
+const CODEX_PROVIDER_IDENTITY_ONLY_MODEL_IDS: &[&str] =
+    &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"];
 const CODEX_PROVIDER_GATEWAY_STATE_FILE: &str = "state.json";
 const CODEX_LOCAL_ACCESS_SIDECAR_CONFIG_FILE: &str = "config.json";
 const CODEX_LOCAL_ACCESS_SIDECAR_MANIFEST_FILE: &str = "manifest.json";
@@ -269,6 +427,8 @@ const CODEX_AUTO_REVIEW_MODEL_ID: &str = "codex-auto-review";
 /// 其它历史模型仍然可以路由，只是不再出现在客户端模型选择器里。
 const LOCAL_GATEWAY_VISIBLE_GPT_MODELS: &[(&str, &str)] = &[
     ("gpt-6-astra", "GPT-6 Astra"),
+    ("gpt-6-sol", "GPT-6 Sol"),
+    ("gpt-6-luna", "GPT-6 Luna"),
     ("gpt-5.6-sol", "GPT-5.6 Sol"),
     ("gpt-5.6-terra", "GPT-5.6 Terra"),
     ("gpt-5.6-luna", "GPT-5.6 Luna"),
@@ -1915,7 +2075,9 @@ fn sidecar_account_needs_background_refresh(account: &CodexAccount) -> bool {
 /// 绑定 OAuth 可能只存在于 API Key 或 collection 的绑定字段中，并不一定
 /// 出现在普通账号池 `account_ids` 里；这些账号仍必须接收重新授权后的新 Token。
 fn sidecar_auth_account_ids(collection: &CodexLocalAccessCollection) -> Vec<String> {
-    let mut scoped_account_ids = effective_sidecar_account_ids(collection);
+    // 宿主内部调度（唤醒、鹈鹕测试）的账号同样会写入 API 服务 sidecar 清单，
+    // 凭据同步与后台刷新范围必须和 sidecar 实际持有的账号保持一致。
+    let mut scoped_account_ids = effective_sidecar_account_ids_with_internal(collection, true);
     let mut seen = scoped_account_ids.iter().cloned().collect::<HashSet<_>>();
 
     // API Key 账号自身不持有 OAuth refresh_token；如果它绑定了 OAuth，
@@ -2065,8 +2227,6 @@ struct CodexOfficialWakeupHttpResponse {
     account: CodexAccount,
     status: StatusCode,
     body: String,
-    /// 上游响应头 `x-codex-turn-state` 原文；只用于当场分级，不写盘。
-    turn_state_value: Option<String>,
 }
 
 /// API 直连唤醒使用的上游代理与超时配置：沿用用户已保存的 API 服务网络设置，
@@ -2138,11 +2298,6 @@ async fn send_agent_identity_wakeup_request_with_base_urls(
         )
         .await?;
         let status = response.status();
-        let turn_state_value = response
-            .headers()
-            .get(CODEX_TURN_STATE_HEADER_NAME)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
         let raw_body = response
             .text()
             .await
@@ -2162,7 +2317,6 @@ async fn send_agent_identity_wakeup_request_with_base_urls(
             account: current,
             status,
             body,
-            turn_state_value,
         });
     }
 
@@ -2261,7 +2415,7 @@ pub async fn run_official_wakeup_chat(
             detail
         )
     };
-    let (account, status, body_text, turn_state_value) = if account.is_agent_identity_auth() {
+    let (account, status, body_text) = if account.is_agent_identity_auth() {
         let response = send_agent_identity_wakeup_request_with_base_urls(
             &account,
             &upstream_target,
@@ -2279,7 +2433,6 @@ pub async fn run_official_wakeup_chat(
             response.account,
             response.status,
             response.body,
-            response.turn_state_value,
         )
     } else {
         let response = send_upstream_request(
@@ -2297,37 +2450,12 @@ pub async fn run_official_wakeup_chat(
         .await
         .map_err(format_transport_error)?;
         let status = response.status();
-        let turn_state_value = response
-            .headers()
-            .get(CODEX_TURN_STATE_HEADER_NAME)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
         let body_text = response
             .text()
             .await
             .map_err(|e| format!("读取 API 直连唤醒响应失败: {}", e))?;
-        (account, status, body_text, turn_state_value)
+        (account, status, body_text)
     };
-
-    // 唤醒链路同样记录 state 观测：账号风控状态与 API 服务请求日志共用同一份观测数据。
-    let (state_length, state_class) = observe_turn_state_header_value(turn_state_value.as_deref());
-    let wakeup_error_message = if status.is_success() {
-        None
-    } else {
-        extract_upstream_error_message(&body_text)
-    };
-    record_codex_turn_state_observation_async(
-        account.id.clone(),
-        CodexTurnStateObservation {
-            observed_at: now_ms(),
-            source: turn_state_observation_source_wakeup(),
-            class: state_class.to_string(),
-            length: state_length,
-            http_status: Some(status.as_u16()),
-            reason: turn_state_observation_reason(state_class),
-        },
-    )
-    .await;
 
     if !status.is_success() {
         let message = extract_upstream_error_message(&body_text)

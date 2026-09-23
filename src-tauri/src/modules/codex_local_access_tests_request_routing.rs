@@ -222,8 +222,6 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
             request_kind: "text".to_string(),
             service_tier: None,
             reasoning_effort: None,
-            turn_state_length: None,
-            turn_state_class: None,
             success: false,
             status: Some(200),
             error_category: Some("request_failed".to_string()),
@@ -961,6 +959,8 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
             "gpt-5.6-terra",
             "gpt-5.6-luna",
             "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
         ] {
             assert!(models.iter().any(|item| item == model));
         }
@@ -3126,6 +3126,8 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
             "gpt-5.6-terra",
             "gpt-5.6-luna",
             "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
             "gpt-5.3-codex",
             "gpt-5.3-codex-spark",
         ] {
@@ -3142,6 +3144,8 @@ data: {"error":{"code":"server_error","type":"upstream","message":"stream aborte
             default_codex_model_ids(),
             vec![
                 "gpt-6-astra",
+                "gpt-6-sol",
+                "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",

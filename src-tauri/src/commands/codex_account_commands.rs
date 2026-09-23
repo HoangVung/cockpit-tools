@@ -1536,12 +1536,6 @@ pub async fn delete_codex_account(account_id: String) -> Result<(), String> {
             account_id, error
         ));
     }
-    if let Err(error) = codex_local_access::remove_codex_turn_state_records(&[account_id.clone()]) {
-        logger::log_warn(&format!(
-            "[Codex] 清理账号风控观测记录失败: account_id={}, error={}",
-            account_id, error
-        ));
-    }
     // 本地删除成功后立即返回；API 服务账号池持久化与网关重载在后台完成，
     // 避免外部进程延迟让用户误以为账号没有删除。
     spawn_accounts_cleanup_from_api_service("single_delete".to_string(), vec![account_id]);
@@ -1555,13 +1549,6 @@ pub async fn delete_codex_accounts(account_ids: Vec<String>) -> Result<(), Strin
     if let Err(error) = codex_wakeup::remove_deleted_accounts_from_tasks(&account_ids) {
         logger::log_warn(&format!(
             "[Codex] 批量清理唤醒任务账号引用失败: count={}, error={}",
-            account_ids.len(),
-            error
-        ));
-    }
-    if let Err(error) = codex_local_access::remove_codex_turn_state_records(&account_ids) {
-        logger::log_warn(&format!(
-            "[Codex] 批量清理账号风控观测记录失败: count={}, error={}",
             account_ids.len(),
             error
         ));

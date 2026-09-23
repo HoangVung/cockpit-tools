@@ -235,6 +235,54 @@ export function CodexAddAccountDialog(props: CodexAccountsViewProps) {
                         </span>
                       </div>
                     )}
+                    {reauthTargetAccount && (
+                      <div className="codex-reauth-target-summary">
+                        {reauthTargetEmail && (
+                          <div className="oauth-link codex-reauth-email-block">
+                            <label>
+                              {t(
+                                "codex.oauth.reauthEmailLabel",
+                                "本次重新授权账号",
+                              )}
+                            </label>
+                            <div className="oauth-url-box">
+                              <input
+                                type="text"
+                                value={reauthTargetEmail}
+                                readOnly
+                                aria-label={t(
+                                  "codex.oauth.reauthEmailLabel",
+                                  "本次重新授权账号",
+                                )}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleCopyReauthEmail()}
+                                title={
+                                  reauthEmailCopied
+                                    ? t("common.copied", "已复制")
+                                    : t("common.copy", "复制")
+                                }
+                                aria-label={
+                                  reauthEmailCopied
+                                    ? t("common.copied", "已复制")
+                                    : t("common.copy", "复制")
+                                }
+                              >
+                                {reauthEmailCopied ? (
+                                  <Check size={16} />
+                                ) : (
+                                  <Copy size={16} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="codex-reauth-note-summary">
+                          {renderAccountNoteButton(reauthTargetAccount)}
+                        </div>
+                      </div>
+                    )}
                     {addTab !== "oauth" && <MfaQuickCodeSelect />}
                     {addTab === "tempLogin" && (
                       <div className="add-section">
@@ -402,52 +450,6 @@ export function CodexAddAccountDialog(props: CodexAccountsViewProps) {
                     )}
                     {addTab === "oauth" && (
                       <div className="add-section">
-                        {reauthTargetEmail && (
-                          <div className="oauth-link codex-reauth-email-block">
-                            <label>
-                              {t(
-                                "codex.oauth.reauthEmailLabel",
-                                "本次重新授权账号",
-                              )}
-                            </label>
-                            <div className="oauth-url-box">
-                              <input
-                                type="text"
-                                value={reauthTargetEmail}
-                                readOnly
-                                aria-label={t(
-                                  "codex.oauth.reauthEmailLabel",
-                                  "本次重新授权账号",
-                                )}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => void handleCopyReauthEmail()}
-                                title={
-                                  reauthEmailCopied
-                                    ? t("common.copied", "已复制")
-                                    : t("common.copy", "复制")
-                                }
-                                aria-label={
-                                  reauthEmailCopied
-                                    ? t("common.copied", "已复制")
-                                    : t("common.copy", "复制")
-                                }
-                              >
-                                {reauthEmailCopied ? (
-                                  <Check size={16} />
-                                ) : (
-                                  <Copy size={16} />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        {reauthTargetAccount && (
-                          <div className="codex-reauth-note-summary">
-                            {renderAccountNoteButton(reauthTargetAccount)}
-                          </div>
-                        )}
                         {shouldShowPendingOAuthDraftForm && (
                           <div className="codex-pending-oauth-draft">
                             <div className="oauth-link">

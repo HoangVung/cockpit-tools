@@ -372,9 +372,9 @@ export function useCodexAccountsLocalAccessController(context: Pick<ReturnType<t
                 type="button"
                 className="btn btn-sm btn-outline quota-error-action"
                 onClick={onReauthorize}
-                title={t("common.shared.addModal.oauth", "OAuth 授权")}
+                title={t("common.reauthorize", "重新授权")}
               >
-                {t("common.shared.addModal.oauth", "OAuth 授权")}
+                {t("common.reauthorize", "重新授权")}
               </button>
             )}
           </div>

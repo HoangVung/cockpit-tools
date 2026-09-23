@@ -74,9 +74,24 @@ const CODEX_EXPERIMENTAL_MODEL_USER_CUSTOMIZED_FILE: &str =
 const CODEX_EXPERIMENTAL_MODEL_PREVIOUS_CATALOG_FILE: &str =
     ".cockpit-experimental-model-catalog-previous.json";
 pub(crate) const GPT_6_ASTRA_MODEL_ID: &str = "gpt-6-astra";
+pub(crate) const GPT_6_SOL_MODEL_ID: &str = "gpt-6-sol";
+pub(crate) const GPT_6_LUNA_MODEL_ID: &str = "gpt-6-luna";
 const DEFAULT_CODEX_MODEL_ID: &str = "gpt-5.6-sol";
 const GPT_6_ASTRA_MODEL_CATALOG_MIGRATION_ID: &str = "add-gpt-6-astra-model";
+const GPT_6_SOL_LUNA_MODEL_CATALOG_MIGRATION_ID: &str = "add-gpt-6-sol-luna-models";
 const PRE_ASTRA_SHIPPED_VISIBLE_CODEX_MODEL_IDS: &[&str] = &[
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.3-codex",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
+];
+/// 加入 `gpt-6-sol` / `gpt-6-luna` 之前一次发布的自动清单快照（只含 astra）。
+const PRE_GPT_6_SOL_LUNA_SHIPPED_VISIBLE_CODEX_MODEL_IDS: &[&str] = &[
+    GPT_6_ASTRA_MODEL_ID,
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -90,6 +105,8 @@ const EXPERIMENTAL_MODEL_CATALOG_CONFIG_VERSION: u32 = 4;
 const CODEX_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max", "ultra"];
 const SHIPPED_VISIBLE_CODEX_MODEL_IDS: &[&str] = &[
     GPT_6_ASTRA_MODEL_ID,
+    GPT_6_SOL_MODEL_ID,
+    GPT_6_LUNA_MODEL_ID,
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -1910,6 +1927,7 @@ fn deepseek_official_catalog_models_for_account(
         }
         let supports_vision = deepseek_model_supports_vision(account, &model, &official_models);
         apply_deepseek_model_vision(&mut entry, supports_vision);
+        crate::modules::codex_protocol::apply_deepseek_multi_agent_capability(&mut entry);
         models.push(entry);
     }
     Ok(models)

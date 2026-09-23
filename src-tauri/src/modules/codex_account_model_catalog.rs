@@ -278,8 +278,26 @@ struct ExperimentalModelCatalogConfig {
 }
 
 const GPT_6_ASTRA_DEFAULT_REPAIR_MIGRATION_ID: &str = "repair-gpt-6-astra-default-model";
-const GPT_6_ASTRA_DISPLAY_NAME_MIGRATION_ID: &str =
-    "rename-gpt-6-astra-display-name-to-6-astra";
+const BUILTIN_MODEL_DISPLAY_NAME_MIGRATION_ID: &str =
+    "prefix-builtin-model-display-names";
+
+/// 内建模型的早期短名 → 带官方 `GPT-` 前缀的展示名。
+///
+/// 只有「模型 ID 与短名同时匹配」的内建条目才会改名，用户自己改过的展示名不受影响。
+const BUILTIN_MODEL_DISPLAY_NAME_MIGRATIONS: &[(&str, &str, &str)] = &[
+    (GPT_6_ASTRA_MODEL_ID, "6 Astra", "GPT-6 Astra"),
+    (GPT_6_SOL_MODEL_ID, "6 Sol", "GPT-6 Sol"),
+    (GPT_6_LUNA_MODEL_ID, "6 Luna", "GPT-6 Luna"),
+    ("gpt-5.6-sol", "5.6 Sol", "GPT-5.6 Sol"),
+    ("gpt-5.6-terra", "5.6 Terra", "GPT-5.6 Terra"),
+    ("gpt-5.6-luna", "5.6 Luna", "GPT-5.6 Luna"),
+    ("gpt-5.3-codex", "5.3 Codex", "GPT-5.3 Codex"),
+    ("gpt-5.5", "5.5", "GPT-5.5"),
+    ("gpt-5.4", "5.4", "GPT-5.4"),
+    ("gpt-5.4-mini", "5.4 Mini", "GPT-5.4 Mini"),
+    ("gpt-5.3-codex-spark", "5.3 Codex Spark", "GPT-5.3 Codex Spark"),
+    ("gpt-5.6-sol-wm", "5.6 Sol WM", "GPT-5.6 Sol WM"),
+];
 
 fn read_experimental_model_catalog_config(
     base_dir: &Path,
@@ -293,13 +311,22 @@ fn experimental_model_catalog_has_migration(base_dir: &Path, migration_id: &str)
         .is_some_and(|config| config.migrations.iter().any(|item| item == migration_id))
 }
 
-fn is_legacy_gpt_6_astra_display_name(value: &serde_json::Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|name| name.trim().eq_ignore_ascii_case("GPT-6 Astra"))
+/// 该模型当前展示名是否是需要补前缀的内建短名；是则返回统一后的名字。
+fn prefixed_builtin_display_name(
+    model_id: &str,
+    value: &serde_json::Value,
+) -> Option<&'static str> {
+    let name = value.as_str()?.trim();
+    let model_id = model_id.trim();
+    BUILTIN_MODEL_DISPLAY_NAME_MIGRATIONS
+        .iter()
+        .find(|(id, legacy, _)| {
+            id.eq_ignore_ascii_case(model_id) && legacy.eq_ignore_ascii_case(name)
+        })
+        .map(|(_, _, canonical)| *canonical)
 }
 
-fn migrate_gpt_6_astra_display_name(
+fn migrate_builtin_model_display_names(
     base_dir: &Path,
     doc: &Document,
 ) -> Result<bool, String> {
@@ -340,25 +367,26 @@ fn migrate_gpt_6_astra_display_name(
             .and_then(serde_json::Value::as_array)
             .is_some_and(|migrations| {
                 migrations.iter().any(|migration| {
-                    migration.as_str() == Some(GPT_6_ASTRA_DISPLAY_NAME_MIGRATION_ID)
+                    migration.as_str() == Some(BUILTIN_MODEL_DISPLAY_NAME_MIGRATION_ID)
                 })
             });
         if !migration_already_applied {
             if let Some(models) = config.get_mut("models").and_then(serde_json::Value::as_array_mut)
             {
                 for model in models {
-                    let is_astra = model
+                    let model_id = model
                         .get("model_id")
                         .and_then(serde_json::Value::as_str)
-                        .is_some_and(|model_id| model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID));
-                    if is_astra
-                        && model
-                            .get("display_name")
-                            .is_some_and(is_legacy_gpt_6_astra_display_name)
-                    {
-                        model["display_name"] = serde_json::Value::String("6 Astra".to_string());
-                        cached_config_needs_write = true;
-                    }
+                        .unwrap_or_default()
+                        .to_string();
+                    let Some(display_name) = model
+                        .get("display_name")
+                        .and_then(|value| prefixed_builtin_display_name(&model_id, value))
+                    else {
+                        continue;
+                    };
+                    model["display_name"] = serde_json::Value::String(display_name.to_string());
+                    cached_config_needs_write = true;
                 }
             }
             if let Some(object) = config.as_object_mut() {
@@ -367,7 +395,7 @@ fn migrate_gpt_6_astra_display_name(
                     .or_insert_with(|| serde_json::Value::Array(Vec::new()));
                 if let Some(migrations) = migrations.as_array_mut() {
                     migrations.push(serde_json::Value::String(
-                        GPT_6_ASTRA_DISPLAY_NAME_MIGRATION_ID.to_string(),
+                        BUILTIN_MODEL_DISPLAY_NAME_MIGRATION_ID.to_string(),
                     ));
                     cached_config_needs_write = true;
                 }
@@ -400,25 +428,23 @@ fn migrate_gpt_6_astra_display_name(
         })?;
         if let Some(models) = parsed.get_mut("models").and_then(serde_json::Value::as_array_mut) {
             for model in models {
-                let is_astra = model
+                let model_id = model
                     .get("slug")
                     .and_then(serde_json::Value::as_str)
-                    .is_some_and(|model_id| model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID));
-                if !is_astra {
-                    continue;
-                }
-                if model
+                    .unwrap_or_default()
+                    .to_string();
+                if let Some(display_name) = model
                     .get("display_name")
-                    .is_some_and(is_legacy_gpt_6_astra_display_name)
+                    .and_then(|value| prefixed_builtin_display_name(&model_id, value))
                 {
-                    model["display_name"] = serde_json::Value::String("6 Astra".to_string());
+                    model["display_name"] = serde_json::Value::String(display_name.to_string());
                     catalog_changed = true;
                 }
-                if model
+                if let Some(description) = model
                     .get("description")
-                    .is_some_and(is_legacy_gpt_6_astra_display_name)
+                    .and_then(|value| prefixed_builtin_display_name(&model_id, value))
                 {
-                    model["description"] = serde_json::Value::String("6 Astra".to_string());
+                    model["description"] = serde_json::Value::String(description.to_string());
                     catalog_changed = true;
                 }
             }
@@ -470,16 +496,30 @@ fn migrate_gpt_6_astra_display_name(
     Ok(catalog_changed || cached_config_needs_write)
 }
 
-fn prioritize_gpt_6_astra_model_definition(
+/// 把 GPT-6 家族按官方推荐顺序（astra → sol → luna）排到清单最前面。
+///
+/// 官方客户端的推荐集把这三个模型放在 5.6 系列之前；缺失的条目会被跳过，
+/// 不会凭空插入用户清单里不存在的模型。
+fn prioritize_gpt_6_model_definitions(
     mut models: Vec<CodexExperimentalModelDefinition>,
 ) -> Vec<CodexExperimentalModelDefinition> {
-    if let Some(index) = models
-        .iter()
-        .position(|model| model.model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID))
+    for (target_index, model_id) in [
+        GPT_6_ASTRA_MODEL_ID,
+        GPT_6_SOL_MODEL_ID,
+        GPT_6_LUNA_MODEL_ID,
+    ]
+    .into_iter()
+    .enumerate()
     {
-        if index > 0 {
-            let astra = models.remove(index);
-            models.insert(0, astra);
+        let Some(index) = models
+            .iter()
+            .position(|model| model.model_id.eq_ignore_ascii_case(model_id))
+        else {
+            continue;
+        };
+        if index > target_index {
+            let model = models.remove(index);
+            models.insert(target_index, model);
         }
     }
     models
@@ -629,7 +669,7 @@ fn maybe_add_gpt_6_astra_to_previous_shipped_model_definitions(
         .iter()
         .any(|model| model.model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID))
     {
-        return prioritize_gpt_6_astra_model_definition(models);
+        return prioritize_gpt_6_model_definitions(models);
     }
 
     let existing_ids = models
@@ -651,21 +691,78 @@ fn maybe_add_gpt_6_astra_to_previous_shipped_model_definitions(
     {
         models.insert(0, astra);
     }
-    prioritize_gpt_6_astra_model_definition(models)
+    prioritize_gpt_6_model_definitions(models)
+}
+
+/// 把 `gpt-6-sol` / `gpt-6-luna` 补进上一版自动生成的清单。
+///
+/// 与 astra 的补齐规则一致：只有清单仍与上一版随包发布的自动清单一致时才补齐，
+/// 用户自己增删过的精修清单保持原样（`gpt-6-sol` 与 `gpt-6-luna` 只存在其中一个时
+/// 同样视为用户已接管，不再自动改动）。
+fn maybe_add_gpt_6_sol_luna_to_previous_shipped_model_definitions(
+    base_dir: &Path,
+    mut models: Vec<CodexExperimentalModelDefinition>,
+) -> Vec<CodexExperimentalModelDefinition> {
+    let has_sol = models
+        .iter()
+        .any(|model| model.model_id.eq_ignore_ascii_case(GPT_6_SOL_MODEL_ID));
+    let has_luna = models
+        .iter()
+        .any(|model| model.model_id.eq_ignore_ascii_case(GPT_6_LUNA_MODEL_ID));
+    if has_sol || has_luna {
+        return prioritize_gpt_6_model_definitions(models);
+    }
+
+    let existing_ids = models
+        .iter()
+        .map(|model| model.model_id.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    if !PRE_GPT_6_SOL_LUNA_SHIPPED_VISIBLE_CODEX_MODEL_IDS
+        .iter()
+        .filter(|model_id| !crate::modules::codex_wakeup::is_codex_model_before_5_5(model_id))
+        .all(|model_id| existing_ids.contains(&model_id.to_ascii_lowercase()))
+    {
+        return models;
+    }
+
+    let defaults = default_experimental_model_definitions(base_dir);
+    let mut additions = [GPT_6_SOL_MODEL_ID, GPT_6_LUNA_MODEL_ID]
+        .into_iter()
+        .filter_map(|model_id| {
+            defaults
+                .iter()
+                .find(|model| model.model_id.eq_ignore_ascii_case(model_id))
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    if additions.is_empty() {
+        return models;
+    }
+    let insert_at = models
+        .iter()
+        .position(|model| model.model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    for (offset, model) in additions.drain(..).enumerate() {
+        models.insert(insert_at + offset, model);
+    }
+    prioritize_gpt_6_model_definitions(models)
 }
 
 fn model_catalog_display_name(model_id: &str, fallback: &str) -> String {
     match model_id.trim().to_ascii_lowercase().as_str() {
-        "gpt-5.6-sol" => "5.6 Sol".to_string(),
-        "gpt-5.6-terra" => "5.6 Terra".to_string(),
-        "gpt-5.6-luna" => "5.6 Luna".to_string(),
-        GPT_6_ASTRA_MODEL_ID => "6 Astra".to_string(),
-        "gpt-5.3-codex" => "5.3 Codex".to_string(),
-        "gpt-5.5" => "5.5".to_string(),
-        "gpt-5.4" => "5.4".to_string(),
-        "gpt-5.4-mini" => "5.4 Mini".to_string(),
-        "gpt-5.3-codex-spark" => "5.3 Codex Spark".to_string(),
-        "gpt-5.6-sol-wm" => "5.6 Sol WM".to_string(),
+        "gpt-5.6-sol" => "GPT-5.6 Sol".to_string(),
+        "gpt-5.6-terra" => "GPT-5.6 Terra".to_string(),
+        "gpt-5.6-luna" => "GPT-5.6 Luna".to_string(),
+        GPT_6_ASTRA_MODEL_ID => "GPT-6 Astra".to_string(),
+        GPT_6_SOL_MODEL_ID => "GPT-6 Sol".to_string(),
+        GPT_6_LUNA_MODEL_ID => "GPT-6 Luna".to_string(),
+        "gpt-5.3-codex" => "GPT-5.3 Codex".to_string(),
+        "gpt-5.5" => "GPT-5.5".to_string(),
+        "gpt-5.4" => "GPT-5.4".to_string(),
+        "gpt-5.4-mini" => "GPT-5.4 Mini".to_string(),
+        "gpt-5.3-codex-spark" => "GPT-5.3 Codex Spark".to_string(),
+        "gpt-5.6-sol-wm" => "GPT-5.6 Sol WM".to_string(),
         _ => fallback.trim().to_string(),
     }
 }
@@ -765,20 +862,38 @@ pub(crate) fn read_experimental_model_definitions(
                     .migrations
                     .iter()
                     .any(|item| item == GPT_6_ASTRA_MODEL_CATALOG_MIGRATION_ID);
+            let should_add_sol_luna = config.version == EXPERIMENTAL_MODEL_CATALOG_CONFIG_VERSION
+                && !config
+                    .migrations
+                    .iter()
+                    .any(|item| item == GPT_6_SOL_LUNA_MODEL_CATALOG_MIGRATION_ID);
             normalize_experimental_model_definitions(config.models).map(|models| {
-                (models, requires_catalog_migration, should_add_astra)
+                (
+                    models,
+                    requires_catalog_migration,
+                    should_add_astra,
+                    should_add_sol_luna,
+                )
             })
         })
     {
-        Ok((_models, true, _)) => {
+        Ok((_models, true, _, _)) => {
             // A release migration intentionally resets all pre-release lists to the
             // shipped visible-model preset. Later user edits are preserved by version 4+
-            // and the additive Astra migration marker.
+            // and the additive Astra / GPT-6 Sol-Luna migration markers.
             default_experimental_model_definitions(base_dir)
         }
-        Ok((models, false, false)) => prioritize_gpt_6_astra_model_definition(models),
-        Ok((models, false, true)) => {
-            maybe_add_gpt_6_astra_to_previous_shipped_model_definitions(base_dir, models)
+        Ok((models, false, should_add_astra, should_add_sol_luna)) => {
+            let models = if should_add_astra {
+                maybe_add_gpt_6_astra_to_previous_shipped_model_definitions(base_dir, models)
+            } else {
+                prioritize_gpt_6_model_definitions(models)
+            };
+            if should_add_sol_luna {
+                maybe_add_gpt_6_sol_luna_to_previous_shipped_model_definitions(base_dir, models)
+            } else {
+                prioritize_gpt_6_model_definitions(models)
+            }
         }
         Err(error) => {
             logger::log_warn(&format!(
@@ -811,7 +926,7 @@ fn persist_experimental_model_definitions(
         .as_ref()
         .and_then(|config| config.default_model_id.as_deref())
         .is_some_and(|model_id| model_id.eq_ignore_ascii_case(GPT_6_ASTRA_MODEL_ID));
-    let models = prioritize_gpt_6_astra_model_definition(normalize_experimental_model_definitions(
+    let models = prioritize_gpt_6_model_definitions(normalize_experimental_model_definitions(
         models,
     )?);
     let mut default_model_id = default_model_id.and_then(|value| {
@@ -846,6 +961,12 @@ fn persist_experimental_model_definitions(
         .any(|item| item == GPT_6_ASTRA_MODEL_CATALOG_MIGRATION_ID)
     {
         migrations.push(GPT_6_ASTRA_MODEL_CATALOG_MIGRATION_ID.to_string());
+    }
+    if !migrations
+        .iter()
+        .any(|item| item == GPT_6_SOL_LUNA_MODEL_CATALOG_MIGRATION_ID)
+    {
+        migrations.push(GPT_6_SOL_LUNA_MODEL_CATALOG_MIGRATION_ID.to_string());
     }
     let mut content = serde_json::to_string_pretty(&ExperimentalModelCatalogConfig {
         version: EXPERIMENTAL_MODEL_CATALOG_CONFIG_VERSION,
@@ -1411,7 +1532,7 @@ pub fn read_quick_config_from_config_toml(base_dir: &Path) -> Result<CodexQuickC
         crate::modules::codex_config_format::read_codex_config_doc_from_str(&content)
             .map_err(|e| format!("解析 config.toml 失败: {}", e))?
     };
-    if let Err(error) = migrate_gpt_6_astra_display_name(base_dir, &doc) {
+    if let Err(error) = migrate_builtin_model_display_names(base_dir, &doc) {
         logger::log_warn(&format!(
             "[Codex实验模型] 迁移 GPT-6 Astra 显示名称失败，继续读取现有配置: {}",
             error

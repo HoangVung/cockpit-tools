@@ -749,12 +749,6 @@ pub struct CodexLocalAccessUsageEvent {
     /// Request reasoning effort (e.g. low/medium/high/xhigh/max), when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    /// 上游响应头 `x-codex-turn-state` 的长度（只记录长度，不保存原文）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_state_length: Option<i64>,
-    /// state 长度分级：normal / renew / abnormal / missing。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_state_class: Option<String>,
     #[serde(default)]
     pub success: bool,
     #[serde(default)]

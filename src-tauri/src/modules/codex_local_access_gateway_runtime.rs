@@ -932,10 +932,6 @@ struct RequestStatsMeta<'a> {
     requested_model: Option<&'a str>,
     /// 实际发送给上游的模型。
     upstream_model: Option<&'a str>,
-    /// 上游响应头 `x-codex-turn-state` 长度（只记录长度，不保存原文）。
-    turn_state_length: Option<i64>,
-    /// state 长度分级：normal / renew / abnormal / missing。
-    turn_state_class: Option<&'a str>,
 }
 
 async fn record_request_stats_with_meta(
@@ -1029,7 +1025,7 @@ async fn record_request_stats_with_meta(
                 })
             });
         runtime.collection_dirty |= token_usage_changed;
-        let event = append_usage_event_with_turn_state(
+        let event = append_usage_event_with_meta(
             &mut runtime.stats.events,
             now,
             meta.request_id,
@@ -1054,8 +1050,6 @@ async fn record_request_stats_with_meta(
             pricing.as_ref(),
             model_pricing_version,
             estimated_cost_usd,
-            meta.turn_state_length,
-            meta.turn_state_class,
         );
 
         apply_usage_event_to_current_windows(&mut runtime.stats, &event, now);

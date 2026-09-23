@@ -718,6 +718,8 @@ pub async fn recover_local_access_accounts(
         return Err("没有找到可恢复的账号".to_string());
     }
 
+    refresh_managed_accounts_before_recovery(&selected).await;
+
     let reset_account_ids = request_sidecar_reset_scheduler(&collection, port, &selected).await?;
     let reset_account_id_set = reset_account_ids.iter().collect::<HashSet<_>>();
     let recovered_entire_collection = selected.len() == collection.account_ids.len()
@@ -734,6 +736,122 @@ pub async fn recover_local_access_accounts(
     );
     mark_quota_cooldowns_recovered(&mut runtime, &reset_account_ids, now);
     Ok(build_fresh_state_snapshot(&mut runtime))
+}
+
+/// 账号凭据更新（重新授权 / 本机导入）后立即让本地网关生效。
+///
+/// 重新授权只把新 Token 写进账号库；运行中的 sidecar 仍持有旧 Token，会继续 401，
+/// 界面也继续显示上一次的失败原因。这里立刻写穿 auth 文件，并在后台重置该账号在
+/// sidecar 调度器里的失败状态、清掉宿主缓存的错误信息。
+pub fn notify_account_credentials_updated(account: &CodexAccount) {
+    if account.is_api_key_auth() {
+        return;
+    }
+    if let Err(error) = sync_sidecar_auth_file_for_account(account) {
+        logger::log_codex_api_warn(&format!(
+            "[CodexLocalAccess] 账号凭据更新后同步 sidecar 认证失败: account_id={}, error={}",
+            account.id, error
+        ));
+        return;
+    }
+    emit_local_access_state_updated();
+    let account_id = account.id.clone();
+    tauri::async_runtime::spawn(async move {
+        reset_scheduler_state_after_credentials_update(account_id).await;
+    });
+}
+
+async fn reset_scheduler_state_after_credentials_update(account_id: String) {
+    if let Err(error) = ensure_runtime_loaded_without_start().await {
+        logger::log_codex_api_info(&format!(
+            "[CodexLocalAccess] 账号凭据更新后加载运行态失败（跳过调度状态重置）: account_id={}, error={}",
+            account_id, error
+        ));
+        return;
+    }
+    let (collection, port, running) = {
+        let runtime = gateway_runtime().lock().await;
+        let Some(collection) = runtime.collection.clone() else {
+            return;
+        };
+        (
+            collection.clone(),
+            runtime.actual_port.unwrap_or(collection.port),
+            runtime.running,
+        )
+    };
+    if !collection
+        .account_ids
+        .iter()
+        .any(|item| item == &account_id)
+    {
+        return;
+    }
+    if running {
+        match request_sidecar_reset_scheduler(&collection, port, std::slice::from_ref(&account_id))
+            .await
+        {
+            Ok(reset_account_ids) => {
+                let mut runtime = gateway_runtime().lock().await;
+                clear_runtime_account_health(&mut runtime, &reset_account_ids, false);
+                mark_quota_cooldowns_recovered(&mut runtime, &reset_account_ids, now_ms());
+                drop(runtime);
+                emit_local_access_state_updated();
+                return;
+            }
+            Err(error) => logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess] 账号凭据更新后重置 sidecar 调度状态失败: account_id={}, error={}",
+                account_id, error
+            )),
+        }
+    }
+    // 网关未运行或重置失败时，至少清掉宿主侧缓存的失败信息。
+    let mut runtime = gateway_runtime().lock().await;
+    clear_runtime_account_health(&mut runtime, std::slice::from_ref(&account_id), false);
+    drop(runtime);
+    emit_local_access_state_updated();
+}
+
+/// 上游 401（invalidated oauth token / auth_unavailable）时 access_token 往往还没过期，
+/// 仅重置调度状态后下一次请求仍会立刻 401，表现为「点了恢复没反应」。这里复用后台
+/// 刷新链路做一次强制刷新并同步 sidecar auth 文件；刷新失败时保持原状，由界面引导
+/// 用户重新授权。
+async fn refresh_managed_accounts_before_recovery(account_ids: &[String]) {
+    const RECOVERY_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
+    stream::iter(account_ids.iter().cloned())
+        .for_each_concurrent(GATEWAY_ACCOUNT_REFRESH_CONCURRENCY, |account_id| async move {
+            let Some(account) = codex_account::load_account(&account_id) else {
+                return;
+            };
+            if account.is_api_key_auth() || !codex_account::account_has_refresh_token(&account) {
+                return;
+            }
+            match timeout(
+                RECOVERY_REFRESH_TIMEOUT,
+                codex_account::force_refresh_managed_account(&account_id, "recover"),
+            )
+            .await
+            {
+                Ok(Ok(account)) => {
+                    if let Err(error) = sync_sidecar_auth_file_for_account(&account) {
+                        logger::log_codex_api_warn(&format!(
+                            "[CodexLocalAccess] 恢复账号后同步 sidecar 认证失败: account_id={}, error={}",
+                            account_id, error
+                        ));
+                    }
+                }
+                Ok(Err(error)) => logger::log_codex_api_warn(&format!(
+                    "[CodexLocalAccess] 恢复账号时刷新凭据失败（需要重新授权）: account_id={}, error={}",
+                    account_id, error
+                )),
+                Err(_) => logger::log_codex_api_warn(&format!(
+                    "[CodexLocalAccess] 恢复账号时刷新凭据超时: account_id={}, timeout_secs={}",
+                    account_id,
+                    RECOVERY_REFRESH_TIMEOUT.as_secs()
+                )),
+            }
+        })
+        .await;
 }
 
 async fn update_sidecar_account_health_from_values(
@@ -860,8 +978,6 @@ async fn record_sidecar_usage_event(event: SidecarUsageEvent) {
             reasoning_effort: event.reasoning_effort.as_deref(),
             requested_model: requested_model.as_deref(),
             upstream_model: upstream_model.as_deref(),
-            turn_state_length: event.turn_state_length.filter(|value| *value > 0),
-            turn_state_class: normalize_turn_state_class(event.turn_state_class.as_deref()),
         },
     )
     .await
@@ -872,43 +988,6 @@ async fn record_sidecar_usage_event(event: SidecarUsageEvent) {
         ));
     }
     schedule_sidecar_auto_restart(&event);
-    record_sidecar_turn_state_observation(&event).await;
-}
-
-/// 网关旁路观测：官方 OAuth 账号的上游响应会带 `x-codex-turn-state`。
-/// 未返回 state 的请求（第三方上游、内部端点）不参与风控判定，避免误报。
-async fn record_sidecar_turn_state_observation(event: &SidecarUsageEvent) {
-    if parse_sidecar_request_kind(&event.request_kind) != CodexLocalAccessRequestKind::Text {
-        return;
-    }
-    let Some(account_id) = non_empty_sidecar_string(&event.account_id) else {
-        return;
-    };
-    let Some(account) = codex_account::load_account(account_id.as_str()) else {
-        return;
-    };
-    if account.is_api_key_auth() {
-        return;
-    }
-    let class = match normalize_turn_state_class(event.turn_state_class.as_deref()) {
-        Some(class) => class,
-        None => match event.turn_state_length {
-            Some(length) => classify_turn_state_length(Some(length)),
-            None => return,
-        },
-    };
-    if class == CODEX_TURN_STATE_CLASS_MISSING {
-        return;
-    }
-    let observation = CodexTurnStateObservation {
-        observed_at: now_ms(),
-        source: turn_state_observation_source_gateway(),
-        class: class.to_string(),
-        length: event.turn_state_length.filter(|value| *value > 0),
-        http_status: event.status,
-        reason: turn_state_observation_reason(class),
-    };
-    record_codex_turn_state_observation_async(account_id, observation).await;
 }
 
 type SharedSidecarStartupDiagnostics = Arc<Mutex<SidecarStartupDiagnostics>>;
@@ -1562,6 +1641,8 @@ fn apply_profile_model_definition_overrides(
                 object.insert(key.clone(), value.clone());
             }
         }
+        // DeepSeek 官方模板可能含 null，不能覆盖最终的协作声明。
+        codex_protocol::apply_deepseek_multi_agent_capability(model);
         if definition.image_capable {
             if let Some(object) = model.as_object_mut() {
                 // 与 DeepSeek 网关模式一致：请求里的图片会由网关自动转到识图模型，

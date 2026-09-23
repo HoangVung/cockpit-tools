@@ -773,6 +773,21 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            commands::codex_pelican::codex_pelican_start,
+            commands::codex_pelican::codex_pelican_retry,
+            commands::codex_pelican::codex_pelican_active,
+            commands::codex_pelican::codex_pelican_get,
+            commands::codex_pelican::codex_pelican_history,
+            commands::codex_pelican::codex_pelican_retention_settings,
+            commands::codex_pelican::codex_pelican_update_retention_days,
+            commands::codex_pelican::codex_pelican_cleanup_expired,
+            commands::codex_pelican::codex_pelican_clear_all,
+            commands::codex_pelican::codex_pelican_cancel,
+            commands::codex_pelican::codex_pelican_dismiss,
+            commands::codex_pelican::codex_pelican_artifact,
+            commands::codex_pelican::codex_pelican_delete,
+            modules::codex_pelican_preview::codex_pelican_preview,
+            modules::codex_pelican_preview::codex_pelican_browser,
             // Account Commands
             commands::account::list_accounts,
             commands::account::add_account,
@@ -903,7 +918,6 @@ pub fn run() {
             commands::system::codex_ssh_test_connection,
             commands::system::codex_ssh_sync_current,
             commands::system::codex_managed_lb_provider_id,
-            commands::system::codebuddy_list_local_session_files,
             commands::system::save_refresh_interval_config,
             commands::system::save_tray_platform_layout,
             commands::system::set_app_path,
@@ -1094,8 +1108,6 @@ pub fn run() {
             commands::codex::codex_local_access_rotate_api_key,
             commands::codex::codex_local_access_update_bound_oauth_account,
             commands::codex::codex_local_access_clear_stats,
-            commands::codex::codex_account_turn_state_statuses,
-            commands::codex::codex_probe_account_turn_state,
             commands::codex::codex_local_access_query_stats,
             commands::codex::codex_local_access_query_account_window_stats,
             commands::codex::codex_local_access_query_request_logs,

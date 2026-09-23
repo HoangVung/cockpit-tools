@@ -27,6 +27,8 @@ interface CodexAccountPoolHealthModalProps {
   onClose: () => void;
   onRecover: (accountId: string) => Promise<void>;
   onRecoverAll: (accountIds: string[]) => Promise<void>;
+  /** 凭据类失败（auth_unavailable / 401）需要重新走官方登录，恢复调度状态无法修复。 */
+  onReauthorize?: (accountId: string) => void;
 }
 
 type HealthIssueKind =
@@ -146,6 +148,7 @@ export function CodexAccountPoolHealthModal({
   onClose,
   onRecover,
   onRecoverAll,
+  onReauthorize,
 }: CodexAccountPoolHealthModalProps) {
   const { t } = useTranslation();
   const {
@@ -509,7 +512,20 @@ export function CodexAccountPoolHealthModal({
                             <code>{member.reasonCode}</code>
                           )}
                         </div>
-                        {recoverable && (
+                        {memberKind === "auth" && onReauthorize ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => onReauthorize(member.accountId)}
+                            title={t(
+                              "codex.localAccess.accountPoolHealth.dialog.reauthorizeHint",
+                              "账号凭据已失效，需要重新走官方登录；仅恢复调度状态无法修复。",
+                            )}
+                          >
+                            <RefreshCw size={13} />
+                            {t("common.reauthorize", "重新授权")}
+                          </button>
+                        ) : recoverable ? (
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
@@ -532,7 +548,7 @@ export function CodexAccountPoolHealthModal({
                                   "恢复",
                                 )}
                           </button>
-                        )}
+                        ) : null}
                       </div>
                       {member.reasonMessage.trim() && (
                         <p className="codex-account-pool-health-item-detail">

@@ -458,7 +458,7 @@ QQ 交流群、微信群或新建的 Telegram 畅聊群都可以加入。
 - Grok CLI 第三方 BYOK 与 custom model 配置格式对照上游实现及文档：[xai-org/grok-build](https://github.com/xai-org/grok-build)
 - Codex API 服务协议兼容方向参考：[codex-proxy](https://github.com/icebear0828/codex-proxy)
 - Codex Agent Identity 导入、动态签名、task 失效恢复、账号备份格式兼容，以及官方账号窗口用量（req / token / A$）展示口径参考：[sub2api](https://github.com/Wei-Shaw/sub2api)。API 服务的客户端兼容、指纹、容量错误与请求级重试处理以 CLIProxyAPI 为准，不再保留“仅官方客户端／允许第三方客户端”等 Sub2API 式独立策略；API Key 鉴权与账号范围控制保持不变，Agent Identity 兼容暂保留为本地扩展。
-- Codex Agent Identity runtime 注册协议、Ed25519 密钥格式，以及 Responses 客户端 freeform 工具调用（`custom_tool_call`）事件语义参考官方实现：[openai/codex](https://github.com/openai/codex)（Apache-2.0）。
+- Codex Agent Identity runtime 注册协议、Ed25519 密钥格式、Responses 客户端 freeform 工具调用（`custom_tool_call`）事件语义，以及鹈鹕测智的响应生命周期与生成产物处理思路参考官方实现：[openai/codex](https://github.com/openai/codex)（Apache-2.0）；鹈鹕测智使用直接对话请求，不等同于官方客户端的完整编码 Agent 流程。
 - Codex、Claude CLI 与 Claude Desktop Gateway 第三方供应商预设、模型映射，以及从会话 JSONL 汇总真实用量的方向参考：[CC Switch](https://github.com/farion1231/cc-switch)
 - Codex 模型目录、前端模型显示、loopback CDP 诊断、官方 live auth 保留策略，以及历史会话 Provider、SQLite 本地目录和工作区状态修复方向参考：[CodexPlusPlus](https://github.com/BigPizzaV3/CodexPlusPlus)
 - Codex 用量统计看板、走势图和 Studio 风格界面设计方向参考：[Antigravity Studio](https://github.com/yuzhiqiang1993/antigravity-studio)

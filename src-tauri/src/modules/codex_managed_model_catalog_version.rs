@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 受管模型目录生成逻辑的版本号。改动目录结构或模型能力字段时递增。
-pub(crate) const MANAGED_MODEL_CATALOG_GENERATOR_VERSION: u32 = 1;
+pub(crate) const MANAGED_MODEL_CATALOG_GENERATOR_VERSION: u32 = 2;
 
 const META_FILE_NAME: &str = "cockpit-model-catalog.meta.json";
 

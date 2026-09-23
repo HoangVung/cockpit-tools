@@ -1706,7 +1706,7 @@ func buildOllamaShowResponse(model string, modifiedAt time.Time) gin.H {
 
 func ollamaModelFamily(model string) string {
 	normalized := strings.ToLower(strings.TrimSpace(model))
-	for _, prefix := range []string{"gpt-6-astra", "gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-5.3", "gpt-5.2", "gpt-5.1", "gpt-oss", "codex"} {
+	for _, prefix := range []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-5.3", "gpt-5.2", "gpt-5.1", "gpt-oss", "codex"} {
 		if strings.HasPrefix(normalized, prefix) {
 			return prefix
 		}
@@ -1724,7 +1724,7 @@ func ollamaModelFamily(model string) string {
 
 func ollamaContextLength(model string) int {
 	switch {
-	case strings.HasPrefix(model, "gpt-6-astra"):
+	case strings.HasPrefix(model, "gpt-6-astra"), strings.HasPrefix(model, "gpt-6-sol"), strings.HasPrefix(model, "gpt-6-luna"):
 		return 1050000
 	case strings.HasPrefix(model, "gpt-5.6"):
 		return 372000
@@ -1739,8 +1739,11 @@ func ollamaContextLength(model string) int {
 
 func ollamaReasoningEfforts(model string) []string {
 	switch {
-	case strings.HasPrefix(model, "gpt-6-astra"):
+	case strings.HasPrefix(model, "gpt-6-astra"), strings.HasPrefix(model, "gpt-6-sol"):
 		return []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+	// Luna 家族没有 ultra 档位，不要跟着上面一起放宽。
+	case strings.HasPrefix(model, "gpt-6-luna"):
+		return []string{"low", "medium", "high", "xhigh", "max"}
 	case strings.HasPrefix(model, "gpt-5.6-sol"), strings.HasPrefix(model, "gpt-5.6-terra"):
 		return []string{"low", "medium", "high", "xhigh", "max", "ultra"}
 	case strings.HasPrefix(model, "gpt-5.6-luna"), strings.HasPrefix(model, "gpt-5.6"):
@@ -2085,6 +2088,10 @@ func officialAutomaticModelDisplayName(slug string) string {
 	switch strings.ToLower(strings.TrimSpace(slug)) {
 	case "gpt-6-astra":
 		return "GPT-6 Astra"
+	case "gpt-6-sol":
+		return "GPT-6 Sol"
+	case "gpt-6-luna":
+		return "GPT-6 Luna"
 	case "gpt-5.6-sol":
 		return "GPT-5.6 Sol"
 	case "gpt-5.6-terra":
@@ -2170,6 +2177,10 @@ func displayNameForModel(model string) string {
 		return "GPT-5.6 Luna"
 	case "gpt-6-astra":
 		return "GPT-6 Astra"
+	case "gpt-6-sol":
+		return "GPT-6 Sol"
+	case "gpt-6-luna":
+		return "GPT-6 Luna"
 	case codexReserveModel:
 		return "GPT-5.6 Reserve"
 	case "gpt-5.5":
@@ -2339,7 +2350,7 @@ func rewriteBodyModel(m *manifest, spec *apiKeySpec, requestKind string, body []
 	if isImageRequestKind(requestKind) {
 		return nil, model, nil
 	}
-	// 宿主内部请求（唤醒）的模型由 Cockpit 自己选定，
+	// 宿主内部请求（唤醒、鹈鹕测试）的模型由 Cockpit 自己选定，
 	// 必须绕过对外 API 的模型可见性与排除规则，否则关闭某个模型会连带打断唤醒任务。
 	if spec != nil && spec.Internal {
 		return nil, model, nil
@@ -2513,6 +2524,8 @@ func canonicalModelForClientModel(m *manifest, spec *apiKeySpec, model string) s
 // 原始标记会直接落进正文，表现为「模型不能用工具」。
 var codexShellModelIDs = []string{
 	"gpt-6-astra",
+	"gpt-6-sol",
+	"gpt-6-luna",
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",

@@ -9,6 +9,7 @@ pub mod codebuddy_cn_instance;
 pub mod codebuddy_instance;
 pub mod codebuddy_session;
 pub mod codex;
+pub mod codex_pelican;
 pub mod codex_instance;
 mod codex_instance_app_exit;
 pub(crate) mod codex_instance_gateway_watchdog;

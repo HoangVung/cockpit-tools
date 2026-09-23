@@ -2023,14 +2023,28 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings
     }
 
     #[test]
-    fn provider_gateway_model_slots_keep_identity_for_gpt_6_astra() {
-        let slots = provider_gateway_model_slots(&["gpt-6-astra".to_string()]);
+    fn provider_gateway_model_slots_keep_identity_for_gpt_6_family() {
+        let slots = provider_gateway_model_slots(&[
+            "gpt-6-astra".to_string(),
+            "gpt-6-sol".to_string(),
+            "gpt-6-luna".to_string(),
+        ]);
         assert_eq!(
             slots,
-            vec![super::ProviderGatewayModelSlot {
-                client_model: "gpt-6-astra".to_string(),
-                upstream_model: "gpt-6-astra".to_string(),
-            }]
+            vec![
+                super::ProviderGatewayModelSlot {
+                    client_model: "gpt-6-astra".to_string(),
+                    upstream_model: "gpt-6-astra".to_string(),
+                },
+                super::ProviderGatewayModelSlot {
+                    client_model: "gpt-6-sol".to_string(),
+                    upstream_model: "gpt-6-sol".to_string(),
+                },
+                super::ProviderGatewayModelSlot {
+                    client_model: "gpt-6-luna".to_string(),
+                    upstream_model: "gpt-6-luna".to_string(),
+                },
+            ]
         );
     }
 
