@@ -14,16 +14,16 @@ import { requestCodexOpenAddAccount } from "../utils/codexAddAccountRequest";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
- import {
-   DEFAULT_CODEX_INSTANCE_ID,
-   type CodexLaunchPreviewLaunchOptions,
- } from "../components/codex/CodexLaunchPreviewModal";
 import {
   CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY,
   persistCodexLaunchPreviewLastInstanceId,
   readCodexLaunchPreviewLastInstanceId,
 } from "../utils/codexLaunchPreviewInstancePreference";
- import { isDeepSeekAccount, isCodexTokenPlanAccount, resolveDeepSeekBindAccountId } from "../utils/codexDeepSeekAccess";
+import {
+  DEFAULT_CODEX_INSTANCE_ID,
+  type CodexLaunchPreviewLaunchOptions,
+} from "../components/codex/CodexLaunchPreviewModal";
+import { isAinipyAccount, isDeepSeekAccount, isCodexTokenPlanAccount, resolveDeepSeekBindAccountId } from "../utils/codexDeepSeekAccess";
 import { contextWindowDraftsFromRecord, parseContextWindowDrafts } from "../utils/codexModelContextWindows";
 import type { CodexAccount } from "../types/codex";
 import { CODEX_API_SERVICE_BIND_ID, type InstanceProfile } from "../types/instance";
@@ -35,7 +35,7 @@ import { APIKEY_FUN_PROVIDER_BASE_URL } from "../utils/apikeyFunLinks";
 import { APIKEY_FUN_PREFILL_EVENT, consumeApiKeyFunPrefill, type ApiKeyFunPrefillPayload } from "../utils/apiKeyFunPrefill";
 import { findCodexModelProviderById, findCodexModelProviderByBaseUrl, queryCodexModelProviderUsage, saveCodexModelProviderDetectedIntegrationType, type CodexModelProvider, upsertCodexModelProviderFromCredential } from "../services/codexModelProviderService";
 import { buildCodexModelProviderAccountSnapshot, findCodexAccountsReferencingModelProvider, mergeCodexModelProviderCredentialInput } from "../utils/codexModelProviderAccountSync";
-import { CODEX_API_KEY_USAGE_REFRESHED_EVENT, readCodexApiKeyUsageCache, writeCodexApiKeyUsageCache, type CodexApiKeyUsageState } from "../services/codexApiKeyUsageRefreshService";
+import { CODEX_API_KEY_USAGE_REFRESHED_EVENT, notifyCodexApiKeyUsageRefreshed, readCodexApiKeyUsageCache, writeCodexApiKeyUsageCache, type CodexApiKeyUsageState } from "../services/codexApiKeyUsageRefreshService";
 import { isModelProviderUsageUnavailableError, listModelProviderModels } from "../services/modelProviderUsageService";
 import { upsertSavedMfaRecord } from "../utils/mfaVault";
 import md5 from "blueimp-md5";
@@ -3153,6 +3153,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
         if (
           isCodexChatCompletionsApiKeyAccount(account) &&
           !isDeepSeekAccount(account) &&
+          !isAinipyAccount(account) &&
           !isCodexTokenPlanAccount(account)
         ) {
           return;
@@ -3226,6 +3227,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
           isCodexNewApiAccount(account) ||
           (isCodexChatCompletionsApiKeyAccount(account) &&
             !isDeepSeekAccount(account) &&
+            !isAinipyAccount(account) &&
             !isCodexTokenPlanAccount(account))
         ) {
           return false;
@@ -3249,9 +3251,13 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
         if (state?.loading || apiKeyUsageInFlightRef.current.has(account.id)) {
           return false;
         }
+        // Check the in-memory web session once on mount, even with a cached balance.
+        if (isAinipyAccount(account)) {
+          return !deepSeekUsageRetryIdsRef.current.has(account.id);
+        }
         if (state?.unavailable) {
           return (
-            isDeepSeekAccount(account) &&
+            (isDeepSeekAccount(account) || isAinipyAccount(account)) &&
             !state.summary &&
             !deepSeekUsageRetryIdsRef.current.has(account.id)
           );
@@ -3284,13 +3290,14 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
   
     useEffect(() => {
       writeCodexApiKeyUsageCache(apiKeyUsageMap);
+      notifyCodexApiKeyUsageRefreshed();
     }, [apiKeyUsageMap]);
   
     useEffect(() => {
       for (const account of accounts) {
         const provider = resolveUsageProviderForApiKeyAccount(account);
         if (!shouldAutoRefreshApiKeyUsage(account, provider)) continue;
-        if (isDeepSeekAccount(account)) {
+        if (isDeepSeekAccount(account) || isAinipyAccount(account)) {
           deepSeekUsageRetryIdsRef.current.add(account.id);
         }
         void refreshApiKeyUsage(account, provider);
@@ -3303,7 +3310,33 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
     ]);
   
     useEffect(() => {
-      const syncUsageCache = () => setApiKeyUsageMap(readCodexApiKeyUsageCache());
+      const syncUsageCache = () => {
+        const cache = readCodexApiKeyUsageCache();
+        setApiKeyUsageMap((previous) => {
+          const prevKeys = Object.keys(previous);
+          const cacheKeys = Object.keys(cache);
+          if (prevKeys.length !== cacheKeys.length) {
+            return { ...previous, ...cache };
+          }
+          let changed = false;
+          for (const key of cacheKeys) {
+            const p = previous[key];
+            const c = cache[key];
+            if (
+              !p ||
+              p.updatedAt !== c.updatedAt ||
+              p.loading !== c.loading ||
+              p.unavailable !== c.unavailable ||
+              p.error !== c.error ||
+              p.summary !== c.summary
+            ) {
+              changed = true;
+              break;
+            }
+          }
+          return changed ? { ...previous, ...cache } : previous;
+        });
+      };
       window.addEventListener(
         CODEX_API_KEY_USAGE_REFRESHED_EVENT,
         syncUsageCache,
@@ -3323,6 +3356,7 @@ export function useCodexAccountsAccessController(context: CodexAccountsAccessCon
             (account) =>
               isCodexChatCompletionsApiKeyAccount(account) &&
               !isDeepSeekAccount(account) &&
+              !isAinipyAccount(account) &&
               !isCodexTokenPlanAccount(account),
           )
           .map((account) => account.id),

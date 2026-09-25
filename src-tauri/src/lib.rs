@@ -317,6 +317,10 @@ pub fn run() {
     modules::diagnostics::install_panic_hook();
     modules::diagnostics::start_frontend_ready_watchdog();
     raise_process_file_descriptor_limit();
+
+    #[cfg(target_os = "windows")]
+    modules::webview2_maintenance::cleanup_orphaned_webview2_processes();
+
     // 启动时先加载一次配置，确保进程级代理环境与用户设置同步。
     let _ = modules::config::get_user_config();
 
@@ -983,6 +987,7 @@ pub fn run() {
             commands::update::update_log,
             commands::update::get_update_runtime_info,
             commands::update::install_linux_update,
+            commands::custom_updater::sync_and_trigger_custom_build,
             // Announcement Commands
             commands::announcement::announcement_get_state,
             commands::announcement::announcement_mark_as_read,
@@ -1095,6 +1100,7 @@ pub fn run() {
             commands::codex::codex_cancel_model_provider_chat_test,
             commands::codex::codex_list_model_provider_models,
             commands::codex::codex_query_model_provider_usage,
+            commands::codex::codex_login_ainipy_usage,
             commands::codex::codex_local_access_get_state,
             commands::codex::codex_list_instance_gateways,
             commands::codex::codex_stop_instance_gateway,
@@ -1566,6 +1572,8 @@ pub fn run() {
                         commands::codex_instance::restore_mixed_model_profiles_for_app_exit();
                     }
                     modules::codex_app_injection::stop_all();
+                    #[cfg(target_os = "windows")]
+                    modules::webview2_maintenance::cleanup_current_webview2_processes();
                     tauri::async_runtime::spawn(async {
                         modules::codex_local_access::shutdown_local_access_gateway_for_app_exit()
                             .await;
@@ -1578,6 +1586,8 @@ pub fn run() {
                     commands::codex_instance::restore_mixed_model_profiles_for_app_exit();
                 }
                 modules::codex_app_injection::stop_all();
+                #[cfg(target_os = "windows")]
+                modules::webview2_maintenance::cleanup_current_webview2_processes();
                 tauri::async_runtime::spawn(async {
                     modules::codex_local_access::shutdown_local_access_gateway_for_app_exit().await;
                 });
