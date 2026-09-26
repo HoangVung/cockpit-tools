@@ -7,7 +7,7 @@ on:
       - "main"
   push:
     branches:
-      - "my-custom"
+      - "main"
       - "feature/build-matrix*"
       - "feature/build-matrix/**"
 

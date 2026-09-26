@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Служба API не остановилась корректно. Перезапуск продолжается...",
     "skipThisVersion": "Пропустить эту версию",
     "skipFailed": "Не удалось пропустить это обновление: {{error}}",
-    "syncAndBuild": "Синхронизировать и собрать (my-custom)",
+    "syncAndBuild": "Синхронизировать и собрать (main)",
+    "retrySync": "Повторить синхронизацию",
     "syncing": "Синхронизация и тестирование...",
     "syncSuccess": "Успешно синхронизировано, сборка на GitHub запущена!",
     "openGitHubActions": "Открыть GitHub Actions"

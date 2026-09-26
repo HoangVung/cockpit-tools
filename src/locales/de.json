@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Der API-Dienst wurde nicht sauber beendet. Neustart wird fortgesetzt...",
     "skipThisVersion": "Diese Version überspringen",
     "skipFailed": "Dieses Update konnte nicht übersprungen werden: {{error}}",
-    "syncAndBuild": "Synchronisieren & Erstellen (my-custom)",
+    "syncAndBuild": "Synchronisieren & Erstellen (main)",
+    "retrySync": "Synchronisierung erneut versuchen",
     "syncing": "Synchronisieren & Testen...",
     "syncSuccess": "Erfolgreich synchronisiert und Build auf GitHub ausgelöst!",
     "openGitHubActions": "GitHub Actions öffnen"

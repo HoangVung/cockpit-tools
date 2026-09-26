@@ -2105,7 +2105,8 @@
     "stoppingApiService": "Menghentikan layanan API...",
     "stopApiServiceFailed": "Layanan API tidak dapat dihentikan. Nonaktifkan dulu, lalu coba lagi.",
     "stopApiServiceFailedContinue": "Layanan API tidak berhenti dengan benar. Tetap melanjutkan mulai ulang...",
-    "syncAndBuild": "Sinkronisasi & Bangun (my-custom)",
+    "syncAndBuild": "Sinkronisasi & Bangun (main)",
+    "retrySync": "Coba Sinkronisasi Lagi",
     "syncing": "Menyinkronkan & menguji...",
     "syncSuccess": "Berhasil disinkronkan dan build dipicu di GitHub!",
     "openGitHubActions": "Buka GitHub Actions"

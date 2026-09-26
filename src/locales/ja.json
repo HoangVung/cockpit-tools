@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "API サービスは正常に停止しませんでした。再起動を続行します...",
     "skipThisVersion": "このバージョンをスキップ",
     "skipFailed": "この更新をスキップできませんでした: {{error}}",
-    "syncAndBuild": "同期してビルドを開始 (my-custom)",
+    "syncAndBuild": "同期してビルドを開始 (main)",
+    "retrySync": "同期を再試行",
     "syncing": "同期とテストを実行中...",
     "syncSuccess": "同期が完了し、GitHub 上でビルドが正常に開始されました！",
     "openGitHubActions": "GitHub Actions を開く"

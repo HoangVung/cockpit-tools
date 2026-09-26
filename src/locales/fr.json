@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Le service API ne s’est pas arrêté correctement. Redémarrage quand même...",
     "skipThisVersion": "Ignorer cette version",
     "skipFailed": "Impossible d'ignorer cette mise à jour : {{error}}",
-    "syncAndBuild": "Synchroniser et compiler (my-custom)",
+    "syncAndBuild": "Synchroniser et compiler (main)",
+    "retrySync": "Réessayer la synchronisation",
     "syncing": "Synchronisation et tests en cours...",
     "syncSuccess": "Synchronisé et build déclenché avec succès sur GitHub !",
     "openGitHubActions": "Ouvrir GitHub Actions"

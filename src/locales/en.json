@@ -2279,7 +2279,8 @@
     "stoppingApiService": "Stopping API service...",
     "stopApiServiceFailed": "Couldn't stop the API service. Disable it first and try again.",
     "stopApiServiceFailedContinue": "The API service did not stop cleanly. Restarting anyway...",
-    "syncAndBuild": "Sync & Trigger Build (my-custom)",
+    "syncAndBuild": "Sync & Trigger Build (main)",
+    "retrySync": "Retry Sync",
     "syncing": "Syncing & testing...",
     "syncSuccess": "Synced and triggered build successfully on GitHub!",
     "openGitHubActions": "Open GitHub Actions"

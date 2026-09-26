@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
-const CUSTOM_BRANCH: &str = "my-custom";
-const CUSTOM_MERGE_MESSAGE: &str = "merge: sync upstream main into my-custom";
+const CUSTOM_BRANCH: &str = "main";
+const CUSTOM_MERGE_MESSAGE: &str = "merge: sync upstream main into customized main";
 
 #[cfg(windows)]
 const NPM_PROGRAM: &str = "npm.cmd";
@@ -191,17 +191,23 @@ fn validate_custom_branch(repo_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn sync_steps() -> [SyncStep; 6] {
+fn validate_clean_worktree(repo_dir: &Path) -> Result<(), String> {
+    let status = run_git(repo_dir, &["status", "--porcelain", "--untracked-files=normal"])?;
+    if !status.trim().is_empty() {
+        return Err(format!(
+            "Repo còn thay đổi chưa commit. Hãy lưu các thay đổi trước khi đồng bộ nhánh '{}'.\n{}",
+            CUSTOM_BRANCH, status
+        ));
+    }
+    Ok(())
+}
+
+fn sync_steps() -> [SyncStep; 5] {
     [
         SyncStep {
             program: "git",
             args: &["fetch", "upstream", "main"],
-            title: "1/6: Lấy cập nhật mới từ repo gốc (upstream)",
-        },
-        SyncStep {
-            program: "git",
-            args: &["push", "origin", "upstream/main:refs/heads/main"],
-            title: "2/6: Đồng bộ nhánh main lên fork GitHub",
+            title: "1/5: Lấy cập nhật mới từ repo gốc (upstream)",
         },
         SyncStep {
             program: "git",
@@ -213,7 +219,7 @@ fn sync_steps() -> [SyncStep; 6] {
                 "-m",
                 CUSTOM_MERGE_MESSAGE,
             ],
-            title: "3/6: Gộp cập nhật main vào nhánh my-custom",
+            title: "2/5: Gộp cập nhật upstream vào nhánh main tùy biến",
         },
         SyncStep {
             program: NPM_PROGRAM,
@@ -227,17 +233,17 @@ fn sync_steps() -> [SyncStep; 6] {
                 "--no-audit",
                 "--no-fund",
             ],
-            title: "4/6: Chuẩn bị thư viện kiểm thử (npm ci)",
+            title: "3/5: Chuẩn bị thư viện kiểm thử (npm ci)",
         },
         SyncStep {
             program: NPM_PROGRAM,
             args: &["test"],
-            title: "5/6: Chạy bộ kiểm thử regression (npm test)",
+            title: "4/5: Chạy bộ kiểm thử regression (npm test)",
         },
         SyncStep {
             program: "git",
-            args: &["push", "origin", "HEAD:refs/heads/my-custom"],
-            title: "6/6: Đẩy lên GitHub để kích hoạt build matrix",
+            args: &["push", "origin", "HEAD:refs/heads/main"],
+            title: "5/5: Đẩy nhánh main lên GitHub để kích hoạt build matrix",
         },
     ]
 }
@@ -272,6 +278,18 @@ pub async fn sync_and_trigger_custom_build(
     ));
 
     let mut all_logs = Vec::new();
+    // Verify the target branch before any recovery can mutate repository state.
+    if let Err(err) = validate_custom_branch(&repo_dir) {
+        logger::log_error(&format!("[CustomUpdater] Preflight thất bại: {}", err));
+        return Ok(CustomSyncReport {
+            success: false,
+            message: err.clone(),
+            current_step: 0,
+            total_steps,
+            logs: err,
+        });
+    }
+
     match recover_interrupted_custom_merge(&repo_dir) {
         Ok(Some(detail)) => all_logs.push(format!("=== Khôi phục ===\n{}\n", detail)),
         Ok(None) => {}
@@ -287,7 +305,7 @@ pub async fn sync_and_trigger_custom_build(
         }
     }
 
-    if let Err(err) = validate_custom_branch(&repo_dir) {
+    if let Err(err) = validate_clean_worktree(&repo_dir) {
         logger::log_error(&format!("[CustomUpdater] Preflight thất bại: {}", err));
         all_logs.push(format!("=== Preflight thất bại ===\n{}\n", err));
         return Ok(CustomSyncReport {
@@ -345,7 +363,10 @@ pub async fn sync_and_trigger_custom_build(
                     step_num, total_steps, step.title, err
                 ));
 
-                if step_num == 3 && merge_in_progress(&repo_dir) {
+                if step.program == "git"
+                    && step.args.first() == Some(&"merge")
+                    && merge_in_progress(&repo_dir)
+                {
                     match run_git(&repo_dir, &["merge", "--abort"]) {
                         Ok(output) => all_logs.push(format!(
                             "=== Khôi phục sau lỗi merge ===\nRepo đã được đưa về trạng thái trước khi merge.\n{}\n",
@@ -402,7 +423,10 @@ mod tests {
             CUSTOM_MERGE_MESSAGE
         )));
         assert!(!is_custom_updater_merge_message(
-            "Merge branch 'main' into my-custom"
+            "Merge branch 'upstream/main' into main"
+        ));
+        assert!(!is_custom_updater_merge_message(
+            "merge: sync upstream main into my-custom"
         ));
     }
 
@@ -412,10 +436,6 @@ mod tests {
         assert_eq!(steps[0].args, ["fetch", "upstream", "main"]);
         assert_eq!(
             steps[1].args,
-            ["push", "origin", "upstream/main:refs/heads/main"]
-        );
-        assert_eq!(
-            steps[2].args,
             [
                 "merge",
                 "-X",
@@ -426,8 +446,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            steps[5].args,
-            ["push", "origin", "HEAD:refs/heads/my-custom"]
+            steps[4].args,
+            ["push", "origin", "HEAD:refs/heads/main"]
         );
     }
 }

@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Služba API se neukončila korektně. Přesto pokračuje restart...",
     "skipThisVersion": "Přeskočit tuto verzi",
     "skipFailed": "Tuto aktualizaci se nepodařilo přeskočit: {{error}}",
-    "syncAndBuild": "Synchronizovat a sestavit (my-custom)",
+    "syncAndBuild": "Synchronizovat a sestavit (main)",
+    "retrySync": "Zkusit synchronizaci znovu",
     "syncing": "Synchronizace a testování...",
     "syncSuccess": "Synchronizace proběhla úspěšně a sestavení bylo spuštěno na GitHubu!",
     "openGitHubActions": "Otevřít GitHub Actions"

@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Dịch vụ API chưa dừng đúng cách. Vẫn tiếp tục khởi động lại...",
     "skipThisVersion": "Bỏ qua phiên bản này",
     "skipFailed": "Không thể bỏ qua bản cập nhật này: {{error}}",
-    "syncAndBuild": "Đồng bộ & Build (my-custom)",
+    "syncAndBuild": "Đồng bộ & Build (main)",
+    "retrySync": "Thử đồng bộ lại",
     "syncing": "Đang đồng bộ & kiểm tra...",
     "syncSuccess": "Đã đồng bộ và kích hoạt build thành công trên GitHub!",
     "openGitHubActions": "Mở GitHub Actions"

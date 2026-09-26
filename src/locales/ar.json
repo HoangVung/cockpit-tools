@@ -2105,7 +2105,8 @@
     "stopApiServiceFailedContinue": "لم تتوقف خدمة API بشكل صحيح. ستتم متابعة إعادة التشغيل...",
     "skipThisVersion": "تخطي هذا الإصدار",
     "skipFailed": "تعذر تخطي هذا التحديث: {{error}}",
-    "syncAndBuild": "مزامنة وبدء البناء (my-custom)",
+    "syncAndBuild": "مزامنة وبدء البناء (main)",
+    "retrySync": "إعادة محاولة المزامنة",
     "syncing": "جارٍ المزامنة والاختبار...",
     "syncSuccess": "تمت المزامنة وبدء البناء بنجاح على GitHub!",
     "openGitHubActions": "فتح GitHub Actions"

@@ -74,7 +74,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     await onPrimaryAction();
   }, [onPrimaryAction]);
 
-  const handleRetryDownload = useCallback(() => {
+  const handleRetrySync = useCallback(() => {
     setShowErrorDetails(false);
     void handleTriggerUpdate();
   }, [handleTriggerUpdate]);
@@ -352,9 +352,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           )}
           {isError ? (
             <>
-              <button className="btn btn-secondary" onClick={handleRetryDownload}>
+              <button className="btn btn-secondary" onClick={handleRetrySync}>
                 <RefreshCw size={16} />
-                {t('update_notification.retryDownload', 'Retry Download')}
+                {t('update_notification.retrySync', 'Retry Sync')}
               </button>
               <button className="btn btn-primary" onClick={handleFallbackDownload}>
                 <Download size={16} />
@@ -395,7 +395,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               ) : (
                 <>
                   <RefreshCw size={16} />
-                  {t('update_notification.syncAndBuild', 'Sync & Trigger Build (my-custom)')}
+                  {t('update_notification.syncAndBuild', 'Sync & Trigger Build (main)')}
                 </>
               )}
             </button>

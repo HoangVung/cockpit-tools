@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "API 服務未正常關閉，將繼續重新啟動...",
     "skipThisVersion": "跳過此版本",
     "skipFailed": "跳過此更新失敗：{{error}}",
-    "syncAndBuild": "同步並觸發構建 (my-custom)",
+    "syncAndBuild": "同步並觸發構建 (main)",
+    "retrySync": "重試同步",
     "syncing": "正在同步與測試...",
     "syncSuccess": "已成功同步並在 GitHub 上觸發構建！",
     "openGitHubActions": "打開 GitHub Actions"

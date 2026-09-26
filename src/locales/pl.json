@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "Usługa API nie zatrzymała się poprawnie. Mimo to trwa ponowne uruchamianie...",
     "skipThisVersion": "Pomiń tę wersję",
     "skipFailed": "Nie udało się pominąć tej aktualizacji: {{error}}",
-    "syncAndBuild": "Synchronizuj i buduj (my-custom)",
+    "syncAndBuild": "Synchronizuj i buduj (main)",
+    "retrySync": "Ponów synchronizację",
     "syncing": "Synchronizowanie i testowanie...",
     "syncSuccess": "Pomyślnie zsynchronizowano i uruchomiono kompilację na GitHubie!",
     "openGitHubActions": "Otwórz GitHub Actions"

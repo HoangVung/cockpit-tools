@@ -2058,7 +2058,8 @@
     "stopApiServiceFailedContinue": "El servicio API no se cerró correctamente. Reiniciando de todos modos...",
     "skipThisVersion": "Omitir esta versión",
     "skipFailed": "No se pudo omitir esta actualización: {{error}}",
-    "syncAndBuild": "Sincronizar y compilar (my-custom)",
+    "syncAndBuild": "Sincronizar y compilar (main)",
+    "retrySync": "Reintentar sincronización",
     "syncing": "Sincronizando y probando...",
     "syncSuccess": "¡Sincronizado y compilación iniciada con éxito en GitHub!",
     "openGitHubActions": "Abrir GitHub Actions"
