@@ -4,14 +4,13 @@ use crate::models::codex::{
     CodexAccount, CodexApiProviderMode, CodexAppSpeed, CodexAuthMode, CodexQuota,
 };
 use crate::models::codex_local_access::{
-    CodexLocalAccessAccountCooldown, CodexLocalAccessAccountHealth,
+    CodexInstanceGatewayView, CodexLocalAccessAccountCooldown, CodexLocalAccessAccountHealth,
     CodexLocalAccessAccountModelRule, CodexLocalAccessAccountPoolHealth,
     CodexLocalAccessAccountPoolMemberHealth, CodexLocalAccessAccountStats,
     CodexLocalAccessAccountWindowQuery, CodexLocalAccessAccountWindowStats, CodexLocalAccessApiKey,
     CodexLocalAccessApiKeyStats, CodexLocalAccessAppendAccountSkipped,
     CodexLocalAccessAppendAccountsResult, CodexLocalAccessChatMessage, CodexLocalAccessChatResult,
     CodexLocalAccessClientBaseUrlHost, CodexLocalAccessCollection,
-    DEFAULT_CODEX_IMAGE_GENERATION_MODEL,
     CodexLocalAccessCustomRoutingRule, CodexLocalAccessGatewayMode,
     CodexLocalAccessImageGenerationMode, CodexLocalAccessImageGenerationPolicy,
     CodexLocalAccessImageGenerationStatus, CodexLocalAccessModelAlias,
@@ -24,18 +23,21 @@ use crate::models::codex_local_access::{
     CodexLocalAccessStats, CodexLocalAccessStatsWindow, CodexLocalAccessTestFailure,
     CodexLocalAccessTestResult, CodexLocalAccessTimeoutPreset, CodexLocalAccessTimeouts,
     CodexLocalAccessUsageEvent, CodexLocalAccessUsageEventPage, CodexLocalAccessUsageStats,
-    CodexLocalAccessUsageTrendPoint,
-    CodexInstanceGatewayView,
-    CodexTokenBreakdown,
+    CodexLocalAccessUsageTrendPoint, CodexTokenBreakdown, DEFAULT_CODEX_IMAGE_GENERATION_MODEL,
 };
 use crate::models::{CodexInstanceApiRoute, CodexInstanceModelRouting};
-use crate::modules::atomic_write::{write_string_atomic, write_string_atomic_if_hash_matches};
+use crate::modules::atomic_write::{
+    write_secret_string_atomic, write_secret_string_atomic_if_changed, write_string_atomic,
+    write_string_atomic_if_hash_matches,
+};
 use crate::modules::{
     account, codex_account, codex_agent_identity, codex_oauth, codex_protocol, codex_quota,
     codex_wakeup, logger, process,
 };
 use base64::{engine::general_purpose, Engine as _};
-use chrono::{Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDate, TimeZone, Timelike};
+use chrono::{
+    Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDate, TimeZone, Timelike,
+};
 #[cfg(test)]
 use futures_util::SinkExt;
 use futures_util::{stream, StreamExt};
@@ -270,8 +272,7 @@ const CODEX_PROVIDER_MODEL_SHELL_POOL: &[&str] = &[
 // Keep the GPT-6 family available as identity-preserving shells when an upstream
 // account already exposes those exact models, without assigning them to unrelated
 // overflow models.
-const CODEX_PROVIDER_IDENTITY_ONLY_MODEL_IDS: &[&str] =
-    &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"];
+const CODEX_PROVIDER_IDENTITY_ONLY_MODEL_IDS: &[&str] = &["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"];
 const CODEX_PROVIDER_GATEWAY_STATE_FILE: &str = "state.json";
 const CODEX_LOCAL_ACCESS_SIDECAR_CONFIG_FILE: &str = "config.json";
 const CODEX_LOCAL_ACCESS_SIDECAR_MANIFEST_FILE: &str = "manifest.json";
@@ -365,7 +366,7 @@ const RESPONSE_AFFINITY_TTL_MS: i64 = 24 * 60 * 60 * 1000;
 const MAX_RESPONSE_AFFINITY_BINDINGS: usize = 4096;
 const PREPARED_ACCOUNT_CACHE_TTL_MS: i64 = 30 * 1000;
 const STATE_RECENT_USAGE_EVENT_LIMIT: usize = 100;
-const DEFAULT_MODEL_PRICING_VERSION: u64 = 3;
+const DEFAULT_MODEL_PRICING_VERSION: u64 = 4;
 const MODEL_PRICING_REPRICE_BATCH_SIZE: i64 = 1_000;
 const MODEL_PRICING_REPRICE_PARALLEL_MIN_ROWS: usize = 2_000;
 const LOCAL_ACCESS_LOGS_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -477,6 +478,9 @@ static LOCAL_ACCESS_LOGS_DB_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PROVIDER_GATEWAY_RUNTIMES: OnceLock<TokioMutex<HashMap<String, ProviderGatewayRuntime>>> =
     OnceLock::new();
 static PROVIDER_GATEWAY_LIFECYCLE_LOCK: OnceLock<TokioMutex<()>> = OnceLock::new();
+/// 手动恢复账号状态的后台单飞锁：多次点击时按顺序执行，避免“移出再加回”的
+/// 成员保存互相穿插导致集合状态错乱。
+static LOCAL_ACCESS_RECOVERY_LOCK: OnceLock<TokioMutex<()>> = OnceLock::new();
 static GATEWAY_ROUND_ROBIN_CURSOR: AtomicUsize = AtomicUsize::new(0);
 static UPSTREAM_HTTP_CLIENT: OnceLock<Mutex<Option<CachedUpstreamHttpClient>>> = OnceLock::new();
 static BOUND_OAUTH_QUOTA_REFRESH_FAILURES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -643,6 +647,8 @@ struct GatewayRuntime {
     account_health: HashMap<String, RuntimeAccountHealth>,
     account_quota_cooldowns: HashMap<String, AccountQuotaCooldown>,
     account_pool_health: HashMap<String, RuntimeAccountPoolHealth>,
+    /// 手动恢复的“先清显示、后干活”抑制窗口：account_id -> 抑制截止时间（毫秒）。
+    recovery_suppressed_accounts: HashMap<String, i64>,
     prepared_accounts: HashMap<String, CachedPreparedAccount>,
     running: bool,
     actual_port: Option<u16>,
@@ -1055,6 +1061,10 @@ fn lock_local_access_logs_db_write() -> Result<std::sync::MutexGuard<'static, ()
 
 fn gateway_lifecycle_lock() -> &'static TokioMutex<()> {
     GATEWAY_LIFECYCLE_LOCK.get_or_init(|| TokioMutex::new(()))
+}
+
+fn local_access_recovery_lock() -> &'static TokioMutex<()> {
+    LOCAL_ACCESS_RECOVERY_LOCK.get_or_init(|| TokioMutex::new(()))
 }
 
 fn gateway_lifecycle_notify() -> &'static Notify {
@@ -1648,7 +1658,6 @@ fn account_uses_personal_access_token(account: &CodexAccount) -> bool {
     account_is_access_token_only(account) && account.tokens.access_token.trim().starts_with("at-")
 }
 
-
 fn prune_prepared_account_cache(runtime: &mut GatewayRuntime, now: i64) {
     let allowed_account_ids = runtime.collection.as_ref().map(|collection| {
         effective_sidecar_account_ids(collection)
@@ -1999,11 +2008,6 @@ async fn cache_prepared_account(account: &CodexAccount) {
     );
 }
 
-async fn invalidate_prepared_account(account_id: &str) {
-    let mut runtime = gateway_runtime().lock().await;
-    runtime.prepared_accounts.remove(account_id);
-}
-
 fn invalidate_prepared_account_if_unlocked(account_id: &str) {
     if let Ok(mut runtime) = gateway_runtime().try_lock() {
         runtime.prepared_accounts.remove(account_id);
@@ -2023,26 +2027,9 @@ fn try_get_cached_account_for_routing(account_id: &str) -> Option<CodexAccount> 
         .map(|entry| entry.account.clone())
 }
 
-async fn get_prepared_account(account_id: &str) -> Result<CodexAccount, String> {
-    if let Some(account) = codex_account::load_account(account_id) {
-        if codex_account::account_has_remote_api_auth_rejection(&account) {
-            invalidate_prepared_account(account_id).await;
-            return Err("access_token 已被 API 服务远端拒绝，请重新授权后再使用".to_string());
-        }
-    }
-    {
-        let mut runtime = gateway_runtime().lock().await;
-        let now = now_ms();
-        prune_prepared_account_cache(&mut runtime, now);
-        if let Some(entry) = runtime.prepared_accounts.get(account_id) {
-            if is_prepared_account_cache_valid(entry, now) {
-                return Ok(entry.account.clone());
-            }
-        }
-    }
-
-    // refresh_token 已失效但 access_token 尚在安全有效期内时，账号仍可临时用于
-    // API 服务。这里禁止再触碰 refresh_token，仅把现有 bearer token 交给 sidecar。
+/// Prepare a direct background request without consulting API Service state.
+/// A still-valid access token remains usable when only refresh authorization failed.
+async fn prepare_direct_codex_account(account_id: &str) -> Result<CodexAccount, String> {
     if let Some(account) = codex_account::load_account(account_id).filter(|account| {
         account.requires_reauth
             && !account.is_api_key_auth()
@@ -2050,17 +2037,9 @@ async fn get_prepared_account(account_id: &str) -> Result<CodexAccount, String> 
             && !account.is_web_session_auth()
             && !codex_oauth::is_token_expired(&account.tokens.access_token)
     }) {
-        logger::log_codex_api_info(&format!(
-            "[CodexLocalAccess] 账号客户端授权需更新，临时复用有效 access_token: account_id={}",
-            account.id
-        ));
-        cache_prepared_account(&account).await;
         return Ok(account);
     }
-
-    let account = codex_account::prepare_account_for_injection(account_id).await?;
-    cache_prepared_account(&account).await;
-    Ok(account)
+    codex_account::prepare_account_for_injection_from_store(account_id).await
 }
 
 fn sidecar_account_needs_background_refresh(account: &CodexAccount) -> bool {
@@ -2229,30 +2208,6 @@ struct CodexOfficialWakeupHttpResponse {
     body: String,
 }
 
-/// API 直连唤醒使用的上游代理与超时配置：沿用用户已保存的 API 服务网络设置，
-/// 但只读取配置，不启动、也不依赖 API 服务进程。
-async fn official_wakeup_network_config() -> (Option<String>, CodexLocalAccessTimeouts) {
-    if let Err(err) = ensure_runtime_loaded_without_start().await {
-        logger::log_warn(&format!(
-            "[CodexWakeup] 加载 API 直连网络配置失败，使用默认网络配置: {}",
-            err
-        ));
-        return (None, CodexLocalAccessTimeouts::default());
-    }
-
-    let runtime = gateway_runtime().lock().await;
-    runtime
-        .collection
-        .as_ref()
-        .map(|collection| {
-            (
-                collection.upstream_proxy_url.clone(),
-                collection_timeouts(collection),
-            )
-        })
-        .unwrap_or_else(|| (None, CodexLocalAccessTimeouts::default()))
-}
-
 async fn send_agent_identity_wakeup_request_with_base_urls(
     account: &CodexAccount,
     target: &str,
@@ -2337,7 +2292,7 @@ pub async fn run_official_wakeup_chat(
     reasoning_effort: Option<&str>,
     prompt: &str,
 ) -> Result<CodexOfficialWakeupChatResult, String> {
-    let account = get_prepared_account(account_id).await?;
+    let account = prepare_direct_codex_account(account_id).await?;
     if account.is_api_key_auth() {
         return Err("Codex API 直连唤醒仅支持 OAuth / Agent Identity 账号。".to_string());
     }
@@ -2397,7 +2352,9 @@ pub async fn run_official_wakeup_chat(
         headers.insert("x-openai-fedramp".to_string(), "true".to_string());
     }
 
-    let (upstream_proxy_url, timeouts) = official_wakeup_network_config().await;
+    // Use the selected account's proxy or the global/system proxy; API Service
+    // collection settings and runtime state do not control wakeup requests.
+    let timeouts = CodexLocalAccessTimeouts::default();
     let upstream_connect_timeout = duration_from_millis(
         timeouts.legacy_upstream_connect_timeout_ms,
         DEFAULT_UPSTREAM_CONNECT_TIMEOUT,
@@ -2421,7 +2378,7 @@ pub async fn run_official_wakeup_chat(
             &upstream_target,
             &headers,
             &body,
-            upstream_proxy_url.as_deref(),
+            None,
             upstream_connect_timeout,
             &timeouts,
             UPSTREAM_CODEX_BASE_URL,
@@ -2429,11 +2386,7 @@ pub async fn run_official_wakeup_chat(
         )
         .await
         .map_err(format_transport_error)?;
-        (
-            response.account,
-            response.status,
-            response.body,
-        )
+        (response.account, response.status, response.body)
     } else {
         let response = send_upstream_request(
             "POST",
@@ -2441,7 +2394,7 @@ pub async fn run_official_wakeup_chat(
             &headers,
             &body,
             &account,
-            upstream_proxy_url.as_deref(),
+            None,
             upstream_connect_timeout,
             &timeouts,
             CodexLocalAccessImageGenerationMode::Disabled,
@@ -2473,10 +2426,6 @@ pub async fn run_official_wakeup_chat(
     if reply.trim().is_empty() {
         return Err("API 直连唤醒未返回可读回复。".to_string());
     }
-    if account.is_agent_identity_auth() {
-        cache_prepared_account(&account).await;
-    }
-
     Ok(CodexOfficialWakeupChatResult {
         account,
         reply,
@@ -2515,7 +2464,10 @@ async fn schedule_stats_flush_if_needed() {
                     .flatten();
                 runtime.stats_dirty = false;
                 runtime.collection_dirty = false;
-                (stats_snapshot_without_events(&runtime.stats), collection_snapshot)
+                (
+                    stats_snapshot_without_events(&runtime.stats),
+                    collection_snapshot,
+                )
             };
 
             if let Err(err) = save_stats_to_disk(&stats_snapshot) {
@@ -2844,14 +2796,18 @@ fn base_codex_model_ids_for_collection(
     let mut model_ids =
         apply_codex_image_model_visibility(api_service_supported_codex_model_ids(), image_allowed);
     if !model_ids
-            .iter()
-            .any(|model| model.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID))
+        .iter()
+        .any(|model| model.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID))
     {
         model_ids.push(CODEX_GPT_RESERVE_MODEL_ID.to_string());
     }
-    let accounts: Vec<_> = collection.account_ids.iter()
+    let accounts: Vec<_> = collection
+        .account_ids
+        .iter()
         .filter_map(|id| codex_account::load_account(id))
-        .filter(|account| is_local_access_eligible_account(account, collection.restrict_free_accounts))
+        .filter(|account| {
+            is_local_access_eligible_account(account, collection.restrict_free_accounts)
+        })
         .collect();
     model_ids = automatic_api_service_pool_model_ids(&accounts, model_ids);
 
@@ -3092,16 +3048,20 @@ fn visible_codex_model_ids_for_api_key_with_supported_models(
     let base = apply_codex_image_model_visibility(supported_model_ids, image_allowed);
     let mut base = base;
     if !base
-            .iter()
-            .any(|model| model.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID))
+        .iter()
+        .any(|model| model.eq_ignore_ascii_case(CODEX_GPT_RESERVE_MODEL_ID))
     {
         base.push(CODEX_GPT_RESERVE_MODEL_ID.to_string());
     }
     if let Some(accounts) = accounts {
-        let scoped: Vec<_> = accounts.iter()
+        let scoped: Vec<_> = accounts
+            .iter()
             .filter(|account| scoped_account_ids.contains(&account.id))
-            .filter(|account| is_local_access_eligible_account(account, collection.restrict_free_accounts))
-            .cloned().collect();
+            .filter(|account| {
+                is_local_access_eligible_account(account, collection.restrict_free_accounts)
+            })
+            .cloned()
+            .collect();
         base = automatic_api_service_pool_model_ids(&scoped, base);
     }
     let mut visible = apply_model_filters(

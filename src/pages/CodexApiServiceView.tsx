@@ -4053,6 +4053,9 @@ export function CodexApiServiceView(props: CodexApiServiceViewProps) {
         accounts={accounts}
         accountHealth={state?.accountHealth ?? []}
         accountPoolHealth={state?.accountPoolHealth ?? []}
+        recoverySuppressedAccountIds={
+          state?.recoverySuppressedAccountIds ?? []
+        }
         actionBusy={busy}
         maskAccountText={maskAccountText}
         onClose={() => setHealthModalOpen(false)}

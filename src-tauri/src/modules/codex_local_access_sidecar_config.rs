@@ -5,12 +5,40 @@ fn build_lan_base_url(port: u16) -> Option<String> {
 }
 
 fn sidecar_config_fingerprint(config_content: &str, manifest_content: &str) -> String {
+    sidecar_config_fingerprint_with_account_proxies(config_content, manifest_content, &[])
+}
+
+/// 账号本地代理地址只写在各账号 auth 文件中，不属于 config/manifest，因此必须显式参与指纹：
+/// 否则隧道重启换到新的随机本地端口后，运行中的 sidecar 会继续拨已经消失的旧端口。
+fn sidecar_config_fingerprint_with_account_proxies(
+    config_content: &str,
+    manifest_content: &str,
+    account_proxies: &[String],
+) -> String {
     let stable_config_content = stable_sidecar_config_for_fingerprint(config_content);
     let stable_manifest_content = stable_sidecar_manifest_for_fingerprint(manifest_content);
     let mut hasher = Sha1::new();
     hasher.update(stable_config_content.as_bytes());
     hasher.update(b"\n--manifest--\n");
     hasher.update(stable_manifest_content.as_bytes());
+    hasher.update(b"\n--account-proxies--\n");
+    // 账号池顺序变化不应导致网关重启：按摘要排序后参与哈希。
+    let mut ordered = account_proxies.iter().collect::<Vec<_>>();
+    ordered.sort();
+    for entry in ordered {
+        hasher.update(entry.as_bytes());
+        hasher.update(b"\n");
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+/// 只取摘要，不保留原文：本地代理地址带有回环专用凭据，不能落到 manifest 或日志里。
+fn account_proxy_fingerprint(proxy_url: Option<&str>) -> String {
+    let Some(proxy_url) = proxy_url.map(str::trim).filter(|value| !value.is_empty()) else {
+        return String::new();
+    };
+    let mut hasher = Sha1::new();
+    hasher.update(proxy_url.as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
@@ -394,6 +422,33 @@ fn harden_sidecar_auth_file_permissions(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn sidecar_auth_backup_path(path: &Path) -> Result<PathBuf, String> {
+    let parent = path.parent().ok_or("无法定位 sidecar 认证目录")?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("无法解析 sidecar 认证文件名: {}", path.display()))?;
+    let mut backup_name = file_name.to_os_string();
+    backup_name.push(".bak");
+    Ok(parent.join(backup_name))
+}
+
+fn remove_sidecar_auth_file_and_backup(path: &Path) -> Result<(), String> {
+    for candidate in [path.to_path_buf(), sidecar_auth_backup_path(path)?] {
+        match std::fs::remove_file(&candidate) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "清理 sidecar 认证文件失败: path={}, error={}",
+                    candidate.display(),
+                    error
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn remove_stale_sidecar_auth_files(
     auths_dir: &Path,
     expected_file_names: &HashSet<String>,
@@ -406,7 +461,23 @@ fn remove_stale_sidecar_auth_files(
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取 API 服务 sidecar 认证文件失败: {}", e))?;
         let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|item| item.to_str()) != Some("json") {
+        if !path.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|item| item.to_str()) else {
+            continue;
+        };
+        if file_name.ends_with(".json.bak") {
+            std::fs::remove_file(&path).map_err(|e| {
+                format!(
+                    "清理 sidecar 认证备份失败: path={}, error={}",
+                    path.display(),
+                    e
+                )
+            })?;
+            continue;
+        }
+        if path.extension().and_then(|item| item.to_str()) != Some("json") {
             continue;
         }
         let Some(file_name) = path
@@ -416,6 +487,18 @@ fn remove_stale_sidecar_auth_files(
         else {
             continue;
         };
+        let backup_path = sidecar_auth_backup_path(&path)?;
+        match std::fs::remove_file(&backup_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "清理 sidecar 认证备份失败: path={}, error={}",
+                    backup_path.display(),
+                    error
+                ));
+            }
+        }
         if expected_file_names.contains(&file_name) {
             continue;
         }
@@ -611,7 +694,12 @@ fn sidecar_api_key_manifest_values_with_internal(
             "tokenUsed": 0,
         }));
     }
-    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
+    for item in collection
+        .enabled
+        .then_some(&collection.api_keys)
+        .into_iter()
+        .flatten()
+    {
         if !item.enabled || item.key.trim().is_empty() {
             continue;
         }
@@ -1126,7 +1214,8 @@ fn sidecar_client_api_keys_with_internal(
 ) -> Vec<String> {
     let mut keys = Vec::new();
     let mut seen = HashSet::new();
-    if collection.enabled && legacy_api_key_is_active(collection)
+    if collection.enabled
+        && legacy_api_key_is_active(collection)
         && !sidecar_auth_ids_for_account_ids_with_overrides(
             collection.account_ids.clone(),
             account_overrides,
@@ -1136,7 +1225,12 @@ fn sidecar_client_api_keys_with_internal(
     {
         keys.push(collection.api_key.trim().to_string());
     }
-    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
+    for item in collection
+        .enabled
+        .then_some(&collection.api_keys)
+        .into_iter()
+        .flatten()
+    {
         let key = item.key.trim();
         let has_resolvable_scope = item.provider_gateway.is_some()
             || !sidecar_auth_ids_for_account_ids_with_overrides(
@@ -1151,11 +1245,8 @@ fn sidecar_client_api_keys_with_internal(
     let internal_account_ids = internal_api_account_ids();
     if include_internal
         && !internal_account_ids.is_empty()
-        && !sidecar_auth_ids_for_account_ids_with_overrides(
-            internal_account_ids,
-            account_overrides,
-        )
-        .is_empty()
+        && !sidecar_auth_ids_for_account_ids_with_overrides(internal_account_ids, account_overrides)
+            .is_empty()
     {
         keys.push(internal_api_service_key().to_string());
     }
@@ -1184,7 +1275,12 @@ fn sidecar_api_key_account_scope_values_with_internal(
             values.insert(collection.api_key.trim().to_string(), json!(auth_ids));
         }
     }
-    for item in collection.enabled.then_some(&collection.api_keys).into_iter().flatten() {
+    for item in collection
+        .enabled
+        .then_some(&collection.api_keys)
+        .into_iter()
+        .flatten()
+    {
         let key = item.key.trim();
         if !item.enabled || key.is_empty() {
             continue;
@@ -1416,14 +1512,16 @@ fn sync_sidecar_auth_file_for_account_with_task_source(
     if !prefer_account_task {
         adopt_sidecar_agent_identity_task(&mut effective_account, &auth_path)?;
     }
+    let effective_proxy_url =
+        sidecar_proxy_url_for_account(&effective_account, proxy_signature.proxy_url.as_deref())?;
     let auth_json = sidecar_auth_json_for_account(
         &effective_account,
         &collection,
-        proxy_signature.proxy_url.as_deref(),
+        effective_proxy_url.as_deref(),
     );
     let auth_content = serde_json::to_string_pretty(&auth_json)
         .map_err(|e| format!("序列化 sidecar Codex OAuth 认证失败: {}", e))?;
-    write_string_atomic(&auth_path, &auth_content)?;
+    write_secret_string_atomic(&auth_path, &auth_content)?;
     harden_sidecar_auth_file_permissions(&auth_path)?;
     invalidate_prepared_account_if_unlocked(&account.id);
     logger::log_codex_api_info(&format!(
@@ -1905,6 +2003,19 @@ fn sidecar_effective_proxy_signature(
     Ok(signature)
 }
 
+fn sidecar_proxy_url_for_account(
+    account: &CodexAccount,
+    default_proxy_url: Option<&str>,
+) -> Result<Option<String>, String> {
+    if crate::modules::codex_account_proxy::has_configured_url(account)? {
+        return crate::modules::codex_proxy_runtime::prepared_sidecar_url(account);
+    }
+    Ok(default_proxy_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string))
+}
+
 fn gateway_mode_label(mode: CodexLocalAccessGatewayMode) -> &'static str {
     gateway_mode_to_db_value(mode)
 }
@@ -2078,7 +2189,6 @@ fn format_upstream_response_failed_error(signal: &UpstreamResponseFailedSignal) 
     )
 }
 
-
 fn sidecar_local_account_usable_for_start(account: &CodexAccount) -> bool {
     account.is_api_key_auth()
         || account.is_agent_identity_auth()
@@ -2111,17 +2221,13 @@ fn prepare_grok_sidecar_auth_file(
     let auth_json = match codex_account::grok_sidecar_auth_json(account, proxy_url) {
         Ok(value) => value,
         Err(error) => {
-            match std::fs::remove_file(auth_path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(format!(
-                        "清理失效 Grok sidecar 凭据失败: path={}, error={}",
-                        auth_path.display(),
-                        error
-                    ));
-                }
-            }
+            remove_sidecar_auth_file_and_backup(auth_path).map_err(|error| {
+                format!(
+                    "清理失效 Grok sidecar 凭据失败: path={}, error={}",
+                    auth_path.display(),
+                    error
+                )
+            })?;
             logger::log_codex_api_warn(&format!(
                 "[CodexLocalAccess] 隔离不可用的 Grok 上游账号: account_id={}, error={}",
                 account.id, error
@@ -2131,7 +2237,7 @@ fn prepare_grok_sidecar_auth_file(
     };
     let auth_content = serde_json::to_string_pretty(&auth_json)
         .map_err(|error| format!("序列化 sidecar Grok 认证失败: {}", error))?;
-    write_string_atomic_if_changed(auth_path, &auth_content)?;
+    write_secret_string_atomic_if_changed(auth_path, &auth_content)?;
     harden_sidecar_auth_file_permissions(auth_path)?;
     Ok(true)
 }
@@ -2140,6 +2246,10 @@ async fn prepare_sidecar_launch_config(
     collection: &CodexLocalAccessCollection,
     preparation: GatewayPreparationContext,
 ) -> Result<SidecarLaunchConfig, String> {
+    crate::modules::codex_proxy_runtime::prepare_accounts(effective_sidecar_account_ids(
+        collection,
+    ))
+    .await?;
     refresh_grok_upstream_accounts_for_collection(collection).await;
     let health_snapshot = {
         let runtime = gateway_runtime().lock().await;
@@ -2170,6 +2280,15 @@ async fn prepare_sidecar_launch_config_in_dir(
     default_service_tier: Option<&str>,
     account_overrides: HashMap<String, CodexAccount>,
 ) -> Result<SidecarLaunchConfig, String> {
+    // Overrides are authoritative for this configuration and may not be in the
+    // persisted account list yet. Prepare their shared-proxy state as well.
+    for account in account_overrides.values() {
+        crate::modules::codex_proxy_runtime::ensure_account_proxy_state(account).await?;
+    }
+    crate::modules::codex_proxy_runtime::prepare_accounts(effective_sidecar_account_ids(
+        collection,
+    ))
+    .await?;
     refresh_grok_upstream_accounts_for_collection(collection).await;
     prepare_sidecar_launch_config_in_dir_sync(
         collection,
@@ -2227,12 +2346,14 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         .map_err(|e| format!("创建 API 服务 sidecar 认证目录失败: {}", e))?;
 
     let proxy_signature = sidecar_effective_proxy_signature(collection)?;
-    let effective_proxy_url_ref = proxy_signature.proxy_url.as_deref();
+    let default_proxy_url = proxy_signature.proxy_url.as_deref();
 
     let mut manifest_accounts = Vec::new();
     let mut codex_keys = Vec::new();
     let mut expected_auth_files = HashSet::new();
     let mut routing_accounts = HashMap::new();
+    // 账号级本地代理摘要，用于让隧道换端口后触发 sidecar 重建。
+    let mut account_proxy_fingerprints = Vec::new();
     let metered_feature_patterns =
         metered_feature_model_patterns_for_pool(collection, &account_overrides);
     for (index, account_id) in effective_sidecar_account_ids_with_internal(collection, api_service)
@@ -2287,12 +2408,15 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         if !eligible {
             continue;
         }
+        let account_proxy_url = sidecar_proxy_url_for_account(&account, default_proxy_url)?;
+        let account_proxy_url_ref = account_proxy_url.as_deref();
+        account_proxy_fingerprints.push(account_proxy_fingerprint(account_proxy_url_ref));
         if codex_account::is_grok_upstream_provider(&account) {
             // Grok 供应商账号：把绑定的 Grok 平台账号令牌写成 xai auth 文件，
             // sidecar 用 Grok(xAI) 执行器承接该账号的模型。
             let file_name = codex_account::grok_sidecar_auth_file_name(&account.id);
             let auth_path = auths_dir.join(&file_name);
-            if !prepare_grok_sidecar_auth_file(&account, &auth_path, effective_proxy_url_ref)? {
+            if !prepare_grok_sidecar_auth_file(&account, &auth_path, account_proxy_url_ref)? {
                 continue;
             }
             routing_accounts.insert(account.id.clone(), account.clone());
@@ -2306,37 +2430,46 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         if account.is_api_key_auth() {
             // 与自动混合路由的判定保持一致：Chat 协议账号、以及具备逐模型识图能力的账号
             // （例如 DeepSeek）走 provider 路由，这样带图片的请求才能自动转到识图模型。
-            let provider_route_models = if api_service
-                && automatic_api_service_provider_route_eligible(&account)
-            {
-                automatic_api_service_route_models(
-                    collection,
-                    &account,
-                    &api_service_supported_codex_model_ids(),
-                )
-            } else {
-                Vec::new()
-            };
+            let provider_route_models =
+                if api_service && automatic_api_service_provider_route_eligible(&account) {
+                    automatic_api_service_route_models(
+                        collection,
+                        &account,
+                        &api_service_supported_codex_model_ids(),
+                    )
+                } else {
+                    Vec::new()
+                };
             if !provider_route_models.is_empty() {
-                manifest_accounts.push(sidecar_account_manifest_value(
-                    &account,
-                    None,
-                    collection,
-                ));
+                manifest_accounts.push(sidecar_account_manifest_value(&account, None, collection));
                 continue;
             }
-            if let Some(mut config_value) = sidecar_codex_key_config_value_with_metered_feature_patterns(
-                &account,
-                collection,
-                effective_proxy_url_ref,
-                &metered_feature_patterns,
-            ) {
-                if api_service && (!account.api_model_catalog.is_empty() || !account.api_model_mappings.is_empty()) {
-                    config_value["models"] = Value::Array(automatic_api_service_route_models(
-                        collection, &account, &api_service_supported_codex_model_ids(),
-                    ).into_iter().map(|model| json!({
-                        "name": model["upstreamModel"], "alias": model["clientModel"],
-                    })).collect());
+            if let Some(mut config_value) =
+                sidecar_codex_key_config_value_with_metered_feature_patterns(
+                    &account,
+                    collection,
+                    account_proxy_url_ref,
+                    &metered_feature_patterns,
+                )
+            {
+                if api_service
+                    && (!account.api_model_catalog.is_empty()
+                        || !account.api_model_mappings.is_empty())
+                {
+                    config_value["models"] = Value::Array(
+                        automatic_api_service_route_models(
+                            collection,
+                            &account,
+                            &api_service_supported_codex_model_ids(),
+                        )
+                        .into_iter()
+                        .map(|model| {
+                            json!({
+                                "name": model["upstreamModel"], "alias": model["clientModel"],
+                            })
+                        })
+                        .collect(),
+                    );
                 }
                 codex_keys.push(config_value);
                 manifest_accounts.push(sidecar_account_manifest_value(&account, None, collection));
@@ -2366,12 +2499,12 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         let auth_json = sidecar_auth_json_for_account_with_metered_feature_patterns(
             &account,
             collection,
-            effective_proxy_url_ref,
+            account_proxy_url_ref,
             &metered_feature_patterns,
         );
         let auth_content = serde_json::to_string_pretty(&auth_json)
             .map_err(|e| format!("序列化 sidecar Codex OAuth 认证失败: {}", e))?;
-        write_string_atomic_if_changed(&auth_path, &auth_content)?;
+        write_secret_string_atomic_if_changed(&auth_path, &auth_content)?;
         harden_sidecar_auth_file_permissions(&auth_path)?;
         manifest_accounts.push(sidecar_account_manifest_value(
             &account,
@@ -2564,7 +2697,7 @@ fn prepare_sidecar_launch_config_in_dir_sync(
             "session-affinity-ttl": sidecar_duration_ms(collection.session_affinity_ttl_ms),
         }),
     );
-    if let Some(proxy_url) = effective_proxy_url_ref {
+    if let Some(proxy_url) = default_proxy_url {
         config.insert("proxy-url".to_string(), json!(proxy_url));
     }
     if !codex_keys.is_empty() {
@@ -2601,7 +2734,11 @@ fn prepare_sidecar_launch_config_in_dir_sync(
         .map_err(|e| format!("序列化 sidecar 配置失败: {}", e))?;
     let manifest_content = serde_json::to_string_pretty(&manifest)
         .map_err(|e| format!("序列化 sidecar manifest 失败: {}", e))?;
-    let fingerprint = sidecar_config_fingerprint(&config_content, &manifest_content);
+    let fingerprint = sidecar_config_fingerprint_with_account_proxies(
+        &config_content,
+        &manifest_content,
+        &account_proxy_fingerprints,
+    );
     write_string_atomic_if_changed(&config_path, &config_content)?;
     write_string_atomic_if_changed(&manifest_path, &manifest_content)?;
     write_sidecar_api_key_priority_state_in_dir(collection, &base_dir)?;

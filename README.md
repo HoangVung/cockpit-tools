@@ -461,6 +461,14 @@ QQ 交流群、微信群或新建的 Telegram 畅聊群都可以加入。
 
 ## 致谢
 
+- Codex 代理工作台的页面层级、订阅卡片、当前节点展示、分组/节点下拉、延迟徽章与排序、原生测速接口调用、快速切换交互和订阅来源命名参考 [Clash Verge Rev](https://github.com/clash-verge-rev/clash-verge-rev) 的界面及实现思路；仅为设计与实现参考，不是运行时依赖或官方合作。
+- Codex 代理首次绑定的简短操作路径与当前节点展示参考 [Hiddify](https://github.com/hiddify/hiddify-app)；仅参考交互方向，未集成其代码或服务。
+- Codex 代理节点筛选、排序、延迟测试及窄窗口布局参考 [FlClash](https://github.com/chen08209/FlClash)；仅参考交互方向，未集成其代码或服务。
+- Codex 账号代理使用 [Mihomo](https://github.com/MetaCubeX/mihomo) 独立进程处理受支持的 Clash 节点与分组，节点参数、嵌套分组与内置阻断策略的配置语义、本地连接日志接口以及健康检查与故障转移设计参考其官方源码和文档；内核由用户主动下载或导入，宿主安装包不内置，不代表官方合作关系。
+
+- 代理管理页面的侧栏层级与账号筛选交互参考 [Carbon Design System](https://carbondesignsystem.com/components/UI-shell-left-panel/usage/) 与 [Tailscale 控制台文档](https://tailscale.com/docs/features/access-control/device-management/how-to/filter)，仅参考设计方向，未集成其组件或服务。
+- [Linear](https://linear.app/now/behind-the-latest-design-refresh) 与 [Vercel Geist](https://vercel.com/geist/empty-state)：参考其界面层级、控件尺度和空状态引导思路，用于 Codex 工具页视觉设计，不涉及运行时集成。
+- Codex 独立代理的早期实现及旧配置兼容参考 [sing-box](https://github.com/SagerNet/sing-box) 官方节点配置与进程文档；后续自动测速与已有连接处理的设计也参考其源码，当前运行内核仍为 Mihomo，不代表官方合作关系。
 - Antigravity 账号切号逻辑参考：[Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
 - Codex API 服务集成 CLIProxyAPI，Codex Live WebRTC/sideband、Responses WebSocket 状态安全、canonical token accounting v2、Multi-Agent V2 兼容、Grok CLI 账号与 OAuth，以及 Grok `apply_patch` 协议兼容方向亦参考其开源实现：[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（MIT）
 - Grok 图标造型参考：[LobeHub/lobe-icons](https://github.com/lobehub/lobe-icons)（MIT）

@@ -107,8 +107,14 @@ fn sidecar_usage_event_should_auto_restart(event: &SidecarUsageEvent) -> bool {
         || message.contains("stream timeout")
         || message.contains("流式响应超时");
     let timeout_status = matches!(event.status, Some(408 | 504));
+    // 本地回环代理被拒（例如账号隧道换端口后 sidecar 仍拨旧端口）必须重建，
+    // 否则会一直 502；远端地址被拒不属于本地通道问题，不在此列。
+    let loopback_dial_refused = message.contains("connection refused")
+        && (message.contains("127.0.0.1")
+            || message.contains("localhost")
+            || message.contains("[::1]"));
 
-    timeout_category || timeout_message || timeout_status
+    timeout_category || timeout_message || timeout_status || loopback_dial_refused
 }
 
 fn sidecar_auto_restart_control() -> &'static Mutex<SidecarAutoRestartControl> {
@@ -683,33 +689,16 @@ async fn restore_removed_local_access_accounts(account_ids: &[String]) {
     clear_runtime_quota_cooldowns(&mut runtime, &account_ids);
 }
 
-pub async fn recover_local_access_accounts(
-    account_ids: Vec<String>,
-) -> Result<CodexLocalAccessState, String> {
-    ensure_runtime_loaded_without_start().await?;
-    let (collection, port, running) = {
-        let runtime = gateway_runtime().lock().await;
-        let collection = runtime
-            .collection
-            .clone()
-            .ok_or_else(|| "API 服务集合尚未创建".to_string())?;
-        (
-            collection.clone(),
-            runtime.actual_port.unwrap_or(collection.port),
-            runtime.running,
-        )
-    };
-    if !running {
-        return Err("API 服务 Sidecar 当前未运行，无法恢复账号调度状态".to_string());
-    }
-
-    let requested: HashSet<String> = account_ids
-        .into_iter()
+fn local_access_recovery_membership(
+    current_account_ids: &[String],
+    requested_account_ids: &[String],
+) -> Result<(Vec<String>, Vec<String>, Vec<String>), String> {
+    let requested: HashSet<String> = requested_account_ids
+        .iter()
         .map(|account_id| account_id.trim().to_string())
         .filter(|account_id| !account_id.is_empty())
         .collect();
-    let selected: Vec<String> = collection
-        .account_ids
+    let selected: Vec<String> = current_account_ids
         .iter()
         .filter(|account_id| requested.contains(account_id.as_str()))
         .cloned()
@@ -717,25 +706,178 @@ pub async fn recover_local_access_accounts(
     if selected.is_empty() {
         return Err("没有找到可恢复的账号".to_string());
     }
+    let remaining_account_ids = current_account_ids
+        .iter()
+        .filter(|account_id| !requested.contains(account_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok((selected, remaining_account_ids, current_account_ids.to_vec()))
+}
 
-    refresh_managed_accounts_before_recovery(&selected).await;
+/// 手动恢复开始后的抑制窗口：这段时间内被恢复账号不再显示账号池异常行，
+/// 避免恢复过程中（账号被短暂移出集合）产生的失败状态立刻把行重新点亮。
+const LOCAL_ACCESS_RECOVERY_SUPPRESS_WINDOW: Duration = Duration::from_secs(120);
+/// 后台恢复流程结束后的短暂抑制窗口，用于吸收仍在飞行的迟到失败事件。
+const LOCAL_ACCESS_RECOVERY_SETTLE_WINDOW: Duration = Duration::from_secs(20);
+/// 后台恢复结果事件：界面据此提示“恢复失败，可重试”，避免只报“已提交”。
+const LOCAL_ACCESS_RECOVERY_RESULT_EVENT: &str = "codex-local-access-recovery-result";
 
-    let reset_account_ids = request_sidecar_reset_scheduler(&collection, port, &selected).await?;
-    let reset_account_id_set = reset_account_ids.iter().collect::<HashSet<_>>();
-    let recovered_entire_collection = selected.len() == collection.account_ids.len()
-        && selected
-            .iter()
-            .all(|account_id| reset_account_id_set.contains(account_id));
+fn suppress_local_access_recovery_rows(
+    runtime: &mut GatewayRuntime,
+    account_ids: &[String],
+    suppressed_until_ms: i64,
+) {
+    for account_id in account_ids
+        .iter()
+        .map(|account_id| account_id.trim())
+        .filter(|account_id| !account_id.is_empty())
+    {
+        runtime
+            .recovery_suppressed_accounts
+            .insert(account_id.to_string(), suppressed_until_ms);
+    }
+}
 
-    let mut runtime = gateway_runtime().lock().await;
-    let now = now_ms();
-    clear_runtime_account_health(
-        &mut runtime,
-        &reset_account_ids,
-        recovered_entire_collection,
+fn emit_local_access_recovery_result(account_ids: &[String], error: Option<&str>) {
+    let Some(app) = crate::get_app_handle() else {
+        return;
+    };
+    let _ = app.emit(
+        LOCAL_ACCESS_RECOVERY_RESULT_EVENT,
+        serde_json::json!({
+            "accountIds": account_ids,
+            "status": if error.is_some() { "failed" } else { "completed" },
+            "error": error.unwrap_or_default(),
+        }),
     );
-    mark_quota_cooldowns_recovered(&mut runtime, &reset_account_ids, now);
-    Ok(build_fresh_state_snapshot(&mut runtime))
+}
+
+/// 手动恢复的后台部分：刷新凭据 → 移出集合 → 加回集合（两次网关重载）。
+///
+/// 这一段的耗时不可控（凭据刷新最长 15s/批，网关重载含 sidecar 重启），因此不再
+/// 阻塞界面：宿主先清掉异常状态并返回快照，这里在后台继续执行并回报结果。
+#[allow(clippy::too_many_arguments)]
+async fn run_local_access_recovery_in_background(
+    selected_account_ids: Vec<String>,
+    remaining_account_ids: Vec<String>,
+    restored_account_ids: Vec<String>,
+    restrict_free_accounts: bool,
+    backup_account_ids: Vec<String>,
+    preferred_account_ids: Vec<String>,
+    image_generation_account_policies:
+        HashMap<String, CodexLocalAccessImageGenerationPolicy>,
+) -> Result<(), String> {
+    refresh_managed_accounts_before_recovery(&selected_account_ids).await;
+
+    // Manual recovery must match "remove then add back": persist membership
+    // through the same save path so sidecar auth, quota pool, and scheduler
+    // state are rebuilt from a fresh account instead of only resetting runtime
+    // flags on the still-loaded credential.
+    save_local_access_accounts_with_reload(
+        remaining_account_ids,
+        restrict_free_accounts,
+        Some(backup_account_ids.clone()),
+        Some(preferred_account_ids.clone()),
+        None,
+        None,
+        Some(image_generation_account_policies.clone()),
+        LocalAccessGatewayReload::Await,
+    )
+    .await?;
+    save_local_access_accounts_with_reload(
+        restored_account_ids,
+        restrict_free_accounts,
+        Some(backup_account_ids),
+        Some(preferred_account_ids),
+        None,
+        None,
+        Some(image_generation_account_policies),
+        LocalAccessGatewayReload::Await,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn recover_local_access_accounts(
+    account_ids: Vec<String>,
+) -> Result<CodexLocalAccessState, String> {
+    ensure_runtime_loaded_without_start().await?;
+    let collection = {
+        let runtime = gateway_runtime().lock().await;
+        runtime
+            .collection
+            .clone()
+            .ok_or_else(|| "API 服务集合尚未创建".to_string())?
+    };
+    let (selected, remaining_account_ids, restored_account_ids) =
+        local_access_recovery_membership(&collection.account_ids, &account_ids)?;
+
+    // 先清宿主侧状态并立即把快照返回给界面，让“恢复”点下去就能看到异常行消失；
+    // 凭据刷新与网关重载交给后台任务，失败会通过事件回报。
+    {
+        let mut runtime = gateway_runtime().lock().await;
+        let now = now_ms();
+        clear_runtime_account_health(&mut runtime, &selected, false);
+        clear_runtime_quota_cooldowns(&mut runtime, &selected);
+        suppress_local_access_recovery_rows(
+            &mut runtime,
+            &selected,
+            now.saturating_add(
+                duration_to_millis(LOCAL_ACCESS_RECOVERY_SUPPRESS_WINDOW) as i64,
+            ),
+        );
+    }
+    emit_local_access_state_updated();
+
+    let (backup_account_ids, preferred_account_ids) = routing_priority_ids(&collection);
+    let image_generation_account_policies = collection.image_generation_account_policies.clone();
+    let restrict_free_accounts = collection.restrict_free_accounts;
+    let background_account_ids = selected.clone();
+    tauri::async_runtime::spawn(async move {
+        let _recovery_guard = local_access_recovery_lock().lock().await;
+        let error = run_local_access_recovery_in_background(
+            selected,
+            remaining_account_ids,
+            restored_account_ids,
+            restrict_free_accounts,
+            backup_account_ids,
+            preferred_account_ids,
+            image_generation_account_policies,
+        )
+        .await
+        .err();
+        {
+            let mut runtime = gateway_runtime().lock().await;
+            if error.is_none() {
+                // 成功：再用一小段抑制窗口吸收仍在飞行的旧请求结果。
+                let now = now_ms();
+                suppress_local_access_recovery_rows(
+                    &mut runtime,
+                    &background_account_ids,
+                    now.saturating_add(
+                        duration_to_millis(LOCAL_ACCESS_RECOVERY_SETTLE_WINDOW) as i64,
+                    ),
+                );
+            } else {
+                // 失败：立即解除抑制，让真实的异常行可以重新出现并允许重试。
+                for account_id in &background_account_ids {
+                    runtime
+                        .recovery_suppressed_accounts
+                        .remove(account_id.trim());
+                }
+            }
+        }
+        if let Some(error) = error.as_deref() {
+            logger::log_codex_api_warn(&format!(
+                "[CodexLocalAccess] 手动恢复账号状态失败（异常行已先清空，界面会提示重试）: account_ids={:?}, error={}",
+                background_account_ids, error
+            ));
+        }
+        emit_local_access_recovery_result(&background_account_ids, error.as_deref());
+        emit_local_access_state_updated();
+    });
+
+    snapshot_state_without_gateway_reload().await
 }
 
 /// 账号凭据更新（重新授权 / 本机导入）后立即让本地网关生效。

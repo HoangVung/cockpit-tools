@@ -4,6 +4,8 @@ import { isCodexGroupQuotaRefreshInherit, resolveCodexGroupQuotaAutoRefreshMinut
 import { isCodexApiKeyAccount, isCodexAgentIdentityAccount, isCodexChatCompletionsApiKeyAccount, isCodexNewApiAccount } from "../types/codex";
 import { isVerboseCodexQuotaErrorMessage, summarizeCodexQuotaErrorMessage } from "../utils/codexQuotaError";
 import { CodexQuotaMiniRows } from "../components/codex/CodexQuotaMiniRows";
+import { CodexAccountProxyButton } from "../components/codex/CodexAccountProxyButton";
+import { canUseCodexAccountProxy } from "../utils/codexAccountProxy";
 import { CodexTeamQuotaHistory } from "../components/codex/CodexTeamQuotaHistory";
 import { isCodexClientReauthNoticeOnly, isCodexRefreshTokenNoticeOnly, isCodexRefreshTokenReusedAccount, isCodexServerRevokedReauth } from "../utils/codexSwitchAuthFailure";
 import { CODEX_LAUNCH_PREVIEW_API_SERVICE_CARD_KEY } from "../utils/codexLaunchPreviewInstancePreference";
@@ -826,7 +828,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
               isInLocalAccess ||
               canAddToLocalAccess ||
               (!isApiKeyAccount && hasCodexAccountNoteDetails(account)) ||
-              resetCreditControls) && (
+              resetCreditControls || canUseCodexAccountProxy(account)) && (
               <div className="account-sub-line">
                 {meta.accountContextText && (
                   <span
@@ -873,6 +875,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                 )}
                 {!isApiKeyAccount && renderAccountNoteButton(account)}
                 {resetCreditControls}
+                <CodexAccountProxyButton account={account} />
               </div>
             )}
             {!isApiKeyAccount && (
@@ -2215,7 +2218,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                 {(meta.accountContextText ||
                   isInLocalAccess ||
                   (!isApiKeyAccount && hasCodexAccountNoteDetails(account)) ||
-                  resetCreditControls) && (
+                  resetCreditControls || canUseCodexAccountProxy(account)) && (
                   <div className="account-sub-line codex-account-meta-inline">
                     {meta.accountContextText && (
                       <span
@@ -2253,6 +2256,7 @@ export function useCodexAccountsRenderers(context: Pick<ReturnType<typeof useCod
                     )}
                     {!isApiKeyAccount && renderAccountNoteButton(account)}
                     {resetCreditControls}
+                    <CodexAccountProxyButton account={account} />
                   </div>
                 )}
                 {!isApiKeyAccount && (

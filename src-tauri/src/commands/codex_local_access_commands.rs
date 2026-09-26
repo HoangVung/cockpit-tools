@@ -132,6 +132,13 @@ pub async fn codex_local_access_query_request_logs(
 }
 
 #[tauri::command]
+pub async fn codex_account_proxy_recent_requests(
+    account_id: String,
+) -> Result<Vec<codex_local_access::CodexAccountProxyRecentRequest>, String> {
+    codex_local_access::query_recent_account_proxy_requests(account_id).await
+}
+
+#[tauri::command]
 pub async fn codex_local_access_query_stats(
     start_at: i64,
     end_at: i64,

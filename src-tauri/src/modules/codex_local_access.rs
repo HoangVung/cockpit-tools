@@ -14,6 +14,7 @@ include!("codex_local_access_sidecar_runtime.rs");
 include!("codex_local_access_collection.rs");
 include!("codex_local_access_gateway_runtime.rs");
 include!("codex_local_access_provider_gateway.rs");
+include!("codex_local_access_provider_auth_sync.rs");
 include!("codex_local_access_instance_gateways.rs");
 include!("codex_local_access_probe_chat.rs");
 include!("codex_pelican_transport.rs");
@@ -43,6 +44,8 @@ mod tests {
     }
     include!("codex_local_access_tests_automatic_routing.rs");
     include!("codex_local_access_tests_sidecar_gateway.rs");
+    include!("codex_local_access_tests_proxy.rs");
+    include!("codex_local_access_tests_provider_auth_sync.rs");
     include!("codex_local_access_tests_grok_lifecycle.rs");
     include!("codex_local_access_tests_pricing_profile.rs");
     include!("codex_local_access_tests_request_routing.rs");

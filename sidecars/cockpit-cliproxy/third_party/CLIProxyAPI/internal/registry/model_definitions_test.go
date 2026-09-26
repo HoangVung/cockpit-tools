@@ -92,8 +92,8 @@ func TestPaidCodexModelsIncludeGPT6FamilyButFreeDoesNot(t *testing.T) {
 			if model == nil {
 				t.Fatalf("paid Codex models do not contain %s", modelID)
 			}
-			if model.ContextLength != 1050000 || model.MaxCompletionTokens != 128000 {
-				t.Fatalf("%s limits = %d/%d, want 1050000/128000", modelID, model.ContextLength, model.MaxCompletionTokens)
+			if model.ContextLength != 256000 || model.MaxCompletionTokens != 128000 {
+				t.Fatalf("%s limits = %d/%d, want 256000/128000", modelID, model.ContextLength, model.MaxCompletionTokens)
 			}
 			if model.DisplayName != wantDisplayNames[modelID] {
 				t.Fatalf("%s display name = %q, want %q", modelID, model.DisplayName, wantDisplayNames[modelID])
@@ -144,8 +144,8 @@ func TestLookupStaticModelInfoFallsBackToShippedGPT6Builtins(t *testing.T) {
 		if model.ID != modelID {
 			t.Fatalf("LookupStaticModelInfo(%s).ID = %s, want %s", modelID, model.ID, modelID)
 		}
-		if model.ContextLength != 1050000 || model.MaxCompletionTokens != 128000 {
-			t.Fatalf("%s limits = %d/%d, want 1050000/128000", modelID, model.ContextLength, model.MaxCompletionTokens)
+		if model.ContextLength != 256000 || model.MaxCompletionTokens != 128000 {
+			t.Fatalf("%s limits = %d/%d, want 256000/128000", modelID, model.ContextLength, model.MaxCompletionTokens)
 		}
 	}
 	if model := LookupStaticModelInfo("gpt-6-unknown"); model != nil {

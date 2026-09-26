@@ -7,7 +7,25 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
-## [Unreleased]
+## [1.3.60] - 2026-09-25
+
+### Added
+
+- **Codex proxy management**: import subscriptions or add proxies manually, use a shared proxy or per-account proxies, and assign them in batches. Switch nodes, test group latency, configure automatic selection, failover or load balancing, and view egress IPs, connection traffic and request logs.
+- **Codex top navigation settings**: reorder tabs and customize the More menu.
+
+### Changed
+
+- **Support for newer WorkBuddy clients**: account switching and local account import.
+- **Updated Codex model settings**: corrected default context windows for GPT-6 models, standardized auto-compaction thresholds, and updated GPT-5.6 Sol cost estimates.
+- **Pelican tests and wakeups run independently**: the API Service no longer needs to be running.
+- **New instances start blank by default**: copying an existing instance remains available.
+
+### Fixed
+
+- Fixed incorrect account errors, accounts becoming unavailable again after recovery, and duplicate streamed replies in the Codex API Service.
+- Fixed leftover provider settings after switching back to an official Codex account, and Codex OAuth and Grok provider accounts overwriting each other when sharing an email.
+- Fixed stalled client launches, scroll jumps in dialogs, and overlapping columns in the Codex instance table.
 
 ## [1.3.59] - 2026-09-23
 

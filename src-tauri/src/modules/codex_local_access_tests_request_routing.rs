@@ -255,6 +255,39 @@ data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_t
     }
 
     #[test]
+    fn sidecar_loopback_proxy_refusal_requests_automatic_restart() {
+        let event: SidecarUsageEvent = serde_json::from_value(json!({
+            "success": false,
+            "status": 502,
+            "errorCategory": "connection_lifecycle",
+            "errorMessage": "Post \"https://chatgpt.com/backend-api/codex/responses\": utls: dial upstream: socks connect tcp 127.0.0.1:58887->chatgpt.com:443: dial tcp 127.0.0.1:58887: connect: connection refused"
+        }))
+        .expect("loopback refusal event should deserialize");
+
+        assert!(
+            sidecar_usage_event_should_auto_restart(&event),
+            "a stale account tunnel port must rebuild the sidecar instead of failing forever"
+        );
+        assert!(!sidecar_usage_event_is_client_canceled(&event));
+    }
+
+    #[test]
+    fn sidecar_remote_refusal_does_not_request_automatic_restart() {
+        let event: SidecarUsageEvent = serde_json::from_value(json!({
+            "success": false,
+            "status": 502,
+            "errorCategory": "connection_lifecycle",
+            "errorMessage": "Post \"https://chatgpt.com/backend-api/codex/responses\": dial tcp 10.0.0.5:443: connect: connection refused"
+        }))
+        .expect("remote refusal event should deserialize");
+
+        assert!(
+            !sidecar_usage_event_should_auto_restart(&event),
+            "remote dial refusals are not a local gateway problem"
+        );
+    }
+
+    #[test]
     fn sidecar_client_disconnect_does_not_request_automatic_restart() {
         let event: SidecarUsageEvent = serde_json::from_value(json!({
             "success": false,

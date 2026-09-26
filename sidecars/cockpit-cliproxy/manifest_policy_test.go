@@ -548,11 +548,15 @@ func TestCodexClientModelsResponsePreservesGpt6Templates(t *testing.T) {
 		if got := stringFromAny(model["display_name"]); got != tc.name {
 			t.Fatalf("%s display_name = %q, want %q", tc.slug, got, tc.name)
 		}
-		if got := intFromAny(model["context_window"]); got != 1050000 {
-			t.Fatalf("%s context_window = %d, want 1050000", tc.slug, got)
+		if got := intFromAny(model["context_window"]); got != 256000 {
+			t.Fatalf("%s context_window = %d, want 256000", tc.slug, got)
 		}
-		if got := intFromAny(model["max_context_window"]); got != 1050000 {
-			t.Fatalf("%s max_context_window = %d, want 1050000", tc.slug, got)
+		if got := intFromAny(model["max_context_window"]); got != 256000 {
+			t.Fatalf("%s max_context_window = %d, want 256000", tc.slug, got)
+		}
+		// 声明了窗口就必须同时声明 90% 压缩阈值。
+		if got := intFromAny(model["auto_compact_token_limit"]); got != 256000*90/100 {
+			t.Fatalf("%s auto_compact_token_limit = %d, want %d", tc.slug, got, 256000*90/100)
 		}
 		levels, levelsOK := model["supported_reasoning_levels"].([]any)
 		if !levelsOK {
@@ -590,8 +594,8 @@ func TestOllamaBridgeExposesGpt6Capabilities(t *testing.T) {
 		{slug: "gpt-6-sol", efforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"}},
 		{slug: "gpt-6-luna", efforts: []string{"low", "medium", "high", "xhigh", "max"}},
 	} {
-		if got := ollamaContextLength(tc.slug); got != 1050000 {
-			t.Fatalf("ollamaContextLength(%q) = %d, want 1050000", tc.slug, got)
+		if got := ollamaContextLength(tc.slug); got != 256000 {
+			t.Fatalf("ollamaContextLength(%q) = %d, want 256000", tc.slug, got)
 		}
 		if got := ollamaModelFamily(tc.slug); got != tc.slug {
 			t.Fatalf("ollamaModelFamily(%q) = %q, want %q", tc.slug, got, tc.slug)
@@ -645,6 +649,71 @@ func TestCodexClientModelsResponseAppliesExplicitContextWindows(t *testing.T) {
 	}
 	if intFromAny(custom["context_window"]) != 1048576 || intFromAny(custom["max_context_window"]) != 1048576 {
 		t.Fatalf("explicit custom window = %#v / %#v", custom["context_window"], custom["max_context_window"])
+	}
+}
+
+func TestEnsureCodexClientCompactionLimitPairsWindowWithThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		model map[string]any
+		want  int
+	}{
+		{name: "missing limit derives 90%", model: map[string]any{"context_window": 272000}, want: 244800},
+		{name: "null limit derives 90%", model: map[string]any{"context_window": 256000, "auto_compact_token_limit": nil}, want: 230400},
+		{name: "100% limit is collapsed to 90%", model: map[string]any{"context_window": 1000000, "auto_compact_token_limit": 1000000}, want: 900000},
+		{name: "above window limit is collapsed to 90%", model: map[string]any{"context_window": 1000000, "auto_compact_token_limit": 1200000}, want: 900000},
+		{name: "declared ratio below window is preserved", model: map[string]any{"context_window": 400000, "auto_compact_token_limit": 380000}, want: 380000},
+		{name: "windowless entry stays untouched", model: map[string]any{}, want: 0},
+	} {
+		ensureCodexClientCompactionLimit(tc.model)
+		got, _ := tc.model["auto_compact_token_limit"]
+		if tc.want == 0 {
+			if _, exists := tc.model["auto_compact_token_limit"]; exists {
+				t.Fatalf("%s: windowless entry gained a compaction limit %#v", tc.name, got)
+			}
+			continue
+		}
+		if value := intFromAny(got); value != tc.want {
+			t.Fatalf("%s: auto_compact_token_limit = %#v, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// 目录里凡是我们声明了窗口的模型，都必须同时声明 90% 压缩阈值：只写窗口会让客户端
+// 回退到自身压缩策略，写满 100% 则永远不会触发压缩。
+func TestCodexClientModelsResponseAlwaysPairsWindowWithCompactionLimit(t *testing.T) {
+	spec := &apiKeySpec{}
+	response := buildCodexClientModelsResponse(
+		[]string{"gpt-5.6-sol", "gpt-5.5", "gpt-5.4-mini", "gpt-5.3-codex-spark", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", codexReserveModel, codexAutoReviewModel, "custom-flash"},
+		spec,
+		map[string]int64{"custom-flash": 516000, codexReserveModel: 516000},
+		nil,
+	)
+	models := response["models"].([]map[string]any)
+	if len(models) == 0 {
+		t.Fatal("catalog must not be empty")
+	}
+	checked := 0
+	for _, model := range models {
+		slug, _ := model["slug"].(string)
+		window := intFromAny(model["context_window"])
+		if window <= 0 {
+			continue
+		}
+		checked++
+		limit, exists := model["auto_compact_token_limit"]
+		if !exists || limit == nil {
+			t.Fatalf("%s declared context_window %d without auto_compact_token_limit", slug, window)
+		}
+		if got := intFromAny(limit); got != window*90/100 {
+			t.Fatalf("%s auto_compact_token_limit = %d, want 90%% of %d (= %d)", slug, got, window, window*90/100)
+		}
+		if got := intFromAny(limit); got >= window {
+			t.Fatalf("%s auto_compact_token_limit = %d must stay below context_window %d", slug, got, window)
+		}
+	}
+	if checked != len(models) {
+		t.Fatalf("only %d/%d catalog models declared a context window", checked, len(models))
 	}
 }
 
@@ -1205,8 +1274,9 @@ func TestCodexReserveClientCatalogListsLunaReserveWithLunaCapabilities(t *testin
 			t.Fatalf("Reserve %s = %#v, want Luna value %#v", field, reserve[field], luna[field])
 		}
 	}
-	if reserve["auto_compact_token_limit"] != nil {
-		t.Fatal("Reserve must not force a compaction threshold")
+	// Reserve 继承 Luna 的上下文，就必须带上 Luna 的 90% 压缩阈值。
+	if got := intFromAny(reserve["auto_compact_token_limit"]); got != 272000*90/100 {
+		t.Fatalf("Reserve auto_compact_token_limit = %#v, want %d", reserve["auto_compact_token_limit"], 272000*90/100)
 	}
 	info := manifestRegistryModelInfo(codexReserveModel, "", 0)
 	if !reflect.DeepEqual(info.Thinking, codexClientThinkingSupport("gpt-5.6-luna")) || info.Thinking == nil {
@@ -1282,8 +1352,12 @@ func TestPrefixedCodexReserveKeepsVisibleLunaCapabilitiesAndExplicitContext(t *t
 	if reserve == nil || reserve["visibility"] != "list" || reserve["display_name"] != "GPT-5.6 Reserve" {
 		t.Fatalf("prefixed Reserve = %#v", reserve)
 	}
-	if intFromAny(reserve["context_window"]) != 516000 || reserve["auto_compact_token_limit"] != nil {
-		t.Fatalf("explicit Reserve context must not set compaction: %#v", reserve)
+	if intFromAny(reserve["context_window"]) != 516000 || intFromAny(reserve["max_context_window"]) != 516000 {
+		t.Fatalf("explicit Reserve context must override the template window: %#v", reserve)
+	}
+	// 显式窗口同样必须带上 90% 压缩阈值（516000 * 90 / 100 = 464400）。
+	if got := intFromAny(reserve["auto_compact_token_limit"]); got != 464400 {
+		t.Fatalf("explicit Reserve auto_compact_token_limit = %#v, want 464400", reserve["auto_compact_token_limit"])
 	}
 }
 

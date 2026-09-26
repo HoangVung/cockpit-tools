@@ -22,7 +22,11 @@
         assert_eq!(reserve["display_name"], "GPT-5.6 Reserve");
         assert_eq!(reserve["context_window"], luna["context_window"]);
         assert_eq!(reserve["supported_reasoning_levels"], luna["supported_reasoning_levels"]);
-        assert!(reserve["auto_compact_token_limit"].is_null());
+        // 统一口径：Reserve 与 Luna 共享上下文窗口，压缩阈值必须是窗口的 90%。
+        assert_eq!(
+            reserve["auto_compact_token_limit"],
+            luna["context_window"].as_i64().unwrap() * 9 / 10
+        );
         let config = fs::read_to_string(base_dir.join("config.toml")).unwrap();
         assert!(config.contains("model = \"gpt-5.6-sol\""));
         assert!(!config.contains("model_context_window"));
@@ -319,16 +323,16 @@
         fs::write(&config_path, "model = \"gpt-5\"\n").expect("write config");
 
         let result =
-            write_quick_config_to_config_toml(&base_dir, Some(516_000), Some(460_000), None, None)
+            write_quick_config_to_config_toml(&base_dir, Some(516_000), Some(464_400), None, None)
                 .expect("save quick config");
 
         let content = fs::read_to_string(&config_path).expect("read config");
         assert!(content.contains("model_context_window = 516000"));
-        assert!(content.contains("model_auto_compact_token_limit = 460000"));
+        assert!(content.contains("model_auto_compact_token_limit = 464400"));
         assert!(!result.context_window_1m);
-        assert_eq!(result.auto_compact_token_limit, 460_000);
+        assert_eq!(result.auto_compact_token_limit, 464_400);
         assert_eq!(result.detected_model_context_window, Some(516_000));
-        assert_eq!(result.detected_auto_compact_token_limit, Some(460_000));
+        assert_eq!(result.detected_auto_compact_token_limit, Some(464_400));
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
     }
@@ -1003,7 +1007,7 @@
         for (window, compact, error) in [
             (Some(0), Some(1), "EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID"),
             (None, Some(1), "EXPERIMENTAL_MODEL_CATALOG_CONTEXT_WINDOW_INVALID"),
-            (Some(100), None, "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID"),
+            (Some(100), Some(0), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID"),
             (Some(100), Some(-1), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_INVALID"),
             (Some(100), Some(100), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID"),
             (Some(100), Some(101), "EXPERIMENTAL_MODEL_CATALOG_AUTO_COMPACT_RANGE_INVALID"),
@@ -1014,6 +1018,18 @@
             };
             assert_eq!(super::normalize_experimental_model_definitions(vec![definition]).unwrap_err(), error);
         }
+
+        // 统一口径：只给上下文窗口时按 90% 派生压缩阈值，不再视为非法配置。
+        let derived = super::normalize_experimental_model_definitions(vec![
+            CodexExperimentalModelDefinition {
+                model_id: "custom-model".into(), display_name: "Custom".into(),
+                reasoning_efforts: None, context_window: Some(516_000),
+                auto_compact_token_limit: None,
+            },
+        ])
+        .expect("context-only definition should derive the compact limit");
+        assert_eq!(derived[0].context_window, Some(516_000));
+        assert_eq!(derived[0].auto_compact_token_limit, Some(464_400));
     }
 
     #[test]
@@ -1168,12 +1184,23 @@
             .find(|model| model.model_id == "gpt-5.6-sol")
             .expect("migrated Sol model");
         assert_eq!(model.display_name, "GPT-5.6 Sol");
+        // 统一口径：旧目录声明的上下文窗口照常迁移，压缩阈值缺失时按 90% 派生。
+        assert_eq!(model.context_window, Some(1_000_000));
+        assert_eq!(model.auto_compact_token_limit, Some(900_000));
         let saved_models = fs::read_to_string(base_dir.join(
             super::CODEX_EXPERIMENTAL_MODEL_CONFIG_FILE,
         ))
         .expect("read migrated model definitions");
-        assert!(!saved_models.contains("context_window"));
-        assert!(!saved_models.contains("auto_compact_token_limit"));
+        let saved_models: serde_json::Value =
+            serde_json::from_str(&saved_models).expect("parse migrated model definitions");
+        let saved_sol = saved_models["models"]
+            .as_array()
+            .expect("models array")
+            .iter()
+            .find(|model| model["model_id"] == "gpt-5.6-sol")
+            .expect("saved Sol model");
+        assert_eq!(saved_sol["context_window"], 1_000_000);
+        assert_eq!(saved_sol["auto_compact_token_limit"], 900_000);
 
         fs::remove_dir_all(&base_dir).expect("cleanup temp dir");
     }

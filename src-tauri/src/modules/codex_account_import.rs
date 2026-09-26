@@ -1300,6 +1300,7 @@ fn upsert_account_from_access_token_with_hints(
         acc.tokens = tokens;
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
+        acc.upstream_grok_account_id = None;
         acc.authorization_status = None;
         acc.openai_api_key = None;
         acc.api_base_url = None;
@@ -1326,6 +1327,7 @@ fn upsert_account_from_access_token_with_hints(
         let mut acc = CodexAccount::new(existing_id.clone(), email.clone(), tokens);
         mark_token_chain_updated(&mut acc);
         acc.auth_mode = CodexAuthMode::OAuth;
+        acc.upstream_grok_account_id = None;
         acc.authorization_status = None;
         acc.openai_api_key = None;
         acc.api_base_url = None;

@@ -931,6 +931,7 @@
 
     #[tokio::test]
     async fn sidecar_config_disables_chat_image_generation_for_oauth_pool() {
+        let _shared_state = crate::modules::codex_unified_proxy::TestCacheGuard::new();
         let dir = make_temp_dir("codex-sidecar-oauth-image-generation");
         let account = CodexAccount::new(
             "oauth-image-generation-1".to_string(),
@@ -962,6 +963,7 @@
 
     #[tokio::test]
     async fn sidecar_config_uses_streaming_bootstrap_retry_setting() {
+        let _shared_state = crate::modules::codex_unified_proxy::TestCacheGuard::new();
         let dir = make_temp_dir("codex-sidecar-streaming-bootstrap-retries");
         let account = CodexAccount::new(
             "oauth-streaming-retries-1".to_string(),

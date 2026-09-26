@@ -23,6 +23,16 @@ pub mod codebuddy_oauth;
 pub mod codebuddy_session;
 pub mod codebuddy_session_transfer;
 pub mod codex_account;
+pub mod codex_account_proxy;
+pub mod codex_proxy_probe;
+pub mod codex_proxy_engine;
+pub mod codex_proxy_engine_preflight;
+pub mod codex_proxy_activity;
+pub mod codex_proxy_engine_install;
+mod codex_proxy_engine_archive;
+pub mod codex_proxy_runtime;
+pub mod codex_proxy_desktop_router;
+pub mod codex_proxy_node_parser;
 pub mod codex_agent_identity;
 pub mod codex_app_injection;
 pub mod codex_auth_diagnostic;
@@ -128,6 +138,7 @@ pub mod windsurf_devin_oauth;
 pub mod windsurf_instance;
 pub mod windsurf_oauth;
 pub mod workbuddy_account;
+pub(crate) mod workbuddy_auth_crypto;
 pub mod workbuddy_auto_checkin;
 pub mod workbuddy_instance;
 pub mod workbuddy_oauth;
@@ -142,3 +153,11 @@ pub mod zed_oauth;
 
 // 重新导出常用函数
 pub use account::*;
+
+pub mod codex_proxy_catalog;
+pub mod codex_unified_proxy;
+pub mod codex_proxy_manual_import;
+pub mod codex_proxy_network;
+pub mod codex_proxy_engine_errors;
+pub mod codex_proxy_catalog_binding;
+pub mod codex_proxy_subscription_parser;

@@ -425,6 +425,8 @@ export interface CodexLocalAccessState {
   stats: CodexLocalAccessStats;
   accountHealth: CodexLocalAccessAccountHealth[];
   accountPoolHealth: CodexLocalAccessAccountPoolHealth[];
+  /** 手动恢复后仍在抑制窗口内的账号：异常列表里临时隐藏这些账号的行。 */
+  recoverySuppressedAccountIds?: string[];
   quotaReserveStatus: CodexLocalAccessQuotaReserveStatus | null;
 }
 

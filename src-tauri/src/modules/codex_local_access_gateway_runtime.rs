@@ -1140,6 +1140,15 @@ fn build_state_snapshot_inner(
         .collect();
     let account_health = build_account_health_snapshot(runtime);
     let account_pool_health = build_account_pool_health_snapshot(runtime);
+    let recovery_suppressed_account_ids = {
+        let now = now_ms();
+        runtime
+            .recovery_suppressed_accounts
+            .iter()
+            .filter(|(_, suppressed_until_ms)| **suppressed_until_ms > now)
+            .map(|(account_id, _)| account_id.clone())
+            .collect::<Vec<_>>()
+    };
     let quota_reserve_status = collection.as_ref().and_then(build_quota_reserve_status);
     let service_enabled = collection
         .as_ref()
@@ -1166,6 +1175,7 @@ fn build_state_snapshot_inner(
         stats,
         account_health,
         account_pool_health,
+        recovery_suppressed_account_ids,
         quota_reserve_status,
     }
 }

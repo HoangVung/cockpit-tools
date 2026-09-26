@@ -105,8 +105,12 @@ func TestMergeLocallyPinnedCodexClientModelsKeepsPinnedModelsWhenRemoteLags(t *t
 		}
 		// The shipped catalog is the only source here, so every pinned model
 		// must carry the embedded metadata rather than the remote stub.
-		if got := modelBySlug[pinnedSlug]["context_window"]; got != float64(1050000) {
-			t.Fatalf("%s context_window = %#v, want 1050000", pinnedSlug, got)
+		if got := modelBySlug[pinnedSlug]["context_window"]; got != float64(256000) {
+			t.Fatalf("%s context_window = %#v, want 256000", pinnedSlug, got)
+		}
+		// 目录里声明窗口就必须带 90% 压缩阈值，不能留空。
+		if got := modelBySlug[pinnedSlug]["auto_compact_token_limit"]; got != float64(230400) {
+			t.Fatalf("%s auto_compact_token_limit = %#v, want 230400", pinnedSlug, got)
 		}
 	}
 	if len(payload.Models) != 1+len(locallyPinnedCodexClientModelSlugs) {
@@ -162,7 +166,7 @@ func TestMergeLocallyPinnedCodexClientModelsPrefersRemotePinnedMetadata(t *testi
 	if countBySlug[codexBuiltinGPT6LunaModelID] != 1 {
 		t.Fatalf("merged catalog %s entry count = %d, want 1", codexBuiltinGPT6LunaModelID, countBySlug[codexBuiltinGPT6LunaModelID])
 	}
-	if got := modelBySlug[codexBuiltinGPT6LunaModelID]["context_window"]; got != float64(1050000) {
+	if got := modelBySlug[codexBuiltinGPT6LunaModelID]["context_window"]; got != float64(256000) {
 		t.Fatalf("missing %s was not backfilled from the embedded catalog: %#v", codexBuiltinGPT6LunaModelID, modelBySlug[codexBuiltinGPT6LunaModelID])
 	}
 }

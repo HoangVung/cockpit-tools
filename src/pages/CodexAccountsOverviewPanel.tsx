@@ -3515,6 +3515,9 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
             accounts={accounts}
             accountHealth={localAccessState?.accountHealth ?? []}
             accountPoolHealth={localAccessState?.accountPoolHealth ?? []}
+            recoverySuppressedAccountIds={
+              localAccessState?.recoverySuppressedAccountIds ?? []
+            }
             actionBusy={localAccessHealthActionBusy}
             maskAccountText={maskAccountText}
             onClose={() => setShowLocalAccessHealthModal(false)}
