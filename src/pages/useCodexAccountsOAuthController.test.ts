@@ -7,7 +7,9 @@ import { deferred, settlePromises } from '../../tests/helpers/reactHookHarness';
 
 // Run the controller's actual transition handlers and effect predicates. The
 // unrelated account/provider UI is excluded; IPC completion order is explicit.
-const source = readFileSync(new URL('./useCodexAccountsOAuthController.ts', import.meta.url), 'utf8');
+// Git may check out the controller with CRLF on Windows; section markers use LF.
+const source = readFileSync(new URL('./useCodexAccountsOAuthController.ts', import.meta.url), 'utf8')
+  .replace(/\r\n/g, '\n');
 function harness(overrides: Record<string, unknown> = {}) {
   const starts: { args: unknown[]; task: ReturnType<typeof deferred<any>> }[] = [];
   const cancellations: { id: string; task: ReturnType<typeof deferred<void>> }[] = [];
